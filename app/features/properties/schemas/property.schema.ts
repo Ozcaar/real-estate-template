@@ -69,7 +69,16 @@ export const propertySchema = z.object({
   constructionSize: z.number().nonnegative().optional(),
   landSize: z.number().nonnegative().optional(),
   images: z.array(z.string()),
-  coverImage: z.string(),
+  /**
+   * Non-empty by construction: the cover image is the LCP candidate on
+   * the property detail page and the primary visual on the catalog card.
+   * An empty string would render a broken `<img>` (or trigger the
+   * `<PropertyGallery>` empty-state fallback) before any consumer code
+   * could catch it. Tightening to `.min(1)` here lets the Zod parser
+   * reject malformed records at module load, with no effect on the
+   * existing sample data (every shipped record has a non-empty path).
+   */
+  coverImage: z.string().min(1),
   amenities: z.array(z.string()),
   developmentId: z.string().optional(),
   agentId: z.string().optional(),

@@ -89,6 +89,19 @@ export const propertiesService = {
    * (no hydration mismatch). Price-based sorts always use `id` ascending
    * as the tiebreaker so equal-priced properties render in a deterministic
    * order.
+   *
+   * **Service contract.** This method owns the listing query and sort
+   * behavior: `operation` (sale/rent exact match), `type` (property type
+   * exact match), `location` (case-insensitive and accent-insensitive
+   * substring match against `location` + `city` + `state` + `country`),
+   * and the `sort` allow-list (`featured` / `price-asc` / `price-desc`).
+   * The query shape consumed by callers (the URL
+   * `?operation=...&type=...&location=...&sort=...` params, the
+   * `PropertySort` type, the `isPropertySort` type guard) is documented
+   * in `docs/DATA_MODELS.md` Section 9 — "Listing Query & Sort Shape".
+   * Any change to the filter logic, the sort weights, the
+   * accent-insensitive normalization, or the type guard must keep that
+   * doc in sync (and vice versa).
    */
   filter(filters: PropertyFilters, sort: PropertySort = 'featured'): Property[] {
     const operation = normalize(filters.operation)

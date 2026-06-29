@@ -6,6 +6,33 @@ type ImageRounded = 'none' | 'md' | 'lg' | 'xl' | 'full'
  * Responsive image wrapper around Nuxt Image with a consistent aspect ratio,
  * rounding and `object-cover` behavior to avoid layout shift. `alt` is required
  * for accessibility.
+ *
+ * ## Loading and fetch priority
+ *
+ * The wrapper exposes two props that together control how the browser fetches
+ * the image. Both have safe defaults that work for the common case, but
+ * above-the-fold LCP images should override both:
+ *
+ * - `loading` (default `'lazy'`) — `lazy` defers the network request until
+ *   the image is near the viewport; `eager` starts the download immediately.
+ *   Below-the-fold images (catalog cards, related properties, agents,
+ *   testimonials, etc.) should keep the default `lazy` so the browser does
+ *   not start downloading them until they scroll into view.
+ * - `fetchpriority` (default `'auto'`) — `auto` lets the browser decide;
+ *   `high` tells the browser the image is an LCP candidate and should be
+ *   prioritized ahead of other resources; `low` de-prioritizes below-the-fold
+ *   prefetch candidates.
+ *
+ * For LCP images (the home hero, the property detail cover, the future
+ * development detail cover), set BOTH `loading="eager"` (to override the
+ * wrapper's `lazy` default) and `fetchpriority="high"` (to override the
+ * browser's `auto` default). The two attributes work together:
+ * `fetchpriority="high"` tells the browser to start the request early,
+ * `loading="eager"` tells the browser not to wait for the image to scroll
+ * into view. See `docs/REBRANDING.md` Section 12 for the full LCP
+ * pattern, the rationale, and the current call sites on the home hero
+ * (`app/features/home/components/HomeHero.vue`) and the property detail
+ * cover (wrapped by `app/features/properties/components/PropertyGallery.vue`).
  */
 const props = withDefaults(
   defineProps<{
