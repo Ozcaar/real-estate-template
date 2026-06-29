@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
+import { defaultI18nLocales } from './app/config/i18n'
 
 // Pinia 3.x exposes its `import` + `production` export condition as a CommonJS
 // build (`pinia.prod.cjs`). Nitro always adds the `production` condition for
@@ -93,10 +94,12 @@ export default defineNuxtConfig({
   i18n: {
     strategy: 'no_prefix',
     defaultLocale: 'en',
-    locales: [
-      { code: 'en', language: 'en-US', name: 'English', file: 'en.json' },
-      { code: 'es', language: 'es-ES', name: 'Español', file: 'es.json' },
-    ],
+    locales: defaultI18nLocales.map(code => ({
+      code,
+      ...(code === 'en'
+        ? { language: 'en-US', name: 'English', file: 'en.json' }
+        : { language: 'es-ES', name: 'Español', file: 'es.json' }),
+    })),
     detectBrowserLanguage: {
       useCookie: true,
       cookieKey: 'i18n_locale',
