@@ -53,22 +53,22 @@ export const propertySchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   slug: z.string().min(1),
-  description: z.string(),
+  description: z.string().min(1),
   operationType: propertyOperationTypeSchema,
   propertyType: propertyTypeSchema,
   price: z.number().nonnegative(),
   currency: z.string().min(1),
-  location: z.string(),
-  city: z.string(),
-  state: z.string(),
-  country: z.string(),
+  location: z.string().min(1),
+  city: z.string().min(1),
+  state: z.string().min(1),
+  country: z.string().min(1),
   bedrooms: z.number().int().nonnegative().optional(),
   bathrooms: z.number().nonnegative().optional(),
   parkingSpaces: z.number().int().nonnegative().optional(),
   sizeUnit: propertySizeUnitSchema.optional(),
   constructionSize: z.number().nonnegative().optional(),
   landSize: z.number().nonnegative().optional(),
-  images: z.array(z.string()),
+  images: z.array(z.string().min(1)),
   /**
    * Non-empty by construction: the cover image is the LCP candidate on
    * the property detail page and the primary visual on the catalog card.
@@ -79,7 +79,7 @@ export const propertySchema = z.object({
    * existing sample data (every shipped record has a non-empty path).
    */
   coverImage: z.string().min(1),
-  amenities: z.array(z.string()),
+  amenities: z.array(z.string().min(1)),
   developmentId: z.string().optional(),
   agentId: z.string().optional(),
   coordinates: propertyCoordinatesSchema.optional(),
