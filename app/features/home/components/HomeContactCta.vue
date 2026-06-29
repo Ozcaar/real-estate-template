@@ -30,7 +30,7 @@ const hasAnyContact = computed(() =>
 </script>
 
 <template>
-  <BaseSection spacing="md">
+  <BaseSection spacing="lg">
     <CtaBlock
       :title="t('home.cta.title')"
       :description="t('home.cta.description')"

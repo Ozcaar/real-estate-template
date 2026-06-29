@@ -36,7 +36,7 @@ const items = computed(() =>
         :href="item.url"
         target="_blank"
         rel="noopener noreferrer"
-        class="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-full)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-primary)]"
+        class="inline-flex h-11 w-11 items-center justify-center rounded-[var(--radius-full)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-primary)]"
         :aria-label="item.platform"
       >
         <Icon :name="item.icon" class="h-5 w-5" />

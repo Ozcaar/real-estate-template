@@ -43,7 +43,7 @@ const { t } = useI18n()
           {{ t('home.about.cta') }}
         </BaseButton>
 
-        <dl class="mt-10 grid grid-cols-2 gap-6">
+        <dl class="mt-8 grid grid-cols-2 gap-6">
           <div v-for="stat in stats" :key="stat.id" class="flex items-start gap-3">
             <span
               class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface-muted)] text-[var(--color-primary)]"

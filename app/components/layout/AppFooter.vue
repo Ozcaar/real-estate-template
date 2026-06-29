@@ -34,7 +34,7 @@ const whatsappLink = computed(() => buildWhatsAppLink(agency.value.contact.whats
           <li v-for="item in navItems" :key="item.to">
             <NuxtLink
               :to="item.to"
-              class="text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+              class="block py-2 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
             >
               {{ $t(item.labelKey) }}
             </NuxtLink>

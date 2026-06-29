@@ -18,7 +18,7 @@ const { t } = useI18n()
       :subtitle="t('home.propertySearch.subtitle')"
     />
 
-    <div class="mx-auto mt-10 max-w-5xl">
+    <div class="mt-10 max-w-5xl">
       <HomeSearchBar />
     </div>
   </BaseSection>

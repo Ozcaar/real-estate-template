@@ -29,7 +29,7 @@ const mobileOpen = ref(false)
         </BaseButton>
         <button
           type="button"
-          class="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-foreground)] hover:bg-[var(--color-surface-muted)] lg:hidden"
+          class="inline-flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-foreground)] hover:bg-[var(--color-surface-muted)] lg:hidden"
           :aria-label="$t('common.openMenu')"
           @click="mobileOpen = true"
         >

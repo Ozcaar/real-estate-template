@@ -20,11 +20,8 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <section class="relative overflow-hidden bg-[var(--color-surface-muted)]">
-    <BaseContainer
-      as="div"
-      class="grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-2 lg:py-24"
-    >
+  <BaseSection tone="muted" spacing="lg" class="relative overflow-hidden">
+    <div class="grid items-center gap-10 lg:grid-cols-2">
       <div>
         <BaseBadge variant="accent" size="md">
           {{ t('home.hero.eyebrow') }}
@@ -58,6 +55,6 @@ const { t } = useI18n()
           sizes="100vw lg:50vw"
         />
       </div>
-    </BaseContainer>
-  </section>
+    </div>
+  </BaseSection>
 </template>
