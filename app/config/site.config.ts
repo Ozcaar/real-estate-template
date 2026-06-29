@@ -8,6 +8,8 @@ import { resolveTheme } from '~/themes'
  * Swap this import to rebrand the site for a different agency. In later phases
  * this can be resolved from environment variables, a JSON file or an API
  * without touching components.
+ *
+ * @see docs/REBRANDING.md for the step-by-step rebranding workflow.
  */
 const activeAgency = defaultAgencyConfig
 

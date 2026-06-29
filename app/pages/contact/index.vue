@@ -16,6 +16,14 @@ import { usePageSeo } from '~/core/composables/usePageSeo'
 const { t } = useI18n()
 const site = useSiteConfig()
 
+// `useId()`-derived form field ids so the form is safe to render multiple
+// times on the same page (e.g. inside a modal later) without breaking the
+// label / input association.
+const formNameId = useId()
+const formEmailId = useId()
+const formPhoneId = useId()
+const formMessageId = useId()
+
 const contact = computed(() => site.value.agency.contact)
 const whatsappLink = computed(() => buildWhatsAppLink(contact.value.whatsapp))
 
@@ -130,7 +138,7 @@ useHead({
       <div class="lg:col-span-2">
         <ul class="flex flex-col gap-4">
           <li v-for="method in methods" :key="method.key">
-            <BaseCard padding="md" radius="lg" shadow="sm" class="h-full">
+            <BaseCard padding="lg" radius="lg" shadow="sm" class="h-full">
               <div class="flex items-start gap-3">
                 <span
                   class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface-muted)] text-[var(--color-primary)]"
@@ -179,13 +187,13 @@ useHead({
           >
             <div class="sm:col-span-2">
               <label
-                for="contact-name"
+                :for="formNameId"
                 class="mb-1 block text-xs font-medium text-[var(--color-muted)]"
               >
                 {{ t('contact.form.nameLabel') }}
               </label>
               <input
-                id="contact-name"
+                :id="formNameId"
                 v-model="form.name"
                 type="text"
                 autocomplete="name"
@@ -196,13 +204,13 @@ useHead({
 
             <div>
               <label
-                for="contact-email"
+                :for="formEmailId"
                 class="mb-1 block text-xs font-medium text-[var(--color-muted)]"
               >
                 {{ t('contact.form.emailLabel') }}
               </label>
               <input
-                id="contact-email"
+                :id="formEmailId"
                 v-model="form.email"
                 type="email"
                 autocomplete="email"
@@ -213,13 +221,13 @@ useHead({
 
             <div>
               <label
-                for="contact-phone"
+                :for="formPhoneId"
                 class="mb-1 block text-xs font-medium text-[var(--color-muted)]"
               >
                 {{ t('contact.form.phoneLabel') }}
               </label>
               <input
-                id="contact-phone"
+                :id="formPhoneId"
                 v-model="form.phone"
                 type="tel"
                 autocomplete="tel"
@@ -230,13 +238,13 @@ useHead({
 
             <div class="sm:col-span-2">
               <label
-                for="contact-message"
+                :for="formMessageId"
                 class="mb-1 block text-xs font-medium text-[var(--color-muted)]"
               >
                 {{ t('contact.form.messageLabel') }}
               </label>
               <textarea
-                id="contact-message"
+                :id="formMessageId"
                 v-model="form.message"
                 rows="5"
                 :placeholder="t('contact.form.messagePlaceholder')"

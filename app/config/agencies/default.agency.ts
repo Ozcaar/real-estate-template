@@ -6,6 +6,8 @@ import type { AgencyConfig } from '~/types/agency.types'
  * This is the placeholder identity shipped with the template. To rebrand the
  * site for a real agency, copy this file (e.g. `acme.agency.ts`), adjust the
  * values, and point `site.config.ts` at it. No component changes required.
+ *
+ * @see docs/REBRANDING.md for the step-by-step rebranding workflow.
  */
 export const defaultAgencyConfig: AgencyConfig = {
   id: 'default',

@@ -123,16 +123,13 @@ useHead({
 
     <BaseSection spacing="lg">
       <div class="mx-auto grid max-w-5xl items-start gap-10 lg:grid-cols-[1fr_2fr]">
-        <div class="hidden lg:block">
+        <div>
           <BaseBadge variant="accent" size="md">
             {{ t('about.story.eyebrow') }}
           </BaseBadge>
         </div>
         <div>
-          <BaseHeading :level="2" size="2xl" class="lg:hidden">
-            {{ t('about.story.eyebrow') }}
-          </BaseHeading>
-          <BaseHeading :level="2" size="2xl" class="hidden lg:block">
+          <BaseHeading :level="2" size="2xl">
             {{ t('about.story.title') }}
           </BaseHeading>
           <p class="mt-4 text-base text-[var(--color-foreground)] sm:text-lg">
