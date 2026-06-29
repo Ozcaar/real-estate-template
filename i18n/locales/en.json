@@ -39,6 +39,12 @@
       "activeLabel": "Filtered by",
       "clear": "Clear filters"
     },
+    "sort": {
+      "label": "Sort by",
+      "featured": "Featured",
+      "priceAsc": "Price (low to high)",
+      "priceDesc": "Price (high to low)"
+    },
     "detail": {
       "backToProperties": "Back to properties",
       "features": "Features",

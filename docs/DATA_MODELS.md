@@ -354,7 +354,46 @@ export interface SeoConfig {
 
 `SiteConfig` is the resolved configuration consumed across the app (active agency + its resolved theme). `NavItem` powers the navigation configuration in `app/config/navigation.ts` and is consumed by `AppHeader`, `AppMobileMenu` and `AppFooter`; the optional `module` field lets layout components hide entries for disabled agency modules. `SeoConfig` powers structural SEO defaults in `app/config/seo.ts` and is consumed by the `usePageSeo` composable.
 
-## 9. Model Rules
+## 9. Listing Query & Sort Shape
+
+The `/properties` page reads four optional query params and routes them through `propertiesService.filter(filters, sort)`. The shape is defined in code (not in the `Property` model) and consumed by `app/features/properties/services/properties.service.ts`.
+
+### Query keys
+
+| Key | Allowed values | Type | Effect |
+| --- | --- | --- | --- |
+| `operation` | `sale`, `rent` | `PropertyOperationType` | Exact match on `Property.operationType`, case-insensitive |
+| `type` | `house`, `apartment`, `land`, `commercial`, `office` | `PropertyType` | Exact match on `Property.propertyType`, case-insensitive |
+| `location` | free text | `string` | Substring match against `location + city + state + country` joined with spaces. **Case-insensitive** and **accent-insensitive** (Unicode NFD + combining-mark strip — no external dependency). `Mexico` matches `México`, `Queretaro` matches `Querétaro`, `Leon` matches `Nuevo León` |
+| `sort` | `featured`, `price-asc`, `price-desc` | `PropertySort` (see below) | See the sort table |
+
+### `PropertySort`
+
+```ts
+export type PropertySort = 'featured' | 'price-asc' | 'price-desc'
+```
+
+| Value | Order |
+| --- | --- |
+| `featured` (default) | `featured: true` first, then `id` ascending for ties |
+| `price-asc` | `price` ascending, then `id` ascending for ties |
+| `price-desc` | `price` descending, then `id` ascending for ties |
+
+**Stable order.** Every sort branch uses `id.localeCompare(otherId)` as a tiebreaker so equal-scoring or equal-priced properties always render in the same order across SSR and CSR. The `ItemList` JSON-LD on the listing page reflects the same order as the visible cards via `position: index + 1`.
+
+**URL hygiene.** Empty values are stripped from the URL. The default sort (`featured`) is also omitted — bare `/properties` means "all visible, sorted by featured first". Unknown `?sort=` values are coerced to `featured` via the `isPropertySort` guard. The canonical URL strips the entire query string for SEO, so all filtered variants canonicalize to `/properties`.
+
+### Type guard
+
+```ts
+export function isPropertySort(value: unknown): value is PropertySort {
+  return typeof value === 'string' && (VALID_SORTS as readonly string[]).includes(value)
+}
+```
+
+Use this guard in the page to coerce a raw `route.query.sort` value (which is `string | string[] | null | undefined`) into a safe `PropertySort` before passing it to the service.
+
+## 10. Model Rules
 
 * Use TypeScript interfaces for main entities.
 * Use union types for fixed values.

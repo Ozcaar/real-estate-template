@@ -52,6 +52,7 @@ const { t } = useI18n()
           ratio="4/3"
           rounded="xl"
           loading="eager"
+          fetchpriority="high"
           sizes="100vw lg:50vw"
         />
       </div>

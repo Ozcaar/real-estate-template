@@ -94,7 +94,7 @@ const methods = computed(() => {
  * composable. This page still owns the `useSeoMeta` call (for the
  * page-specific title/description) and the canonical `useHead` call.
  */
-const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo()
+const { canonicalUrl, toAbsoluteUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo()
 
 const seoTitle = computed(() =>
   t('contact.seo.title', { agencyName: siteName }),

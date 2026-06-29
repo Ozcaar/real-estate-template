@@ -19,8 +19,38 @@ export interface PropertyFilters {
   location?: string
 }
 
+/**
+ * Allow-list of sort orders the listing page can request. New options
+ * (e.g. `bedrooms-desc`, `area-desc`) can be added here without touching
+ * the data model — the sort operates on existing fields only.
+ *
+ * `featured` is the default: properties with `featured: true` come first,
+ * ties broken by `id` ascending for a deterministic order across SSR
+ * and CSR (no hydration mismatch).
+ */
+export type PropertySort = 'featured' | 'price-asc' | 'price-desc'
+
+const VALID_SORTS: readonly PropertySort[] = ['featured', 'price-asc', 'price-desc'] as const
+
+export function isPropertySort(value: unknown): value is PropertySort {
+  return typeof value === 'string' && (VALID_SORTS as readonly string[]).includes(value)
+}
+
 function normalize(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase()
+}
+
+/**
+ * Accent-insensitive text normalization: lowercase, trim, and strip
+ * diacritics (combining marks) so that searches like "Mexico" match
+ * "México" or "Queretaro" match "Querétaro". Uses the Unicode NFD
+ * decomposition + combining-mark strip pattern (no external dependency).
+ * Applied to the location filter only — operation and property type
+ * values are enums that never contain diacritics, so the simpler
+ * `normalize` helper is sufficient for those.
+ */
+function normalizeText(value: string | undefined | null): string {
+  return (value ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 }
 
 /**
@@ -49,17 +79,23 @@ export const propertiesService = {
   },
 
   /**
-   * Filter the visible property catalog by a typed set of criteria. Hidden
-   * properties are always excluded. Empty / undefined filter values are
-   * treated as "no constraint" so callers can pass a raw `useRoute().query`
-   * shape without sanitizing it first.
+   * Filter the visible property catalog by a typed set of criteria, then
+   * sort the result. Hidden properties are always excluded. Empty /
+   * undefined filter values are treated as "no constraint" so callers can
+   * pass a raw `useRoute().query` shape without sanitizing it first.
+   *
+   * The default sort (`featured`) puts `featured: true` records first and
+   * breaks ties by `id` ascending, which is stable across SSR and CSR
+   * (no hydration mismatch). Price-based sorts always use `id` ascending
+   * as the tiebreaker so equal-priced properties render in a deterministic
+   * order.
    */
-  filter(filters: PropertyFilters): Property[] {
+  filter(filters: PropertyFilters, sort: PropertySort = 'featured'): Property[] {
     const operation = normalize(filters.operation)
     const type = normalize(filters.type)
-    const location = normalize(filters.location)
+    const location = normalizeText(filters.location)
 
-    return this.getAll().filter((property) => {
+    const filtered = this.getAll().filter((property) => {
       if (operation && normalize(property.operationType) !== operation) {
         return false
       }
@@ -73,12 +109,30 @@ export const propertiesService = {
           property.state,
           property.country,
         ]
-          .map(normalize)
+          .map(normalizeText)
           .join(' ')
         if (!haystack.includes(location)) return false
       }
       return true
     })
+
+    const sorted = [...filtered]
+    switch (sort) {
+      case 'price-asc':
+        sorted.sort((a, b) => a.price - b.price || a.id.localeCompare(b.id))
+        break
+      case 'price-desc':
+        sorted.sort((a, b) => b.price - a.price || a.id.localeCompare(b.id))
+        break
+      case 'featured':
+      default:
+        sorted.sort((a, b) => {
+          if (a.featured !== b.featured) return a.featured ? -1 : 1
+          return a.id.localeCompare(b.id)
+        })
+        break
+    }
+    return sorted
   },
 
   /**

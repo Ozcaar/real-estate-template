@@ -39,6 +39,12 @@
       "activeLabel": "Filtrado por",
       "clear": "Limpiar filtros"
     },
+    "sort": {
+      "label": "Ordenar por",
+      "featured": "Destacadas",
+      "priceAsc": "Precio (de menor a mayor)",
+      "priceDesc": "Precio (de mayor a menor)"
+    },
     "detail": {
       "backToProperties": "Volver a propiedades",
       "features": "Características",

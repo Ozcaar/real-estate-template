@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { propertiesService } from '~/features/properties/services/properties.service'
-import { operationTypeLabelKey, propertyTypeLabelKey } from '~/features/properties/constants/property-types'
+import { computed, ref, watch } from 'vue'
+import { propertiesService, isPropertySort, type PropertySort } from '~/features/properties/services/properties.service'
+import {
+  OPERATION_TYPE_OPTIONS,
+  PROPERTY_TYPE_OPTIONS,
+  operationTypeLabelKey,
+  propertyTypeLabelKey,
+} from '~/features/properties/constants/property-types'
 import { usePageSeo } from '~/core/composables/usePageSeo'
 import { useJsonLd } from '~/core/composables/useJsonLd'
 
 /**
  * Properties listing page (`/properties`).
  *
- * Thin route: it reads optional `operation`, `type` and `location` query
- * params (matching the shape produced by `HomeSearchBar`, `HomeCategories`
- * and `HomeLocations`), filters the visible catalog through the documented
- * service, and composes the page header and {@link PropertyGrid}. When no
- * params are present it falls back to the full visible catalog.
+ * Thin route: it reads optional `operation`, `type`, `location` and
+ * `sort` query params (matching the shape produced by `HomeSearchBar`,
+ * `HomeCategories` and `HomeLocations`), filters and sorts the visible
+ * catalog through the documented service, and composes the page header
+ * and {@link PropertyGrid}. When no params are present it falls back to
+ * the full visible catalog sorted by `featured` first.
  */
 const { t } = useI18n()
 const route = useRoute()
@@ -30,14 +36,18 @@ function pickQueryValue(raw: unknown): string | undefined {
   return undefined
 }
 
+const DEFAULT_SORT: PropertySort = 'featured'
+
 const filters = computed(() => ({
   operation: pickQueryValue(route.query.operation),
   type: pickQueryValue(route.query.type),
   location: pickQueryValue(route.query.location),
 }))
 
+const formSort = ref<PropertySort>(DEFAULT_SORT)
+
 const totalVisible = computed(() => propertiesService.getAll().length)
-const properties = computed(() => propertiesService.filter(filters.value))
+const properties = computed(() => propertiesService.filter(filters.value, formSort.value))
 const propertiesCount = computed(() => properties.value.length)
 const isFiltered = computed(() => propertiesCount.value !== totalVisible.value)
 
@@ -54,6 +64,46 @@ const activeFilterLabel = computed(() => {
   if (lo) parts.push(lo)
   return parts.length ? parts.join(' · ') : ''
 })
+
+// --- Filter form --------------------------------------------------------
+/**
+ * Local form state for the in-page filter form. Pre-fills from the current
+ * `route.query` (so the form always reflects the URL state) and re-syncs
+ * whenever the query changes externally (e.g. when a deep link from the
+ * home page navigates to a filtered URL). On submit, builds a query object
+ * containing only non-empty / non-default values and pushes the bare
+ * `/properties` path with that query. The filter and sort logic in
+ * `propertiesService.filter` is unchanged — the form is a pure UI layer
+ * over the existing query shape.
+ *
+ * The `<form>` is a real HTML form with `method="get"` and `action="/properties"`
+ * so it still works without JavaScript (the browser will build the query
+ * string from the named controls). The `@submit.prevent` handler is the
+ * JS-only path that strips empty / default values for a cleaner URL.
+ */
+const formOperation = ref('')
+const formType = ref('')
+const formLocation = ref('')
+
+function syncFormFromQuery() {
+  formOperation.value = pickQueryValue(route.query.operation) ?? ''
+  formType.value = pickQueryValue(route.query.type) ?? ''
+  formLocation.value = pickQueryValue(route.query.location) ?? ''
+  const sort = pickQueryValue(route.query.sort)
+  formSort.value = isPropertySort(sort) ? sort : DEFAULT_SORT
+}
+
+syncFormFromQuery()
+watch(() => route.query, syncFormFromQuery)
+
+function applyFilters() {
+  const query: Record<string, string> = {}
+  if (formOperation.value) query.operation = formOperation.value
+  if (formType.value) query.type = formType.value
+  if (formLocation.value) query.location = formLocation.value
+  if (formSort.value !== DEFAULT_SORT) query.sort = formSort.value
+  navigateTo({ path: route.path, query })
+}
 
 // --- SEO ----------------------------------------------------------------
 /**
@@ -129,6 +179,105 @@ const emptyMessage = computed(
       :title="t('properties.page.title')"
       :subtitle="t('properties.page.subtitle')"
     />
+
+    <form
+      method="get"
+      action="/properties"
+      class="mx-auto mt-8 max-w-5xl"
+      @submit.prevent="applyFilters"
+    >
+      <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="flex flex-col gap-1">
+          <label
+            for="filter-operation"
+            class="text-xs font-medium text-[var(--color-muted)]"
+          >
+            {{ t('home.search.operationLabel') }}
+          </label>
+          <select
+            id="filter-operation"
+            v-model="formOperation"
+            name="operation"
+            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          >
+            <option value="">{{ t('home.search.anyOperation') }}</option>
+            <option
+              v-for="option in OPERATION_TYPE_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ t(option.labelKey) }}
+            </option>
+          </select>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label
+            for="filter-type"
+            class="text-xs font-medium text-[var(--color-muted)]"
+          >
+            {{ t('home.search.typeLabel') }}
+          </label>
+          <select
+            id="filter-type"
+            v-model="formType"
+            name="type"
+            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          >
+            <option value="">{{ t('home.search.anyType') }}</option>
+            <option
+              v-for="option in PROPERTY_TYPE_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ t(option.labelKey) }}
+            </option>
+          </select>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label
+            for="filter-location"
+            class="text-xs font-medium text-[var(--color-muted)]"
+          >
+            {{ t('home.search.locationLabel') }}
+          </label>
+          <input
+            id="filter-location"
+            v-model="formLocation"
+            name="location"
+            type="search"
+            :placeholder="t('home.search.locationPlaceholder')"
+            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          >
+        </div>
+
+        <div>
+          <BaseButton type="submit" size="md" block>
+            {{ t('home.search.submit') }}
+          </BaseButton>
+        </div>
+
+        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
+          <label
+            for="filter-sort"
+            class="text-xs font-medium text-[var(--color-muted)]"
+          >
+            {{ t('properties.sort.label') }}
+          </label>
+          <select
+            id="filter-sort"
+            v-model="formSort"
+            name="sort"
+            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          >
+            <option value="featured">{{ t('properties.sort.featured') }}</option>
+            <option value="price-asc">{{ t('properties.sort.priceAsc') }}</option>
+            <option value="price-desc">{{ t('properties.sort.priceDesc') }}</option>
+          </select>
+        </div>
+      </div>
+    </form>
 
     <div
       aria-live="polite"

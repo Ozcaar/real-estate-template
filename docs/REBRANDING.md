@@ -253,8 +253,9 @@ The template also emits **JSON-LD structured data** automatically on the pages t
 | `/properties/{slug}` | `RealEstateListing` (with `floorSize` as a `QuantitativeValue` carrying an explicit `unitCode`) |
 | `/agents` | `ItemList` of `Person` (each agent's `worksFor` references the agency home page) |
 | `/contact` | `ContactPage` with `mainEntity: RealEstateAgent` (sharing the home page's `@id`) |
+| `/about` | `AboutPage` with `mainEntity: RealEstateAgent` (sharing the home page's `@id`) |
 
-The home page and contact page share a `RealEstateAgent.@id` so search engines treat the agency as a single knowledge-graph node. The properties catalog and agents list each emit one entry per visible record; the property detail page emits one `RealEstateListing` per page. No configuration is required to enable or disable JSON-LD — it is wired into the page setup and produces the same output across SSG, SSR and runtime Nitro server modes.
+The home page, contact page, and about page share a `RealEstateAgent.@id` (the home page's absolute URL) so search engines treat the agency as a single knowledge-graph node. The properties catalog and agents list each emit one entry per visible record; the property detail page emits one `RealEstateListing` per page. No configuration is required to enable or disable JSON-LD — it is wired into the page setup and produces the same output across SSG, SSR and runtime Nitro server modes.
 
 ## 10. Step 8 — Build and Verify
 
@@ -286,7 +287,49 @@ For each route, check:
 * The WhatsApp link opens with the configured number.
 * The Open Graph image (view source → `<meta property="og:image">`) is the agency logo or property cover.
 
-## 11. Troubleshooting
+## 11. Property Listing Query Behavior
+
+The `/properties` page reads four optional query params and routes them through `propertiesService.filter()`. The same shape is consumed by the in-page filter form on `/properties` and by deep links from the home page (`HomeSearchBar`, `HomeCategories`, `HomeLocations`).
+
+| Key | Allowed values | Default | Effect |
+| --- | --- | --- | --- |
+| `operation` | `sale`, `rent` | (none) | Exact match on `Property.operationType`, case-insensitive |
+| `type` | `house`, `apartment`, `land`, `commercial`, `office` | (none) | Exact match on `Property.propertyType`, case-insensitive |
+| `location` | free text | (none) | Substring match against `location + city + state + country` joined with spaces. **Case-insensitive** and **accent-insensitive**: `Mexico` matches `México`, `Queretaro` matches `Querétaro`, `Leon` matches `Nuevo León` |
+| `sort` | `featured`, `price-asc`, `price-desc` | `featured` | `featured` puts `featured: true` records first, ties broken by `id` ascending. `price-asc` / `price-desc` sort by `Property.price` with the same `id` tiebreaker |
+
+**URL hygiene.** Empty values are stripped from the URL. The default sort (`featured`) is also omitted — `/properties?sort=featured` is normalized to bare `/properties`. Unknown `?sort=` values (for example `?sort=newest`) are silently coerced to `featured` so a malformed URL never returns zero results or crashes the page. The canonical URL strips the entire query string for SEO, so `/properties?operation=sale&type=house&sort=price-asc` and `/properties?operation=rent&type=apartment&sort=price-desc` both canonicalize to `/properties`.
+
+**Stable order.** Every sort branch uses `id.localeCompare(otherId)` as a tiebreaker so equal-scoring or equal-priced properties always render in the same order across SSR and CSR (no hydration mismatch). The `ItemList` JSON-LD on the listing page reflects the same order as the visible cards via `position: index + 1`.
+
+**Sample data shape.** When replacing the sample data (Step 3), every record's `operationType` and `propertyType` must be one of the allowed values above, or the record will fail Zod validation at module load and the app will not boot. To add a new value (for example a new `propertyType`), extend both the `PropertyOperationType` / `PropertyType` unions in `app/features/properties/types/property.types.ts` and the matching Zod enums in `app/features/properties/schemas/property.schema.ts`, then add the corresponding label to `properties.types.*` / `properties.operations.*` in both locale files.
+
+## 12. Above-the-Fold Image Performance
+
+The home page hero and the property detail cover image are both LCP candidates. Both use the same two-attribute pattern to ensure the browser starts their network request as early as possible:
+
+```vue
+<ResponsiveImage
+  :src="image"
+  :alt="t('…')"
+  ratio="4/3"
+  rounded="xl"
+  loading="eager"
+  fetchpriority="high"
+  sizes="100vw lg:50vw"
+/>
+```
+
+The two key attributes are:
+
+* `loading="eager"` — overrides `<ResponsiveImage>`'s default `'lazy'` so the browser starts downloading the image immediately, not when it scrolls into view.
+* `fetchpriority="high"` — tells the browser the image is an LCP candidate, so it should prioritize the network request ahead of other resources (scripts, other images, etc.).
+
+Both attributes are forwarded to `<NuxtImg>` (which passes them through to the underlying `<img>`). Any new above-the-fold image (for example on the future development detail page) should follow the same pattern. The exact `sizes` value depends on the layout (`100vw` for full-width, `50vw` for a 2-column split, `33vw` for a 3-column grid, etc.) — keep the `loading="eager" + fetchpriority="high"` pair constant and tune `sizes` per layout.
+
+**Re-verify LCP when replacing placeholder images.** When the agency replaces `public/images/home/hero.svg` or any property cover with a real photo (Step 2), the image format changes (SVG → JPEG/PNG/WebP/AVIF) and the file size typically grows. The `loading="eager" + fetchpriority="high"` pattern is format-agnostic, but the `sizes` attribute may need to be re-tuned for the new asset dimensions. Export the new asset as WebP or AVIF for the best LCP.
+
+## 13. Troubleshooting
 
 ### My logo does not show
 
@@ -352,3 +395,19 @@ For each route, check:
 * Confirm the key exists in BOTH `i18n/locales/en.json` and `i18n/locales/es.json`.
 * If only one file has the key, the other locale will fall back to the i18n default (usually English).
 * Confirm the key is referenced as `key.path` in `$t('key.path')` calls.
+
+### My location search returns zero results
+
+* The search is case-insensitive and accent-insensitive, so `Mexico` matches `México` and `Queretaro` matches `Querétaro`. If the search still returns zero, confirm the value is a substring of one of the catalog's `location`, `city`, `state`, or `country` fields. The search joins the four fields with spaces and does a substring match, so a search for `New York` will match a property with `city: 'New York'`.
+* If the property is in the catalog but the search still misses, check the property's data file (`app/features/properties/data/properties.ts`) — the matching field may be empty or have a typo.
+
+### My sort doesn't appear to work
+
+* Confirm the `?sort=` value is one of `featured`, `price-asc`, `price-desc`. An unknown value (for example `?sort=newest` or `?sort=price`) is silently coerced to `featured` — there is no error, the page just shows the default order.
+* The default sort is `featured` and is omitted from the URL, so the URL alone doesn't tell you the active sort. `/properties?sort=featured` is normalized to bare `/properties`.
+* The sort is stable: equal-scoring or equal-priced properties always render in the same order, broken by `id` ascending.
+
+### My LCP image looks slow
+
+* Confirm the above-the-fold image uses both `loading="eager"` and `fetchpriority="high"`. The `<ResponsiveImage>` wrapper's defaults are `'lazy'` and `'auto'` respectively, so both attributes must be set on the call site. Check `app/features/home/components/HomeHero.vue` (home hero) and `app/pages/properties/[slug].vue` via `<PropertyGallery>` (property detail cover).
+* Re-verify the LCP after replacing the placeholder image — a real photo may be much larger than the SVG placeholder, and the `sizes` attribute may need to be re-tuned. Export the new asset as WebP or AVIF for the best LCP.
