@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { homeStats } from '~/features/home/data/stats'
+import { usePageSeo } from '~/core/composables/usePageSeo'
 
 /**
  * About page (`/about`).
@@ -11,23 +12,20 @@ import { homeStats } from '~/features/home/data/stats'
  * agent/team preview, no developments preview — those are out of scope
  * until the corresponding features land.
  */
-const { t, locale } = useI18n()
-const site = useSiteConfig()
-const config = useRuntimeConfig()
-const route = useRoute()
+const { t } = useI18n()
 
 // --- Story --------------------------------------------------------------
 /**
  * The page title and SEO title both interpolate the agency name so a
- * rebrand is a single-file change. `useSiteConfig()` is SSR-safe and
- * already holds the resolved `SiteConfig`.
+ * rebrand is a single-file change.
  */
+const { siteName } = usePageSeo()
 const seoTitle = computed(() =>
-  t('about.seo.title', { agencyName: site.value.agency.name }),
+  t('about.seo.title', { agencyName: siteName }),
 )
 const seoDescription = computed(() => t('about.seo.description'))
 const pageTitle = computed(() =>
-  t('about.page.title', { agencyName: site.value.agency.name }),
+  t('about.page.title', { agencyName: siteName }),
 )
 
 // --- Values -------------------------------------------------------------
@@ -80,24 +78,12 @@ const stats = computed(() =>
 )
 
 // --- SEO ----------------------------------------------------------------
-const siteUrl = computed(() => config.public.siteUrl.replace(/\/+$/, ''))
-
-function toAbsoluteUrl(path: string): string {
-  if (!path) return path
-  if (/^https?:\/\//i.test(path)) return path
-  const base = siteUrl.value
-  if (!base) return path
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`
-}
-
-const canonicalUrl = computed(() => {
-  const base = siteUrl.value
-  if (!base) return null
-  return `${base}${route.path}`
-})
-
-const ogImage = computed(() => toAbsoluteUrl(site.value.agency.logo))
-const twitterImage = computed(() => toAbsoluteUrl(site.value.agency.logo))
+/**
+ * Page-level SEO building blocks come from `usePageSeo`. This page owns
+ * the `useSeoMeta` call (for the page-specific title/description) and
+ * the canonical `useHead` call.
+ */
+const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale } = usePageSeo()
 
 useSeoMeta({
   title: () => seoTitle.value,
@@ -106,10 +92,10 @@ useSeoMeta({
   ogDescription: () => seoDescription.value,
   ogType: 'website',
   ogImage: () => ogImage.value,
-  ogSiteName: () => site.value.agency.name,
-  ogLocale: () => locale.value,
+  ogSiteName: () => siteName,
+  ogLocale: () => ogLocale.value,
   ogUrl: () => canonicalUrl.value ?? undefined,
-  twitterCard: 'summary_large_image',
+  twitterCard,
   twitterTitle: () => seoTitle.value,
   twitterDescription: () => seoDescription.value,
   twitterImage: () => twitterImage.value,

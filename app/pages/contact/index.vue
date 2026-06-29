@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { buildWhatsAppLink } from '~/core/utils/whatsapp-link'
+import { usePageSeo } from '~/core/composables/usePageSeo'
 
 /**
  * Contact page (`/contact`).
@@ -12,10 +13,8 @@ import { buildWhatsAppLink } from '~/core/utils/whatsapp-link'
  * `disabled` submit make that clear without inventing a backend. Wiring a
  * real submission is a future-phase task.
  */
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const site = useSiteConfig()
-const config = useRuntimeConfig()
-const route = useRoute()
 
 const contact = computed(() => site.value.agency.contact)
 const whatsappLink = computed(() => buildWhatsAppLink(contact.value.whatsapp))
@@ -80,29 +79,18 @@ const methods = computed(() => {
 })
 
 // --- SEO ----------------------------------------------------------------
-const siteUrl = computed(() => config.public.siteUrl.replace(/\/+$/, ''))
-
-function toAbsoluteUrl(path: string): string {
-  if (!path) return path
-  if (/^https?:\/\//i.test(path)) return path
-  const base = siteUrl.value
-  if (!base) return path
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`
-}
+/**
+ * Page-level SEO building blocks (siteUrl, canonicalUrl, og/twitter image,
+ * twitterCard, ogLocale, siteName) come from the shared `usePageSeo`
+ * composable. This page still owns the `useSeoMeta` call (for the
+ * page-specific title/description) and the canonical `useHead` call.
+ */
+const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo()
 
 const seoTitle = computed(() =>
-  t('contact.seo.title', { agencyName: site.value.agency.name }),
+  t('contact.seo.title', { agencyName: siteName }),
 )
 const seoDescription = computed(() => t('contact.seo.description'))
-
-const canonicalUrl = computed(() => {
-  const base = siteUrl.value
-  if (!base) return null
-  return `${base}${route.path}`
-})
-
-const ogImage = computed(() => toAbsoluteUrl(site.value.agency.logo))
-const twitterImage = computed(() => toAbsoluteUrl(site.value.agency.logo))
 
 useSeoMeta({
   title: () => seoTitle.value,
@@ -111,10 +99,10 @@ useSeoMeta({
   ogDescription: () => seoDescription.value,
   ogType: 'website',
   ogImage: () => ogImage.value,
-  ogSiteName: () => site.value.agency.name,
-  ogLocale: () => locale.value,
+  ogSiteName: () => siteName,
+  ogLocale: () => ogLocale.value,
   ogUrl: () => canonicalUrl.value ?? undefined,
-  twitterCard: 'summary_large_image',
+  twitterCard,
   twitterTitle: () => seoTitle.value,
   twitterDescription: () => seoDescription.value,
   twitterImage: () => twitterImage.value,

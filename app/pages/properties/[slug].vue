@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { propertiesService } from '~/features/properties/services/properties.service'
 import { propertyTypeLabelKey, operationTypeLabelKey } from '~/features/properties/constants/property-types'
+import { usePageSeo } from '~/core/composables/usePageSeo'
 
 /**
  * Property detail page (`/properties/[slug]`).
@@ -12,9 +13,8 @@ import { propertyTypeLabelKey, operationTypeLabelKey } from '~/features/properti
  * gallery carousel, map, mortgage calculator, or inquiry form — those are
  * intentionally out of scope for this foundation.
  */
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const site = useSiteConfig()
-const config = useRuntimeConfig()
 const route = useRoute()
 
 const slug = computed(() => {
@@ -51,42 +51,27 @@ const featureRows = computed(() => [
 
 // --- SEO ----------------------------------------------------------------
 /**
- * Property-specific SEO. Mirrors the home/listing-page pattern: agency +
- * i18n for human-readable strings, `runtimeConfig.public.siteUrl` for
- * absolute URLs, and a graceful fallback to relative paths when the env
- * var is not configured. The property's own cover image is used for
- * `og:image` / `twitter:image` so each listing has a unique share preview.
+ * Page-level SEO building blocks come from `usePageSeo`. This page uses
+ * the property's own `coverImage` as the social image so each listing has
+ * a unique share preview, and uses `ogType: 'article'` (the only record
+ * page in the app) so the social card is marked up correctly. The
+ * `useSeoMeta` and canonical `useHead` calls stay page-level.
  */
-const siteUrl = computed(() => config.public.siteUrl.replace(/\/+$/, ''))
-
-function toAbsoluteUrl(path: string): string {
-  if (!path) return path
-  if (/^https?:\/\//i.test(path)) return path
-  const base = siteUrl.value
-  if (!base) return path
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`
-}
-
-const canonicalUrl = computed(() => {
-  const base = siteUrl.value
-  if (!base) return null
-  return `${base}${route.path}`
+const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo({
+  image: computed(() => p.coverImage),
 })
 
-const ogImage = computed(() => toAbsoluteUrl(p.coverImage))
-const twitterImage = computed(() => toAbsoluteUrl(p.coverImage))
-
 useSeoMeta({
-  title: () => `${p.title} | ${site.value.agency.name}`,
+  title: () => `${p.title} | ${siteName}`,
   description: () => p.description,
   ogTitle: () => p.title,
   ogDescription: () => p.description,
   ogType: 'article',
   ogImage: () => ogImage.value,
-  ogSiteName: () => site.value.agency.name,
-  ogLocale: () => locale.value,
+  ogSiteName: () => siteName,
+  ogLocale: () => ogLocale.value,
   ogUrl: () => canonicalUrl.value ?? undefined,
-  twitterCard: 'summary_large_image',
+  twitterCard,
   twitterTitle: () => p.title,
   twitterDescription: () => p.description,
   twitterImage: () => twitterImage.value,

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { propertiesService } from '~/features/properties/services/properties.service'
 import { operationTypeLabelKey, propertyTypeLabelKey } from '~/features/properties/constants/property-types'
+import { usePageSeo } from '~/core/composables/usePageSeo'
 
 /**
  * Properties listing page (`/properties`).
@@ -12,9 +13,7 @@ import { operationTypeLabelKey, propertyTypeLabelKey } from '~/features/properti
  * service, and composes the page header and {@link PropertyGrid}. When no
  * params are present it falls back to the full visible catalog.
  */
-const { t, locale } = useI18n()
-const site = useSiteConfig()
-const config = useRuntimeConfig()
+const { t } = useI18n()
 const route = useRoute()
 
 /**
@@ -57,35 +56,18 @@ const activeFilterLabel = computed(() => {
 
 // --- SEO ----------------------------------------------------------------
 /**
- * Same pattern as the home page: agency + i18n for human-readable strings,
- * `runtimeConfig.public.siteUrl` for absolute URLs (canonical, `og:url`,
- * social image), and a graceful fallback to relative paths when the env
- * var is not configured. The canonical URL intentionally drops the query
- * string so all filtered variants point to the canonical `/properties` URL.
+ * Page-level SEO building blocks come from `usePageSeo`. This page owns
+ * the `useSeoMeta` call (for the page-specific title/description) and
+ * the canonical `useHead` call. The canonical URL intentionally drops the
+ * query string so all filtered variants point to the canonical
+ * `/properties` URL.
  */
-const siteUrl = computed(() => config.public.siteUrl.replace(/\/+$/, ''))
-
-function toAbsoluteUrl(path: string): string {
-  if (!path) return path
-  if (/^https?:\/\//i.test(path)) return path
-  const base = siteUrl.value
-  if (!base) return path
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`
-}
+const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo()
 
 const seoTitle = computed(() =>
-  t('properties.seo.title', { agencyName: site.value.agency.name }),
+  t('properties.seo.title', { agencyName: siteName }),
 )
 const seoDescription = computed(() => t('properties.seo.description'))
-
-const canonicalUrl = computed(() => {
-  const base = siteUrl.value
-  if (!base) return null
-  return `${base}${route.path}`
-})
-
-const ogImage = computed(() => toAbsoluteUrl(site.value.agency.logo))
-const twitterImage = computed(() => toAbsoluteUrl(site.value.agency.logo))
 
 useSeoMeta({
   title: () => seoTitle.value,
@@ -94,10 +76,10 @@ useSeoMeta({
   ogDescription: () => seoDescription.value,
   ogType: 'website',
   ogImage: () => ogImage.value,
-  ogSiteName: () => site.value.agency.name,
-  ogLocale: () => locale.value,
+  ogSiteName: () => siteName,
+  ogLocale: () => ogLocale.value,
   ogUrl: () => canonicalUrl.value ?? undefined,
-  twitterCard: 'summary_large_image',
+  twitterCard,
   twitterTitle: () => seoTitle.value,
   twitterDescription: () => seoDescription.value,
   twitterImage: () => twitterImage.value,

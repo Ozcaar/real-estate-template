@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { sampleDevelopments } from '~/features/developments/data/developments'
+import { usePageSeo } from '~/core/composables/usePageSeo'
 
 /**
  * Developments listing page (`/developments`).
@@ -11,37 +12,22 @@ import { sampleDevelopments } from '~/features/developments/data/developments'
  * development detail pages, no filtering, no map view — those are
  * future-phase tasks.
  */
-const { t, locale } = useI18n()
-const site = useSiteConfig()
-const config = useRuntimeConfig()
-const route = useRoute()
+const { t } = useI18n()
 
 const developments = computed(() => sampleDevelopments)
 
 // --- SEO ----------------------------------------------------------------
-const siteUrl = computed(() => config.public.siteUrl.replace(/\/+$/, ''))
-
-function toAbsoluteUrl(path: string): string {
-  if (!path) return path
-  if (/^https?:\/\//i.test(path)) return path
-  const base = siteUrl.value
-  if (!base) return path
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`
-}
+/**
+ * Page-level SEO building blocks come from `usePageSeo`. This page owns
+ * the `useSeoMeta` call (for the page-specific title/description) and
+ * the canonical `useHead` call.
+ */
+const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo()
 
 const seoTitle = computed(() =>
-  t('developments.seo.title', { agencyName: site.value.agency.name }),
+  t('developments.seo.title', { agencyName: siteName }),
 )
 const seoDescription = computed(() => t('developments.seo.description'))
-
-const canonicalUrl = computed(() => {
-  const base = siteUrl.value
-  if (!base) return null
-  return `${base}${route.path}`
-})
-
-const ogImage = computed(() => toAbsoluteUrl(site.value.agency.logo))
-const twitterImage = computed(() => toAbsoluteUrl(site.value.agency.logo))
 
 useSeoMeta({
   title: () => seoTitle.value,
@@ -50,10 +36,10 @@ useSeoMeta({
   ogDescription: () => seoDescription.value,
   ogType: 'website',
   ogImage: () => ogImage.value,
-  ogSiteName: () => site.value.agency.name,
-  ogLocale: () => locale.value,
+  ogSiteName: () => siteName,
+  ogLocale: () => ogLocale.value,
   ogUrl: () => canonicalUrl.value ?? undefined,
-  twitterCard: 'summary_large_image',
+  twitterCard,
   twitterTitle: () => seoTitle.value,
   twitterDescription: () => seoDescription.value,
   twitterImage: () => twitterImage.value,
