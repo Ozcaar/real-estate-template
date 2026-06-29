@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { mainNavigation } from '~/config/navigation'
+import { buildWhatsAppLink } from '~/core/utils/whatsapp-link'
 
 const site = useSiteConfig()
 const agency = computed(() => site.value.agency)
@@ -10,13 +11,8 @@ const navItems = computed(() =>
   mainNavigation.filter(item => !item.module || agency.value.modules[item.module]),
 )
 
-/** Build a `wa.me` link from a phone string (digits only, no formatting). */
-const whatsappLink = computed(() => {
-  const raw = agency.value.contact.whatsapp
-  if (!raw) return null
-  const digits = raw.replace(/\D/g, '')
-  return digits ? `https://wa.me/${digits}` : null
-})
+/** WhatsApp deep link derived from the agency's configured number. */
+const whatsappLink = computed(() => buildWhatsAppLink(agency.value.contact.whatsapp))
 </script>
 
 <template>
