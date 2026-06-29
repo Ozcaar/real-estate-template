@@ -47,7 +47,6 @@ export function themeToCssVars(theme: ThemeConfig): string {
 
     '--font-heading': f.heading,
     '--font-body': f.body,
-    '--font-sans': f.body,
     '--font-serif': f.serif,
 
     '--container-max-width': l.containerMaxWidth,
