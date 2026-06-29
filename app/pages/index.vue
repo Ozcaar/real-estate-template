@@ -72,7 +72,10 @@ useHead({
  * from existing config so a rebrand stays a one-file change. `sameAs` links
  * are normalized to absolute URLs (the stored values may omit the protocol).
  * `logo` and `image` are also made absolute when `siteUrl` is configured.
- * Page-specific on purpose — not part of `usePageSeo`.
+ * The `@id` is the agency home page URL so the contact page's
+ * `mainEntity.RealEstateAgent` and this one resolve to the same node
+ * in Google's knowledge graph. Page-specific on purpose — not part of
+ * `usePageSeo`.
  */
 const jsonLd = computed(() => {
   const agency = site.value.agency
@@ -83,6 +86,7 @@ const jsonLd = computed(() => {
   return {
     '@context': 'https://schema.org',
     '@type': 'RealEstateAgent',
+    '@id': toAbsoluteUrl('/'),
     name: agency.name,
     logo: toAbsoluteUrl(agency.logo),
     image: toAbsoluteUrl(agency.logo),

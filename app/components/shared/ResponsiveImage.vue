@@ -15,12 +15,14 @@ const props = withDefaults(
     rounded?: ImageRounded
     sizes?: string
     loading?: 'lazy' | 'eager'
+    fetchpriority?: 'high' | 'low' | 'auto'
   }>(),
   {
     ratio: '4/3',
     rounded: 'lg',
     sizes: undefined,
     loading: 'lazy',
+    fetchpriority: 'auto',
   },
 )
 
@@ -51,6 +53,7 @@ const roundedClasses: Record<ImageRounded, string> = {
       :alt="alt"
       :sizes="sizes"
       :loading="loading"
+      :fetchpriority="fetchpriority"
       class="h-full w-full object-cover"
     />
   </div>

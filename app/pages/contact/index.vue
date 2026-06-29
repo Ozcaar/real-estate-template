@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { buildWhatsAppLink } from '~/core/utils/whatsapp-link'
 import { usePageSeo } from '~/core/composables/usePageSeo'
+import { useJsonLd } from '~/core/composables/useJsonLd'
 
 /**
  * Contact page (`/contact`).
@@ -123,6 +124,34 @@ useHead({
       : []),
   ],
 })
+
+// --- JSON-LD ------------------------------------------------------------
+/**
+ * `ContactPage` schema. The `mainEntity` reuses the same agency fields
+ * the home page emits so the agency node is consistent across the site.
+ * The `@id` matches the home page's `RealEstateAgent.@id` so Google
+ * treats both nodes as a single agency entity in its knowledge graph.
+ * The `address` field stays a plain string to match the home page's
+ * existing schema; a future task can upgrade both to `PostalAddress`.
+ */
+const jsonLd = computed(() => ({
+  '@context': 'https://schema.org',
+  '@type': 'ContactPage',
+  name: seoTitle.value,
+  description: seoDescription.value,
+  ...(canonicalUrl.value ? { url: canonicalUrl.value } : {}),
+  mainEntity: {
+    '@type': 'RealEstateAgent',
+    '@id': toAbsoluteUrl('/'),
+    name: site.value.agency.name,
+    telephone: site.value.agency.contact.phone,
+    email: site.value.agency.contact.email,
+    address: site.value.agency.contact.address,
+    ...(canonicalUrl.value ? { url: canonicalUrl.value } : {}),
+  },
+}))
+
+useJsonLd(jsonLd)
 </script>
 
 <template>

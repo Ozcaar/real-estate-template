@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { propertiesService } from '~/features/properties/services/properties.service'
 import { propertyTypeLabelKey, operationTypeLabelKey } from '~/features/properties/constants/property-types'
 import { usePageSeo } from '~/core/composables/usePageSeo'
+import { useJsonLd } from '~/core/composables/useJsonLd'
+import type { PropertyStatus } from '~/features/properties/types/property.types'
 
 /**
  * Property detail page (`/properties/[slug]`).
@@ -57,7 +59,7 @@ const featureRows = computed(() => [
  * page in the app) so the social card is marked up correctly. The
  * `useSeoMeta` and canonical `useHead` calls stay page-level.
  */
-const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo({
+const { canonicalUrl, toAbsoluteUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo({
   image: computed(() => p.coverImage),
 })
 
@@ -84,6 +86,73 @@ useHead({
       : []),
   ],
 })
+
+// --- JSON-LD ------------------------------------------------------------
+/**
+ * `RealEstateListing` schema for this property.
+ *
+ * The data model does not carry a structured `address` field (only
+ * free-text `location` + `city` + `state` + `country`) and the agency
+ * may not have reliable coordinates, so the schema deliberately omits
+ * `address` and `geo` — emitting a vague `PostalAddress` or a guessed
+ * geo coordinate would hurt SEO more than omitting them. When a future
+ * task adds a structured `Property.address` (e.g. via a CMS), this
+ * schema is the place to wire it in.
+ *
+ * The area unit for `floorSize` is resolved as
+ * `property.sizeUnit ?? agency.measurementUnit` so a record can opt
+ * out of the agency default (matching the per-record unit already
+ * supported in the UI). The UN/CEFACT unit codes are `MTK` (m²) and
+ * `FTK` (ft²).
+ *
+ * Availability is mapped from `PropertyStatus` to a schema.org
+ * `ItemAvailability` value. The `hidden` branch is unreachable on
+ * this page (the route returns 404 for hidden properties) but is
+ * included for exhaustiveness.
+ */
+function mapStatusToSchemaAvailability(status: PropertyStatus): string {
+  const map: Record<PropertyStatus, string> = {
+    available: 'https://schema.org/InStock',
+    reserved: 'https://schema.org/LimitedAvailability',
+    sold: 'https://schema.org/SoldOut',
+    rented: 'https://schema.org/SoldOut',
+    hidden: 'https://schema.org/Discontinued',
+  }
+  return map[status]
+}
+
+const areaUnitCode = computed(() =>
+  (p.sizeUnit ?? site.value.agency.measurementUnit) === 'imperial' ? 'FTK' : 'MTK',
+)
+
+const jsonLd = computed(() => ({
+  '@context': 'https://schema.org',
+  '@type': 'RealEstateListing',
+  ...(canonicalUrl.value ? { '@id': canonicalUrl.value } : {}),
+  name: p.title,
+  description: p.description,
+  ...(canonicalUrl.value ? { url: canonicalUrl.value } : {}),
+  image: toAbsoluteUrl(p.coverImage),
+  offers: {
+    '@type': 'Offer',
+    price: p.price,
+    priceCurrency: p.currency,
+    availability: mapStatusToSchemaAvailability(p.status),
+  },
+  ...(p.bedrooms !== undefined ? { numberOfBedrooms: p.bedrooms } : {}),
+  ...(p.bathrooms !== undefined ? { numberOfBathrooms: p.bathrooms } : {}),
+  ...(p.constructionSize !== undefined
+    ? {
+        floorSize: {
+          '@type': 'QuantitativeValue',
+          value: p.constructionSize,
+          unitCode: areaUnitCode.value,
+        },
+      }
+    : {}),
+}))
+
+useJsonLd(jsonLd)
 </script>
 
 <template>
@@ -112,6 +181,8 @@ useHead({
           ratio="4/3"
           rounded="xl"
           sizes="100vw lg:50vw"
+          loading="eager"
+          fetchpriority="high"
         />
 
         <div>

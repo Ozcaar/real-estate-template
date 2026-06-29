@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { propertiesService } from '~/features/properties/services/properties.service'
 import { operationTypeLabelKey, propertyTypeLabelKey } from '~/features/properties/constants/property-types'
 import { usePageSeo } from '~/core/composables/usePageSeo'
+import { useJsonLd } from '~/core/composables/useJsonLd'
 
 /**
  * Properties listing page (`/properties`).
@@ -62,7 +63,7 @@ const activeFilterLabel = computed(() => {
  * query string so all filtered variants point to the canonical
  * `/properties` URL.
  */
-const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo()
+const { canonicalUrl, toAbsoluteUrl, ogImage, twitterImage, twitterCard, ogLocale, siteName } = usePageSeo()
 
 const seoTitle = computed(() =>
   t('properties.seo.title', { agencyName: siteName }),
@@ -92,6 +93,27 @@ useHead({
       : []),
   ],
 })
+
+// --- JSON-LD ------------------------------------------------------------
+/**
+ * `ItemList` of the visible properties. Uses the same `properties`
+ * computed the page renders (`propertiesService.filter(filters.value)`)
+ * so the structured data matches the visible cards. The `agency.modules.properties`
+ * gate is enforced by the route itself (the page is not rendered when
+ * the module is disabled), so the JSON-LD can be emitted unconditionally.
+ */
+const jsonLd = computed(() => ({
+  '@context': 'https://schema.org',
+  '@type': 'ItemList',
+  itemListElement: properties.value.map((property, index) => ({
+    '@type': 'ListItem',
+    position: index + 1,
+    url: toAbsoluteUrl(`/properties/${property.slug}`),
+    name: property.title,
+  })),
+}))
+
+useJsonLd(jsonLd)
 
 // Page-level helpers for the visible header.
 const emptyMessage = computed(

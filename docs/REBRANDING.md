@@ -244,6 +244,18 @@ The value is read by `nuxt.config.ts` at build time. Trailing slashes are stripp
 
 When `siteUrl` is empty, `canonicalUrl` returns `null` and pages skip emitting canonical and `og:url` tags — this is intentional for local development.
 
+The template also emits **JSON-LD structured data** automatically on the pages that benefit from it. The home page, properties catalog, property detail, agents, and contact page each emit a schema.org payload as a `<script type="application/ld+json">` block. `NUXT_PUBLIC_SITE_URL` is required for absolute URLs in the structured data; with the env var empty, `@id`, `url`, and other absolute-URL fields are omitted (matching the canonical-URL fallback).
+
+| Page | Schema |
+| --- | --- |
+| `/` | `RealEstateAgent` (with `@id` to the agency home page) |
+| `/properties` | `ItemList` of `ListItem` (one per visible property card) |
+| `/properties/{slug}` | `RealEstateListing` (with `floorSize` as a `QuantitativeValue` carrying an explicit `unitCode`) |
+| `/agents` | `ItemList` of `Person` (each agent's `worksFor` references the agency home page) |
+| `/contact` | `ContactPage` with `mainEntity: RealEstateAgent` (sharing the home page's `@id`) |
+
+The home page and contact page share a `RealEstateAgent.@id` so search engines treat the agency as a single knowledge-graph node. The properties catalog and agents list each emit one entry per visible record; the property detail page emits one `RealEstateListing` per page. No configuration is required to enable or disable JSON-LD — it is wired into the page setup and produces the same output across SSG, SSR and runtime Nitro server modes.
+
 ## 10. Step 8 — Build and Verify
 
 Run the validation pipeline:
