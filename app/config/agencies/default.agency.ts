@@ -28,11 +28,11 @@ export const defaultAgencyConfig: AgencyConfig = {
     businessHours: 'Mon-Fri 9am-5pm',
   },
   social: {
-    facebook: 'www.facebook.com/youragency',
-    instagram: 'www.instagram.com/youragency',
-    linkedin: 'www.linkedin.com/youragency',
-    tiktok: 'www.tiktok.com/youragency',
-    youtube: 'www.youtube.com/youragency',
+    facebook: 'http://www.facebook.com/youragency',
+    instagram: 'http://www.instagram.com/youragency',
+    linkedin: 'http://www.linkedin.com/youragency',
+    tiktok: 'http://www.tiktok.com/youragency',
+    youtube: 'http://www.youtube.com/youragency',
   },
   modules: {
     properties: true,
