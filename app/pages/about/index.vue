@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { homeStats } from '~/features/home/data/stats'
 import { usePageSeo } from '~/core/composables/usePageSeo'
+import { useJsonLd } from '~/core/composables/useJsonLd'
 
 /**
  * About page (`/about`).
@@ -13,6 +14,7 @@ import { usePageSeo } from '~/core/composables/usePageSeo'
  * until the corresponding features land.
  */
 const { t } = useI18n()
+const site = useSiteConfig()
 
 // --- Story --------------------------------------------------------------
 /**
@@ -83,7 +85,7 @@ const stats = computed(() =>
  * the `useSeoMeta` call (for the page-specific title/description) and
  * the canonical `useHead` call.
  */
-const { canonicalUrl, ogImage, twitterImage, twitterCard, ogLocale } = usePageSeo()
+const { canonicalUrl, toAbsoluteUrl, ogImage, twitterImage, twitterCard, ogLocale } = usePageSeo()
 
 useSeoMeta({
   title: () => seoTitle.value,
@@ -108,6 +110,35 @@ useHead({
       : []),
   ],
 })
+
+// --- JSON-LD ------------------------------------------------------------
+/**
+ * `AboutPage` schema for the about page. The `mainEntity` reuses the same
+ * agency fields the home page emits so the agency node is consistent
+ * across the site. The `@id` matches the home page's `RealEstateAgent.@id`
+ * (and the contact page's `mainEntity.@id`) so Google treats all three
+ * nodes as a single agency entity in its knowledge graph. The `address`
+ * field stays a plain string to match the existing home/contact schemas;
+ * a future task can upgrade all three to `PostalAddress`.
+ */
+const jsonLd = computed(() => ({
+  '@context': 'https://schema.org',
+  '@type': 'AboutPage',
+  name: seoTitle.value,
+  description: seoDescription.value,
+  ...(canonicalUrl.value ? { url: canonicalUrl.value } : {}),
+  mainEntity: {
+    '@type': 'RealEstateAgent',
+    '@id': toAbsoluteUrl('/'),
+    name: site.value.agency.name,
+    telephone: site.value.agency.contact.phone,
+    email: site.value.agency.contact.email,
+    address: site.value.agency.contact.address,
+    ...(canonicalUrl.value ? { url: canonicalUrl.value } : {}),
+  },
+}))
+
+useJsonLd(jsonLd)
 </script>
 
 <template>
