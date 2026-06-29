@@ -53,6 +53,10 @@
         "bathrooms": "Baños",
         "parking": "Estacionamientos",
         "area": "Superficie"
+      },
+      "gallery": {
+        "viewImage": "Ver imagen {n} de {total}",
+        "thumbnails": "Imágenes de la propiedad"
       }
     },
     "types": {

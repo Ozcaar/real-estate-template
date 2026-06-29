@@ -11,9 +11,11 @@ import type { PropertyStatus } from '~/features/properties/types/property.types'
  *
  * Thin route: it looks up the property by slug through the documented
  * service, raises a proper 404 when the slug is unknown or the property is
- * hidden, then composes a clean detail layout from existing primitives. No
- * gallery carousel, map, mortgage calculator, or inquiry form — those are
- * intentionally out of scope for this foundation.
+ * hidden, then composes a clean detail layout from existing primitives. The
+ * media section uses `PropertyGallery` for the main photo set and a related-
+ * properties section reuses `PropertyGrid` with results from
+ * `propertiesService.getRelated`. A map, a mortgage calculator, and an
+ * inquiry form are intentionally out of scope for this foundation.
  */
 const { t } = useI18n()
 const site = useSiteConfig()
@@ -43,6 +45,8 @@ const areaSize = computed(() => p.constructionSize ?? p.landSize)
 const areaUnit = computed(() =>
   (p.sizeUnit ?? site.value.agency.measurementUnit) === 'imperial' ? 'ft²' : 'm²',
 )
+
+const related = computed(() => propertiesService.getRelated(p, 3))
 
 const featureRows = computed(() => [
   { key: 'bedrooms', value: p.bedrooms, icon: 'mdi:bed-outline', show: Boolean(p.bedrooms) },
@@ -175,14 +179,10 @@ useJsonLd(jsonLd)
       </div>
 
       <div class="grid items-start gap-10 lg:grid-cols-2">
-        <ResponsiveImage
-          :src="p.coverImage"
-          :alt="p.title"
-          ratio="4/3"
-          rounded="xl"
-          sizes="100vw lg:50vw"
-          loading="eager"
-          fetchpriority="high"
+        <PropertyGallery
+          :images="p.images"
+          :cover-image="p.coverImage"
+          :title="p.title"
         />
 
         <div>
@@ -286,6 +286,20 @@ useJsonLd(jsonLd)
           </BaseCard>
         </aside>
       </div>
+
+      <section
+        v-if="related.length"
+        aria-labelledby="related-heading"
+        class="mt-12 border-t border-[var(--color-border)] pt-12"
+      >
+        <BaseHeading :level="2" size="xl" id="related-heading" class="mb-6">
+          {{ t('properties.detail.similar.title') }}
+        </BaseHeading>
+        <PropertyGrid
+          :properties="related"
+          :empty-message="t('properties.detail.similar.empty')"
+        />
+      </section>
     </BaseSection>
   </article>
 </template>

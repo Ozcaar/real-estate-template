@@ -53,6 +53,10 @@
         "bathrooms": "Bathrooms",
         "parking": "Parking spaces",
         "area": "Area"
+      },
+      "gallery": {
+        "viewImage": "View image {n} of {total}",
+        "thumbnails": "Property images"
       }
     },
     "types": {
