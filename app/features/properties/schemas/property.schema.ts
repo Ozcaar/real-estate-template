@@ -5,6 +5,7 @@ import type {
   PropertyOperationType,
   PropertyStatus,
 } from '../types/property.types'
+import type { MeasurementUnit } from '~/types/agency.types'
 
 /**
  * Runtime validation for the property domain model.
@@ -38,6 +39,11 @@ export const propertyStatusSchema = z.enum([
   'hidden',
 ]) satisfies z.ZodType<PropertyStatus>
 
+export const propertySizeUnitSchema = z.enum([
+  'metric',
+  'imperial',
+]) satisfies z.ZodType<MeasurementUnit>
+
 export const propertyCoordinatesSchema = z.object({
   lat: z.number(),
   lng: z.number(),
@@ -59,6 +65,7 @@ export const propertySchema = z.object({
   bedrooms: z.number().int().nonnegative().optional(),
   bathrooms: z.number().nonnegative().optional(),
   parkingSpaces: z.number().int().nonnegative().optional(),
+  sizeUnit: propertySizeUnitSchema.optional(),
   constructionSize: z.number().nonnegative().optional(),
   landSize: z.number().nonnegative().optional(),
   images: z.array(z.string()),

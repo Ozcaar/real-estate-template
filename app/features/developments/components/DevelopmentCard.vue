@@ -47,7 +47,7 @@ const statusVariant = computed<'accent' | 'primary' | 'success' | 'neutral'>(() 
 
 const currency = computed(() => props.development.currency ?? site.value.agency.currency)
 const areaUnit = computed(() =>
-  site.value.agency.measurementUnit === 'imperial' ? 'ft²' : 'm²',
+  (props.development.sizeUnit ?? site.value.agency.measurementUnit) === 'imperial' ? 'ft²' : 'm²',
 )
 
 const hasPrice = computed(() => typeof props.development.priceFrom === 'number')

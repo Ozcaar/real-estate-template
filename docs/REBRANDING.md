@@ -131,6 +131,8 @@ Note that the shipped sample data mixes a US-style agency config (the address, p
 
 The data shapes are validated by Zod schemas under `app/features/*/schemas/`. If a value fails validation, the app will not boot. Refer to `docs/DATA_MODELS.md` for the exact field names and types.
 
+The shipped sample data declares `sizeUnit: 'metric'` on every property and development record (in `app/features/properties/data/properties.ts` and `app/features/developments/data/developments.ts`). Set it explicitly per record when replacing the data — `'metric'` for a metric-market agency, `'imperial'` for a US-style agency. Omit the field only when the agency's `measurementUnit` is the correct fallback for every record in the catalog.
+
 ## 6. Step 4 — Replace Visible Copy
 
 All visible UI text is stored in two locale files:
@@ -303,6 +305,13 @@ For each route, check:
 
 * `agency.currency` must be a valid ISO 4217 code (`USD`, `MXN`, `EUR`, …).
 * Each property in `app/features/properties/data/properties.ts` also has its own `currency` field. The card uses the per-record value, not the agency default, so a per-record override will win.
+
+### My property area is wrong
+
+* The unit shown next to a property's or development's area (`m²` or `ft²`) is determined by the record's `sizeUnit` field first, falling back to `agency.measurementUnit` when `sizeUnit` is omitted.
+* The template does **not** perform automatic m² ↔ ft² conversion. The stored number must already be in the declared unit.
+* If a record has `sizeUnit: 'metric'` and the agency is imperial, the record's number is still rendered as m² (per-record wins).
+* To switch a single record's unit, change both `sizeUnit` and the underlying number so they stay consistent. To switch the whole catalog, change every record's `sizeUnit` (or remove it to fall back to the agency default) and update the numbers in the same pass.
 
 ### A section is missing
 

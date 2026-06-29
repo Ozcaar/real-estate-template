@@ -46,6 +46,14 @@ export interface Property {
   bedrooms?: number
   bathrooms?: number
   parkingSpaces?: number
+  /**
+   * Unit of `constructionSize` and `landSize`. Defaults to the agency
+   * `measurementUnit` when omitted. The number is rendered as-is in the
+   * declared unit — the template does not perform automatic m² ↔ ft²
+   * conversion. Set this per record when a real agency mixes units in
+   * the same catalog.
+   */
+  sizeUnit?: MeasurementUnit
   constructionSize?: number
   landSize?: number
   images: string[]
@@ -91,6 +99,14 @@ export interface Development {
   availablePropertiesCount: number
   coordinates?: DevelopmentCoordinates
   active: boolean
+  /**
+   * Unit of `areaFrom` and `areaTo`. Defaults to the agency
+   * `measurementUnit` when omitted. The number is rendered as-is in the
+   * declared unit — the template does not perform automatic m² ↔ ft²
+   * conversion. Set this per record when a real agency mixes units in
+   * the same catalog.
+   */
+  sizeUnit?: MeasurementUnit
 }
 ```
 

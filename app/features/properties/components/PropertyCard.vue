@@ -25,7 +25,7 @@ const areaSize = computed(
   () => props.property.constructionSize ?? props.property.landSize,
 )
 const areaUnit = computed(() =>
-  site.value.agency.measurementUnit === 'imperial' ? 'ft²' : 'm²',
+  (props.property.sizeUnit ?? site.value.agency.measurementUnit) === 'imperial' ? 'ft²' : 'm²',
 )
 
 // Only surface a status chip when it adds information (not for plain

@@ -6,6 +6,7 @@
  * backend-friendly so the static MVP data can later be replaced by an API
  * response without touching components.
  */
+import type { MeasurementUnit } from '~/types/agency.types'
 
 export type PropertyOperationType = 'sale' | 'rent'
 
@@ -44,6 +45,16 @@ export interface Property {
   bedrooms?: number
   bathrooms?: number
   parkingSpaces?: number
+  /**
+   * Unit of `constructionSize` and `landSize`. Defaults to the agency
+   * `measurementUnit` when omitted so a record that pre-dates this field
+   * continues to render correctly.
+   *
+   * The number is rendered **as-is** in the declared unit — the template does
+   * not perform automatic m² ↔ ft² conversion. When a real agency mixes
+   * units in the same catalog, set this per record.
+   */
+  sizeUnit?: MeasurementUnit
   constructionSize?: number
   landSize?: number
   images: string[]

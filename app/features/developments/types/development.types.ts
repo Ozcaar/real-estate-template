@@ -6,6 +6,7 @@
  * backend-friendly so the static MVP data can later be replaced by an API
  * response without touching components.
  */
+import type { MeasurementUnit } from '~/types/agency.types'
 
 export type DevelopmentStatus =
   | 'pre-sale'
@@ -38,9 +39,19 @@ export interface Development {
   units?: number
   /** Typical bedroom count, e.g. 2 or 3. */
   bedrooms?: number
-  /** Smallest unit size in m² (or ft² when agency is imperial). */
+  /**
+   * Unit of `areaFrom` and `areaTo`. Defaults to the agency
+   * `measurementUnit` when omitted so a record that pre-dates this field
+   * continues to render correctly.
+   *
+   * The number is rendered **as-is** in the declared unit — the template does
+   * not perform automatic m² ↔ ft² conversion. When a real agency mixes
+   * units in the same catalog, set this per record.
+   */
+  sizeUnit?: MeasurementUnit
+  /** Smallest unit size. */
   areaFrom?: number
-  /** Largest unit size in m² (or ft² when agency is imperial). */
+  /** Largest unit size. */
   areaTo?: number
   /** Expected delivery date as an ISO 8601 string (`YYYY-MM` or `YYYY-MM-DD`). */
   deliveryDate?: string

@@ -39,7 +39,7 @@ const p = property.value
 
 const areaSize = computed(() => p.constructionSize ?? p.landSize)
 const areaUnit = computed(() =>
-  site.value.agency.measurementUnit === 'imperial' ? 'ft²' : 'm²',
+  (p.sizeUnit ?? site.value.agency.measurementUnit) === 'imperial' ? 'ft²' : 'm²',
 )
 
 const featureRows = computed(() => [
