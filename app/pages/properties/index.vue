@@ -53,7 +53,11 @@ const isFiltered = computed(() => propertiesCount.value !== totalVisible.value)
 
 // Build a localized, human-readable description of the active filters for
 // the visible count line. Falls back to a plain count when no filter is
-// active.
+// active. The location value is the only field that displays raw user
+// input (operation and type are enum values that resolve through i18n),
+// so it is the only one that needs a defensive length cap to keep the
+// status line visually clean for very long query strings.
+const LOCATION_LABEL_MAX = 100
 const activeFilterLabel = computed(() => {
   const parts: string[] = []
   const op = filters.value.operation
@@ -61,7 +65,11 @@ const activeFilterLabel = computed(() => {
   const lo = filters.value.location
   if (op) parts.push(t(operationTypeLabelKey(op as 'sale' | 'rent')))
   if (ty) parts.push(t(propertyTypeLabelKey(ty as 'house' | 'apartment' | 'land' | 'commercial' | 'office')))
-  if (lo) parts.push(lo)
+  if (lo) {
+    parts.push(lo.length > LOCATION_LABEL_MAX
+      ? `${lo.slice(0, LOCATION_LABEL_MAX)}…`
+      : lo)
+  }
   return parts.length ? parts.join(' · ') : ''
 })
 

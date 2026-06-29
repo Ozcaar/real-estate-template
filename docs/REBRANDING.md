@@ -250,12 +250,12 @@ The template also emits **JSON-LD structured data** automatically on the pages t
 | --- | --- |
 | `/` | `RealEstateAgent` (with `@id` to the agency home page) |
 | `/properties` | `ItemList` of `ListItem` (one per visible property card) |
-| `/properties/{slug}` | `RealEstateListing` (with `floorSize` as a `QuantitativeValue` carrying an explicit `unitCode`) |
+| `/properties/{slug}` | `RealEstateListing` (with `floorSize` as a `QuantitativeValue` carrying an explicit `unitCode`) + `ItemList` of `ListItem` for the related properties (one per related card; `itemListElement` is `[]` when there are no related properties) |
 | `/agents` | `ItemList` of `Person` (each agent's `worksFor` references the agency home page) |
 | `/contact` | `ContactPage` with `mainEntity: RealEstateAgent` (sharing the home page's `@id`) |
 | `/about` | `AboutPage` with `mainEntity: RealEstateAgent` (sharing the home page's `@id`) |
 
-The home page, contact page, and about page share a `RealEstateAgent.@id` (the home page's absolute URL) so search engines treat the agency as a single knowledge-graph node. The properties catalog and agents list each emit one entry per visible record; the property detail page emits one `RealEstateListing` per page. No configuration is required to enable or disable JSON-LD — it is wired into the page setup and produces the same output across SSG, SSR and runtime Nitro server modes.
+The home page, contact page, and about page share a `RealEstateAgent.@id` (the home page's absolute URL) so search engines treat the agency as a single knowledge-graph node. The properties catalog and agents list each emit one entry per visible record; the property detail page emits one `RealEstateListing` per page plus a second `ItemList` of `ListItem` for the related properties. The related `ItemList` is **always emitted** (the page does not gate its registration on `related.length`); when there are no related properties the `itemListElement` is an empty array, which is a valid but inert `ItemList` and is handled gracefully by Google's structured-data parser. The visible related-properties section is separately gated on `v-if="related.length"` so the user never sees an empty section — the two gates are independent. No configuration is required to enable or disable JSON-LD — it is wired into the page setup and produces the same output across SSG, SSR and runtime Nitro server modes.
 
 ## 10. Step 8 — Build and Verify
 

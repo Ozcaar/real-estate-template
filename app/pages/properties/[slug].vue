@@ -157,6 +157,34 @@ const jsonLd = computed(() => ({
 }))
 
 useJsonLd(jsonLd)
+
+// --- Related-properties JSON-LD -----------------------------------------
+/**
+ * `ItemList` of `ListItem` for the visible related properties section.
+ * Mirrors the catalog page's pattern exactly — each `ListItem` carries a
+ * `position` (1-N, matching the visible order), a canonical `url`, and
+ * the property's `name` as the list title. The section is gated on
+ * `related.length > 0` in the template, so when there are no related
+ * properties the payload emits an empty `itemListElement: []` (a valid
+ * but inert `ItemList` — Google handles empty lists gracefully). The
+ * existing `RealEstateListing` payload is unaffected; the two scripts
+ * share the head but have different top-level `@type`s and do not
+ * collide. The `ListItem.url` values are the related property's own
+ * canonical URLs (e.g. `/properties/{slug}`), distinct from the current
+ * page's `RealEstateListing.url`.
+ */
+const relatedJsonLd = computed(() => ({
+  '@context': 'https://schema.org',
+  '@type': 'ItemList',
+  itemListElement: related.value.map((property, index) => ({
+    '@type': 'ListItem',
+    position: index + 1,
+    url: toAbsoluteUrl(`/properties/${property.slug}`),
+    name: property.title,
+  })),
+}))
+
+useJsonLd(relatedJsonLd)
 </script>
 
 <template>
