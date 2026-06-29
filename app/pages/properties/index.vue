@@ -131,6 +131,7 @@ const emptyMessage = computed(
     />
 
     <div
+      aria-live="polite"
       class="mx-auto mt-6 flex max-w-5xl flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)] sm:flex-row sm:justify-center sm:gap-3"
     >
       <p>
@@ -154,6 +155,7 @@ const emptyMessage = computed(
       <PropertyGrid
         :properties="properties"
         :empty-message="emptyMessage"
+        :clear-filters-href="route.path"
       />
     </div>
   </BaseSection>
