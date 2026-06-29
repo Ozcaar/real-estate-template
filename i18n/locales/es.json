@@ -23,6 +23,18 @@
   "properties": {
     "title": "Propiedades",
     "perMonth": "/ mes",
+    "page": {
+      "title": "Propiedades en venta y renta",
+      "subtitle": "Explora nuestro catálogo completo de casas, departamentos, terrenos y espacios comerciales disponibles en las zonas donde operamos."
+    },
+    "seo": {
+      "title": "Propiedades en venta y renta | {agencyName}",
+      "description": "Explora el catálogo completo de casas, departamentos, terrenos y espacios comerciales disponibles en venta o renta. Filtra por tipo, operación y ubicación para encontrar la propiedad ideal."
+    },
+    "empty": {
+      "title": "No se encontraron propiedades",
+      "description": "No encontramos propiedades que coincidan con tus criterios. Ajusta los filtros o vuelve pronto — nuestro catálogo se actualiza con frecuencia."
+    },
     "types": {
       "house": "Casa",
       "apartment": "Departamento",
@@ -56,6 +68,10 @@
       "ctaPrimary": "Ver propiedades",
       "ctaSecondary": "Contáctanos",
       "imageAlt": "Una casa moderna con grandes ventanales al atardecer"
+    },
+    "seo": {
+      "title": "Encuentra propiedades en venta y renta | {agencyName}",
+      "description": "Explora casas, departamentos, terrenos y desarrollos disponibles en venta o renta en las zonas donde operamos. Habla con nuestro equipo para recibir recomendaciones personalizadas."
     },
     "search": {
       "operationLabel": "Operación",

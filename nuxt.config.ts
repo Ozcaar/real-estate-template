@@ -46,6 +46,17 @@ export default defineNuxtConfig({
     },
   },
 
+  // Public runtime config. `siteUrl` is the base URL used by SEO metadata
+  // (canonical links, `og:url`, and absolute Open Graph / Twitter image URLs).
+  // It is empty by default so the app builds and runs without configuration;
+  // when set (e.g. via `NUXT_PUBLIC_SITE_URL=https://example.com`), the SEO
+  // helpers in `app/pages/index.vue` emit absolute URLs.
+  runtimeConfig: {
+    public: {
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || '',
+    },
+  },
+
   app: {
     head: {
       htmlAttrs: { lang: 'en' },

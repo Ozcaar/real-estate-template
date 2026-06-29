@@ -23,6 +23,18 @@
   "properties": {
     "title": "Properties",
     "perMonth": "/ month",
+    "page": {
+      "title": "Properties for sale and rent",
+      "subtitle": "Browse our full catalog of homes, apartments, land and commercial spaces available across the areas we serve."
+    },
+    "seo": {
+      "title": "Properties for sale and rent | {agencyName}",
+      "description": "Browse the full catalog of homes, apartments, land and commercial spaces available for sale or rent. Filter by type, operation and location to find the right property for you."
+    },
+    "empty": {
+      "title": "No properties found",
+      "description": "We could not find any properties matching your criteria. Try adjusting your filters or check back soon — our catalog is updated regularly."
+    },
     "types": {
       "house": "House",
       "apartment": "Apartment",
@@ -56,6 +68,10 @@
       "ctaPrimary": "Browse properties",
       "ctaSecondary": "Contact us",
       "imageAlt": "A modern home with large windows at dusk"
+    },
+    "seo": {
+      "title": "Find properties for sale and rent | {agencyName}",
+      "description": "Browse homes, apartments, land and developments available for sale or rent across the areas we serve. Get in touch with our team for personalized recommendations."
     },
     "search": {
       "operationLabel": "Operation",
