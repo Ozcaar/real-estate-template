@@ -2,6 +2,28 @@ import type { Property } from '../types/property.types'
 import { sampleProperties } from '../data/properties'
 
 /**
+ * Typed filter shape consumed by {@link propertiesService.filter}. All fields
+ * are optional; undefined means "do not filter on this criterion". Values are
+ * compared case-insensitively against the matching property fields.
+ */
+export interface PropertyFilters {
+  /** Match against `Property.operationType` (`sale` | `rent`). */
+  operation?: string
+  /** Match against `Property.propertyType` (`house`, `apartment`, ...). */
+  type?: string
+  /**
+   * Free-text match against `Property.location`, `Property.city`,
+   * `Property.state` and `Property.country` — the same places the
+   * `HomeSearchBar` and `HomeLocations` sections link to.
+   */
+  location?: string
+}
+
+function normalize(value: string | undefined | null): string {
+  return (value ?? '').trim().toLowerCase()
+}
+
+/**
  * Properties business logic.
  *
  * For the MVP this reads from local static data. Because every consumer goes
@@ -24,6 +46,39 @@ export const propertiesService = {
     return sampleProperties.find(
       property => property.slug === slug && property.status !== 'hidden',
     )
+  },
+
+  /**
+   * Filter the visible property catalog by a typed set of criteria. Hidden
+   * properties are always excluded. Empty / undefined filter values are
+   * treated as "no constraint" so callers can pass a raw `useRoute().query`
+   * shape without sanitizing it first.
+   */
+  filter(filters: PropertyFilters): Property[] {
+    const operation = normalize(filters.operation)
+    const type = normalize(filters.type)
+    const location = normalize(filters.location)
+
+    return this.getAll().filter((property) => {
+      if (operation && normalize(property.operationType) !== operation) {
+        return false
+      }
+      if (type && normalize(property.propertyType) !== type) {
+        return false
+      }
+      if (location) {
+        const haystack = [
+          property.location,
+          property.city,
+          property.state,
+          property.country,
+        ]
+          .map(normalize)
+          .join(' ')
+        if (!haystack.includes(location)) return false
+      }
+      return true
+    })
   },
 
   /**

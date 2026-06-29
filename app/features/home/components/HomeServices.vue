@@ -47,6 +47,7 @@ const services = computed(() => [
           :icon="service.icon"
           :title="service.title"
           :description="service.description"
+          :align="'center'"
         />
       </BaseCard>
     </div>

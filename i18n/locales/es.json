@@ -35,6 +35,10 @@
       "title": "No se encontraron propiedades",
       "description": "No encontramos propiedades que coincidan con tus criterios. Ajusta los filtros o vuelve pronto — nuestro catálogo se actualiza con frecuencia."
     },
+    "filters": {
+      "activeLabel": "Filtrado por",
+      "clear": "Limpiar filtros"
+    },
     "detail": {
       "backToProperties": "Volver a propiedades",
       "features": "Características",
@@ -183,5 +187,162 @@
     "contact": "Contacto",
     "rights": "Todos los derechos reservados.",
     "whatsappLabel": "Chatea por WhatsApp"
+  },
+  "contact": {
+    "page": {
+      "title": "Contáctanos",
+      "subtitle": "Habla con nuestro equipo sobre comprar, vender o rentar. Te responderemos lo antes posible."
+    },
+    "seo": {
+      "title": "Contáctanos | {agencyName}",
+      "description": "Habla con nuestro equipo inmobiliario. Llámanos, escríbenos, chatea por WhatsApp o visita nuestra oficina — estamos aquí para ayudarte con tu próximo movimiento."
+    },
+    "methods": {
+      "phone": "Teléfono",
+      "whatsapp": "WhatsApp",
+      "email": "Correo",
+      "address": "Dirección",
+      "businessHours": "Horario de oficina"
+    },
+    "form": {
+      "title": "Envíanos un mensaje",
+      "description": "Completa el formulario y un miembro de nuestro equipo se pondrá en contacto contigo pronto.",
+      "nameLabel": "Nombre completo",
+      "namePlaceholder": "Tu nombre completo",
+      "emailLabel": "Correo electrónico",
+      "emailPlaceholder": "tu{'@'}ejemplo.com",
+      "phoneLabel": "Teléfono",
+      "phonePlaceholder": "+52 81 1234 5678",
+      "messageLabel": "Mensaje",
+      "messagePlaceholder": "¿En qué podemos ayudarte?",
+      "submit": "Enviar mensaje",
+      "placeholderNotice": "El envío del formulario aún no está habilitado en esta plantilla. Por favor usa uno de los métodos de contacto de la izquierda mientras se completa la integración."
+    }
+  },
+  "about": {
+    "seo": {
+      "title": "Nosotros | {agencyName}",
+      "description": "Conoce más sobre {agencyName} — nuestra historia, valores y conocimiento del mercado local. Un socio inmobiliario de confianza para comprar, vender y rentar."
+    },
+    "page": {
+      "title": "Sobre {agencyName}",
+      "subtitle": "Un equipo de profesionales inmobiliarios dedicados a ayudar a las personas a comprar, vender y rentar con confianza."
+    },
+    "story": {
+      "eyebrow": "Nuestra historia",
+      "title": "Un socio de confianza en cada paso",
+      "description": "Somos un equipo de profesionales inmobiliarios dedicados a ayudar a las personas a comprar, vender y rentar con confianza. El conocimiento local y el trato personal son el centro de todo lo que hacemos. Desde tu primera búsqueda hasta las llaves en tu mano, te acompañamos en cada paso."
+    },
+    "values": {
+      "eyebrow": "Lo que nos define",
+      "title": "Nuestros valores",
+      "subtitle": "Los principios que guían cada conversación, listado y cierre.",
+      "items": {
+        "trust": {
+          "title": "Confianza",
+          "description": "Asesoramiento honesto y procesos transparentes — nos ganamos la reputación un cliente a la vez."
+        },
+        "expertise": {
+          "title": "Conocimiento local",
+          "description": "Profundo conocimiento de las colonias, precios y tendencias en cada zona donde operamos."
+        },
+        "care": {
+          "title": "Atención personal",
+          "description": "Cada cliente es diferente. Escuchamos primero y luego recomendamos el camino que realmente se adapta."
+        },
+        "results": {
+          "title": "Resultados comprobados",
+          "description": "Un historial de ventas exitosas, inquilinos satisfechos y relaciones a largo plazo."
+        }
+      }
+    },
+    "stats": {
+      "eyebrow": "En números",
+      "title": "La confianza de clientes en toda la región",
+      "items": {
+        "experience": {
+          "label": "Años de experiencia",
+          "description": "Ayudando a familias e inversionistas a encontrar la propiedad correcta."
+        },
+        "properties": {
+          "label": "Propiedades publicadas",
+          "description": "Desde casas iniciales hasta espacios comerciales y terrenos."
+        },
+        "clients": {
+          "label": "Clientes satisfechos",
+          "description": "Compradores, vendedores e inquilinos que hemos acompañado a lo largo de los años."
+        },
+        "areas": {
+          "label": "Zonas atendidas",
+          "description": "A través de las ciudades y colonias que mejor conocemos."
+        }
+      }
+    },
+    "cta": {
+      "title": "¿Listo para dar tu próximo paso?",
+      "description": "Habla con nuestro equipo y recibe recomendaciones personalizadas para comprar, vender o rentar.",
+      "primary": "Contáctanos",
+      "secondary": "Ver propiedades"
+    }
+  },
+  "agents": {
+    "seo": {
+      "title": "Nuestro equipo | {agencyName}",
+      "description": "Conoce al equipo de {agencyName} — asesores inmobiliarios con experiencia listos para ayudarte a comprar, vender o rentar."
+    },
+    "page": {
+      "title": "Nuestro equipo",
+      "subtitle": "Asesores con experiencia que conocen el mercado local y están listos para guiarte en cada paso."
+    },
+    "card": {
+      "specialtiesLabel": "Especialidades",
+      "call": "Llamar",
+      "email": "Correo",
+      "whatsapp": "WhatsApp"
+    },
+    "empty": {
+      "title": "Aún no hay asesores listados",
+      "description": "Nuestra página de equipo se está preparando. Mientras tanto, usa la página de contacto para comunicarte con nosotros."
+    },
+    "cta": {
+      "title": "¿No estás seguro de a quién contactar?",
+      "description": "Envíanos un mensaje y te conectaremos con el asesor adecuado según tus necesidades.",
+      "primary": "Contáctanos"
+    }
+  },
+  "developments": {
+    "seo": {
+      "title": "Desarrollos | {agencyName}",
+      "description": "Explora desarrollos residenciales nuevos y próximos de {agencyName}. Preventa, en construcción y listos para entregar."
+    },
+    "page": {
+      "title": "Desarrollos",
+      "subtitle": "Nuevos proyectos residenciales en las zonas donde operamos — desde preventa hasta listos para entregar."
+    },
+    "status": {
+      "preSale": "Preventa",
+      "underConstruction": "En construcción",
+      "readyToDeliver": "Listo para entregar",
+      "soldOut": "Agotado"
+    },
+    "card": {
+      "from": "Desde",
+      "priceOnRequest": "Precio a consultar",
+      "units": "{count} unidades",
+      "bedrooms": "{count} recámaras",
+      "areaFrom": "Desde {size}",
+      "areaTo": "Hasta {size}",
+      "delivery": "Entrega"
+    },
+    "empty": {
+      "title": "Aún no hay desarrollos listados",
+      "description": "Los nuevos proyectos aparecerán aquí cuando se anuncien. Contáctanos para conocer las próximas oportunidades."
+    },
+    "cta": {
+      "title": "¿Te interesa un desarrollo?",
+      "description": "Habla con nuestro equipo sobre precios de preventa, planos, disponibilidad y próximos lanzamientos.",
+      "primary": "Contáctanos",
+      "secondary": "Ver propiedades"
+    }
   }
 }

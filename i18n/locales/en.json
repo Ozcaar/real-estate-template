@@ -35,6 +35,10 @@
       "title": "No properties found",
       "description": "We could not find any properties matching your criteria. Try adjusting your filters or check back soon — our catalog is updated regularly."
     },
+    "filters": {
+      "activeLabel": "Filtered by",
+      "clear": "Clear filters"
+    },
     "detail": {
       "backToProperties": "Back to properties",
       "features": "Features",
@@ -183,5 +187,162 @@
     "contact": "Contact",
     "rights": "All rights reserved.",
     "whatsappLabel": "Chat on WhatsApp"
+  },
+  "contact": {
+    "page": {
+      "title": "Get in touch",
+      "subtitle": "Talk to our team about buying, selling or renting. We will get back to you as soon as possible."
+    },
+    "seo": {
+      "title": "Contact us | {agencyName}",
+      "description": "Get in touch with our real estate team. Call, email, WhatsApp or visit our office — we are here to help with your next move."
+    },
+    "methods": {
+      "phone": "Phone",
+      "whatsapp": "WhatsApp",
+      "email": "Email",
+      "address": "Address",
+      "businessHours": "Office hours"
+    },
+    "form": {
+      "title": "Send us a message",
+      "description": "Fill out the form and a member of our team will get back to you shortly.",
+      "nameLabel": "Full name",
+      "namePlaceholder": "Your full name",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you{'@'}example.com",
+      "phoneLabel": "Phone",
+      "phonePlaceholder": "+1 555 123 4567",
+      "messageLabel": "Message",
+      "messagePlaceholder": "How can we help?",
+      "submit": "Send message",
+      "placeholderNotice": "Form submission is not enabled in this template yet. Please use one of the contact methods on the left while the integration is being built."
+    }
+  },
+  "about": {
+    "seo": {
+      "title": "About us | {agencyName}",
+      "description": "Learn more about {agencyName} — our story, values and local market expertise. A trusted real estate partner for buying, selling and renting."
+    },
+    "page": {
+      "title": "About {agencyName}",
+      "subtitle": "A team of dedicated real estate professionals helping people buy, sell and rent with confidence."
+    },
+    "story": {
+      "eyebrow": "Our story",
+      "title": "A trusted partner for every move",
+      "description": "We are a team of dedicated real estate professionals helping people buy, sell and rent with confidence. Local expertise and a personal approach are at the heart of everything we do. From your first search to the keys in your hand, we are with you at every step."
+    },
+    "values": {
+      "eyebrow": "What we stand for",
+      "title": "Our values",
+      "subtitle": "The principles that guide every conversation, listing and closing.",
+      "items": {
+        "trust": {
+          "title": "Trust",
+          "description": "Honest advice and transparent processes — we earn our reputation one client at a time."
+        },
+        "expertise": {
+          "title": "Local expertise",
+          "description": "Deep knowledge of the neighborhoods, prices and trends in every area we serve."
+        },
+        "care": {
+          "title": "Personal care",
+          "description": "Every client is different. We listen first, then recommend the path that truly fits."
+        },
+        "results": {
+          "title": "Proven results",
+          "description": "A track record of successful sales, satisfied renters and long-term relationships."
+        }
+      }
+    },
+    "stats": {
+      "eyebrow": "By the numbers",
+      "title": "Trusted by clients across the region",
+      "items": {
+        "experience": {
+          "label": "Years of experience",
+          "description": "Helping families and investors find the right property."
+        },
+        "properties": {
+          "label": "Properties listed",
+          "description": "From starter homes to commercial spaces and land."
+        },
+        "clients": {
+          "label": "Happy clients",
+          "description": "Buyers, sellers and renters we have supported over the years."
+        },
+        "areas": {
+          "label": "Areas served",
+          "description": "Across the cities and neighborhoods that we know best."
+        }
+      }
+    },
+    "cta": {
+      "title": "Ready to make your next move?",
+      "description": "Talk to our team and get personalized recommendations for buying, selling or renting.",
+      "primary": "Contact us",
+      "secondary": "View properties"
+    }
+  },
+  "agents": {
+    "seo": {
+      "title": "Our team | {agencyName}",
+      "description": "Meet the {agencyName} team — experienced real estate advisors ready to help you buy, sell or rent."
+    },
+    "page": {
+      "title": "Our team",
+      "subtitle": "Experienced advisors who know the local market and are ready to guide you at every step."
+    },
+    "card": {
+      "specialtiesLabel": "Specialties",
+      "call": "Call",
+      "email": "Email",
+      "whatsapp": "WhatsApp"
+    },
+    "empty": {
+      "title": "No advisors listed yet",
+      "description": "Our team page is being prepared. In the meantime, please use the contact page to reach us."
+    },
+    "cta": {
+      "title": "Not sure who to contact?",
+      "description": "Send us a message and we will connect you with the right advisor for your needs.",
+      "primary": "Contact us"
+    }
+  },
+  "developments": {
+    "seo": {
+      "title": "Developments | {agencyName}",
+      "description": "Explore new and upcoming residential developments from {agencyName}. Pre-sale, under construction and ready to deliver."
+    },
+    "page": {
+      "title": "Developments",
+      "subtitle": "New residential projects across the areas we serve — from pre-sale to ready to deliver."
+    },
+    "status": {
+      "preSale": "Pre-sale",
+      "underConstruction": "Under construction",
+      "readyToDeliver": "Ready to deliver",
+      "soldOut": "Sold out"
+    },
+    "card": {
+      "from": "From",
+      "priceOnRequest": "Price on request",
+      "units": "{count} units",
+      "bedrooms": "{count} bedrooms",
+      "areaFrom": "From {size}",
+      "areaTo": "Up to {size}",
+      "delivery": "Delivery"
+    },
+    "empty": {
+      "title": "No developments listed yet",
+      "description": "New projects will appear here as they are announced. Contact us to learn about upcoming opportunities."
+    },
+    "cta": {
+      "title": "Interested in a development?",
+      "description": "Talk to our team about pre-sale pricing, floor plans, availability and upcoming launches.",
+      "primary": "Contact us",
+      "secondary": "View properties"
+    }
   }
 }
