@@ -89,4 +89,86 @@ export const propertiesService = {
     const featured = this.getAll().filter(property => property.featured)
     return typeof limit === 'number' ? featured.slice(0, limit) : featured
   },
+
+  /**
+   * Find properties similar to `current` using only existing data-model
+   * fields. The result is consumed by the related-properties section on the
+   * property detail page.
+   *
+   * Weighted score over the visible catalog:
+   *
+   *   +3  same propertyType
+   *   +2  same operationType
+   *   +2  same city
+   *   +1  same country (only when city did not already match)
+   *   +2  same developmentId (sibling units in the same project)
+   *   +1  same agentId
+   *   +1  price within 30% of `current.price`
+   *
+   * Excluded: the current property itself and any record whose status is
+   * not `available` or `reserved` (sold, rented and hidden properties are
+   * not surfaced as related listings).
+   *
+   * Results are sorted by score (desc), then by `featured` (desc), then
+   * by `id` (asc) for a deterministic order, and capped at `limit`.
+   *
+   * Graceful fallback: when the rule produces no positive-score
+   * candidates (e.g. a single-property catalog), the function falls
+   * back to `getFeatured(limit)` filtered by the same exclusion
+   * predicate so the current property is never surfaced as its own
+   * related listing and sold / rented records are never included.
+   */
+  getRelated(current: Property, limit = 3): Property[] {
+    const isRelatedCandidate = (property: Property) =>
+      property.id !== current.id
+      && (property.status === 'available' || property.status === 'reserved')
+
+    const candidates = this.getAll().filter(isRelatedCandidate)
+
+    type Scored = { property: Property; score: number }
+    const scored: Scored[] = candidates.map((property) => {
+      let score = 0
+      if (property.propertyType === current.propertyType) score += 3
+      if (property.operationType === current.operationType) score += 2
+      if (property.city === current.city) {
+        score += 2
+      } else if (property.country === current.country) {
+        score += 1
+      }
+      if (
+        current.developmentId !== undefined
+        && property.developmentId === current.developmentId
+      ) {
+        score += 2
+      }
+      if (
+        current.agentId !== undefined
+        && property.agentId === current.agentId
+      ) {
+        score += 1
+      }
+      if (
+        current.price > 0
+        && Math.abs(property.price - current.price) / current.price <= 0.3
+      ) {
+        score += 1
+      }
+      return { property, score }
+    })
+
+    const positives = scored
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score
+        if (a.property.featured !== b.property.featured) {
+          return a.property.featured ? -1 : 1
+        }
+        return a.property.id.localeCompare(b.property.id)
+      })
+      .slice(0, limit)
+      .map((entry) => entry.property)
+
+    if (positives.length > 0) return positives
+    return this.getFeatured(limit).filter(isRelatedCandidate)
+  },
 }

@@ -57,6 +57,10 @@
       "gallery": {
         "viewImage": "Ver imagen {n} de {total}",
         "thumbnails": "Imágenes de la propiedad"
+      },
+      "similar": {
+        "title": "Propiedades similares",
+        "empty": "No hay propiedades similares disponibles en este momento"
       }
     },
     "types": {

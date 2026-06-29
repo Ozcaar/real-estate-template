@@ -292,7 +292,7 @@ useJsonLd(jsonLd)
         aria-labelledby="related-heading"
         class="mt-12 border-t border-[var(--color-border)] pt-12"
       >
-        <BaseHeading :level="2" size="xl" id="related-heading" class="mb-6">
+        <BaseHeading id="related-heading" :level="2" size="xl" class="mb-6">
           {{ t('properties.detail.similar.title') }}
         </BaseHeading>
         <PropertyGrid
