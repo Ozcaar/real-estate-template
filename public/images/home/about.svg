@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="About the agency placeholder">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#334155"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#g)"/>
+  <g fill="#ffffff" opacity="0.10">
+    <rect x="120" y="250" width="120" height="280"/>
+    <rect x="270" y="200" width="130" height="330"/>
+    <rect x="430" y="260" width="120" height="270"/>
+    <rect x="580" y="220" width="120" height="310"/>
+  </g>
+  <g fill="#ffffff" opacity="0.9">
+    <circle cx="400" cy="300" r="60"/>
+    <path d="M400 300 l0 -38 a38 38 0 0 1 33 19 z" fill="#0F172A"/>
+  </g>
+</svg>

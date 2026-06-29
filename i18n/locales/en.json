@@ -1,0 +1,154 @@
+{
+  "nav": {
+    "home": "Home",
+    "properties": "Properties",
+    "developments": "Developments",
+    "agents": "Agents",
+    "about": "About Us",
+    "contact": "Contact"
+  },
+  "common": {
+    "contact": "Contact",
+    "viewDetails": "View details",
+    "learnMore": "Learn more",
+    "loading": "Loading...",
+    "empty": "No results found",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "mainNavigation": "Main navigation",
+    "selectLanguage": "Select language",
+    "skipToContent": "Skip to content"
+  },
+  "properties": {
+    "title": "Properties",
+    "perMonth": "/ month",
+    "types": {
+      "house": "House",
+      "apartment": "Apartment",
+      "land": "Land",
+      "commercial": "Commercial",
+      "office": "Office"
+    },
+    "operations": {
+      "sale": "For sale",
+      "rent": "For rent"
+    },
+    "status": {
+      "available": "Available",
+      "sold": "Sold",
+      "rented": "Rented",
+      "reserved": "Reserved",
+      "hidden": "Hidden"
+    },
+    "features": {
+      "bedrooms": "Bedrooms",
+      "bathrooms": "Bathrooms",
+      "parking": "Parking spaces",
+      "area": "Area"
+    }
+  },
+  "home": {
+    "hero": {
+      "eyebrow": "Real estate made simple",
+      "title": "Find your ideal property",
+      "subtitle": "Explore homes, apartments, land and developments available for sale or rent across the areas we serve.",
+      "ctaPrimary": "Browse properties",
+      "ctaSecondary": "Contact us",
+      "imageAlt": "A modern home with large windows at dusk"
+    },
+    "search": {
+      "operationLabel": "Operation",
+      "anyOperation": "Buy or rent",
+      "typeLabel": "Property type",
+      "anyType": "Any type",
+      "locationLabel": "Location",
+      "locationPlaceholder": "City or neighborhood",
+      "submit": "Search"
+    },
+    "propertySearch": {
+      "eyebrow": "Property search",
+      "title": "Find the right property",
+      "subtitle": "Filter by operation, type and location to narrow down the options that fit you best."
+    },
+    "featured": {
+      "eyebrow": "Featured",
+      "title": "Featured properties",
+      "subtitle": "A handpicked selection of homes and spaces available right now.",
+      "viewAll": "View all properties",
+      "empty": "No featured properties are available at the moment."
+    },
+    "categories": {
+      "eyebrow": "Categories",
+      "title": "Browse by property type",
+      "subtitle": "Find exactly the kind of space you are looking for."
+    },
+    "services": {
+      "eyebrow": "Why choose us",
+      "title": "Everything you need to find the right place",
+      "subtitle": "From your first search to the keys in your hand, we guide you through every step.",
+      "items": {
+        "discover": {
+          "title": "Discover properties",
+          "description": "Browse a curated catalog of properties that match your budget and lifestyle."
+        },
+        "sell": {
+          "title": "Sell with confidence",
+          "description": "List your property and reach qualified buyers with expert guidance."
+        },
+        "guidance": {
+          "title": "Expert guidance",
+          "description": "Get clear, honest advice at every stage, from financing to closing."
+        },
+        "explore": {
+          "title": "Explore locations",
+          "description": "Discover neighborhoods and developments across the areas we serve."
+        }
+      }
+    },
+    "about": {
+      "eyebrow": "About us",
+      "title": "A trusted partner for every move",
+      "body": "We are a team of dedicated real estate professionals helping people buy, sell and rent with confidence. Local expertise and a personal approach are at the heart of everything we do.",
+      "cta": "Learn more about us",
+      "imageAlt": "Our team in front of the city skyline",
+      "stats": {
+        "experience": "Years of experience",
+        "properties": "Properties listed",
+        "clients": "Happy clients",
+        "areas": "Areas served"
+      }
+    },
+    "locations": {
+      "eyebrow": "Locations",
+      "title": "Areas we serve",
+      "subtitle": "Explore available properties across the regions we know best.",
+      "propertyCount": "{count} properties"
+    },
+    "testimonials": {
+      "eyebrow": "Testimonials",
+      "title": "What our clients say",
+      "subtitle": "Real stories from people who found their place with us.",
+      "rating": "{rating} out of 5 stars"
+    },
+    "cta": {
+      "title": "Ready to find your next home?",
+      "description": "Talk to our team and get personalized recommendations today.",
+      "action": "Get in touch"
+    },
+    "contactCta": {
+      "secondaryAction": "View properties",
+      "contactLabel": "Or reach us directly",
+      "phoneLabel": "Call us",
+      "emailLabel": "Email us",
+      "whatsappLabel": "Chat on WhatsApp",
+      "addressLabel": "Visit us"
+    }
+  },
+  "footer": {
+    "tagline": "Your trusted real estate partner.",
+    "quickLinks": "Quick links",
+    "contact": "Contact",
+    "rights": "All rights reserved.",
+    "whatsappLabel": "Chat on WhatsApp"
+  }
+}

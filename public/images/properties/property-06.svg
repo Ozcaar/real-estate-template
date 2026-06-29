@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Property photo placeholder">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#g)"/>
+  <g fill="#ffffff" opacity="0.10">
+    <rect x="120" y="260" width="130" height="270"/>
+    <rect x="560" y="240" width="140" height="290"/>
+  </g>
+  <g fill="#ffffff" opacity="0.92">
+    <rect x="320" y="200" width="160" height="290"/>
+  </g>
+  <g fill="#312E81" opacity="0.9">
+    <rect x="340" y="225" width="40" height="40"/>
+    <rect x="420" y="225" width="40" height="40"/>
+    <rect x="340" y="290" width="40" height="40"/>
+    <rect x="420" y="290" width="40" height="40"/>
+    <rect x="340" y="355" width="40" height="40"/>
+    <rect x="420" y="355" width="40" height="40"/>
+  </g>
+</svg>

@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/*
+ * Global foundation.
+ *
+ * Theme token VALUES are not declared here — they are injected at runtime from
+ * the active agency's theme object (see `plugins/theme.ts` +
+ * `core/utils/theme-to-css-vars.ts`). This file only consumes those tokens via
+ * `var(--token, fallback)` so the app still renders sensibly if a token is
+ * ever missing.
+ */
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100vh;
+    background-color: var(--color-background, #ffffff);
+    color: var(--color-foreground, #111827);
+    font-family: var(--font-body, system-ui, sans-serif);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading, system-ui, sans-serif);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary, #0f766e);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -1,0 +1,43 @@
+import type { AgencyConfig } from '~/types/agency.types'
+
+/**
+ * Default agency configuration.
+ *
+ * This is the placeholder identity shipped with the template. To rebrand the
+ * site for a real agency, copy this file (e.g. `acme.agency.ts`), adjust the
+ * values, and point `site.config.ts` at it. No component changes required.
+ */
+export const defaultAgencyConfig: AgencyConfig = {
+  id: 'default',
+  name: 'Real Estate Agency',
+  slogan: 'Find your ideal property',
+  logo: '/images/logo.svg',
+  favicon: '/favicon.ico',
+  theme: 'default',
+  defaultLocale: 'en',
+  availableLocales: ['en', 'es'],
+  currency: 'USD',
+  measurementUnit: 'metric',
+  contact: {
+    phone: '1-800-555-1234',
+    whatsapp: '1-800-555-1234',
+    email: 'example@email.com',
+    address: '123 Main Street, Anytown, USA',
+    businessHours: 'Mon-Fri 9am-5pm',
+  },
+  social: {
+    facebook: 'www.facebook.com/youragency',
+    instagram: 'www.instagram.com/youragency',
+    linkedin: 'www.linkedin.com/youragency',
+    tiktok: 'www.tiktok.com/youragency',
+    youtube: 'www.youtube.com/youragency',
+  },
+  modules: {
+    properties: true,
+    developments: true,
+    agents: true,
+    blog: false,
+    testimonials: true,
+    contact: true,
+  },
+}

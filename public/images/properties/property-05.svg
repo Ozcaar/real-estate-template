@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Property photo placeholder">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#65A30D"/>
+      <stop offset="1" stop-color="#3F6212"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#g)"/>
+  <g fill="#ffffff" opacity="0.14">
+    <path d="M0 430 Q200 360 400 420 T800 410 V600 H0 Z"/>
+  </g>
+  <g stroke="#ffffff" stroke-width="6" stroke-dasharray="26 22" opacity="0.9" fill="none">
+    <rect x="250" y="250" width="300" height="200" rx="10"/>
+  </g>
+  <g fill="#ffffff" opacity="0.92">
+    <circle cx="400" cy="350" r="26"/>
+    <path d="M400 320 v-40 M400 380 v40 M370 350 h-40 M430 350 h40"/>
+  </g>
+</svg>

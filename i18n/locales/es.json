@@ -1,0 +1,154 @@
+{
+  "nav": {
+    "home": "Inicio",
+    "properties": "Propiedades",
+    "developments": "Desarrollos",
+    "agents": "Agentes",
+    "about": "Nosotros",
+    "contact": "Contacto"
+  },
+  "common": {
+    "contact": "Contacto",
+    "viewDetails": "Ver detalles",
+    "learnMore": "Saber más",
+    "loading": "Cargando...",
+    "empty": "No se encontraron resultados",
+    "openMenu": "Abrir menú",
+    "closeMenu": "Cerrar menú",
+    "mainNavigation": "Navegación principal",
+    "selectLanguage": "Seleccionar idioma",
+    "skipToContent": "Saltar al contenido"
+  },
+  "properties": {
+    "title": "Propiedades",
+    "perMonth": "/ mes",
+    "types": {
+      "house": "Casa",
+      "apartment": "Departamento",
+      "land": "Terreno",
+      "commercial": "Comercial",
+      "office": "Oficina"
+    },
+    "operations": {
+      "sale": "En venta",
+      "rent": "En renta"
+    },
+    "status": {
+      "available": "Disponible",
+      "sold": "Vendida",
+      "rented": "Rentada",
+      "reserved": "Apartada",
+      "hidden": "Oculta"
+    },
+    "features": {
+      "bedrooms": "Recámaras",
+      "bathrooms": "Baños",
+      "parking": "Estacionamientos",
+      "area": "Superficie"
+    }
+  },
+  "home": {
+    "hero": {
+      "eyebrow": "Bienes raíces sin complicaciones",
+      "title": "Encuentra tu propiedad ideal",
+      "subtitle": "Explora casas, departamentos, terrenos y desarrollos disponibles en venta o renta en las zonas donde operamos.",
+      "ctaPrimary": "Ver propiedades",
+      "ctaSecondary": "Contáctanos",
+      "imageAlt": "Una casa moderna con grandes ventanales al atardecer"
+    },
+    "search": {
+      "operationLabel": "Operación",
+      "anyOperation": "Comprar o rentar",
+      "typeLabel": "Tipo de propiedad",
+      "anyType": "Cualquier tipo",
+      "locationLabel": "Ubicación",
+      "locationPlaceholder": "Ciudad o colonia",
+      "submit": "Buscar"
+    },
+    "propertySearch": {
+      "eyebrow": "Búsqueda de propiedades",
+      "title": "Encuentra la propiedad adecuada",
+      "subtitle": "Filtra por operación, tipo y ubicación para acotar las opciones que mejor se ajustan a ti."
+    },
+    "featured": {
+      "eyebrow": "Destacadas",
+      "title": "Propiedades destacadas",
+      "subtitle": "Una selección de casas y espacios disponibles en este momento.",
+      "viewAll": "Ver todas las propiedades",
+      "empty": "No hay propiedades destacadas disponibles por el momento."
+    },
+    "categories": {
+      "eyebrow": "Categorías",
+      "title": "Explora por tipo de propiedad",
+      "subtitle": "Encuentra justo el tipo de espacio que estás buscando."
+    },
+    "services": {
+      "eyebrow": "Por qué elegirnos",
+      "title": "Todo lo que necesitas para encontrar el lugar ideal",
+      "subtitle": "Desde tu primera búsqueda hasta las llaves en tu mano, te acompañamos en cada paso.",
+      "items": {
+        "discover": {
+          "title": "Descubre propiedades",
+          "description": "Explora un catálogo curado de propiedades que se ajustan a tu presupuesto y estilo de vida."
+        },
+        "sell": {
+          "title": "Vende con confianza",
+          "description": "Publica tu propiedad y llega a compradores calificados con asesoría experta."
+        },
+        "guidance": {
+          "title": "Asesoría experta",
+          "description": "Recibe consejos claros y honestos en cada etapa, desde el financiamiento hasta el cierre."
+        },
+        "explore": {
+          "title": "Explora ubicaciones",
+          "description": "Descubre colonias y desarrollos en las zonas donde operamos."
+        }
+      }
+    },
+    "about": {
+      "eyebrow": "Nosotros",
+      "title": "Un socio de confianza en cada paso",
+      "body": "Somos un equipo de profesionales inmobiliarios dedicados a ayudar a las personas a comprar, vender y rentar con confianza. La experiencia local y el trato personal son el centro de todo lo que hacemos.",
+      "cta": "Conoce más sobre nosotros",
+      "imageAlt": "Nuestro equipo frente al horizonte de la ciudad",
+      "stats": {
+        "experience": "Años de experiencia",
+        "properties": "Propiedades publicadas",
+        "clients": "Clientes satisfechos",
+        "areas": "Zonas atendidas"
+      }
+    },
+    "locations": {
+      "eyebrow": "Ubicaciones",
+      "title": "Zonas donde operamos",
+      "subtitle": "Explora propiedades disponibles en las regiones que mejor conocemos.",
+      "propertyCount": "{count} propiedades"
+    },
+    "testimonials": {
+      "eyebrow": "Testimonios",
+      "title": "Lo que dicen nuestros clientes",
+      "subtitle": "Historias reales de personas que encontraron su lugar con nosotros.",
+      "rating": "{rating} de 5 estrellas"
+    },
+    "cta": {
+      "title": "¿Listo para encontrar tu próximo hogar?",
+      "description": "Habla con nuestro equipo y recibe recomendaciones personalizadas hoy.",
+      "action": "Contáctanos"
+    },
+    "contactCta": {
+      "secondaryAction": "Ver propiedades",
+      "contactLabel": "O contáctanos directamente",
+      "phoneLabel": "Llámanos",
+      "emailLabel": "Escríbenos",
+      "whatsappLabel": "Chatea por WhatsApp",
+      "addressLabel": "Visítanos"
+    }
+  },
+  "footer": {
+    "tagline": "Tu socio inmobiliario de confianza.",
+    "quickLinks": "Enlaces rápidos",
+    "contact": "Contacto",
+    "rights": "Todos los derechos reservados.",
+    "whatsappLabel": "Chatea por WhatsApp"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "inmoviliaria-template",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@nuxt/icon": "^2",
+    "@nuxt/image": "^1",
+    "@nuxtjs/i18n": "^10",
+    "@pinia/nuxt": "^0.11",
+    "@vueuse/nuxt": "^13",
+    "nuxt": "^4.4.8",
+    "swiper": "^12",
+    "vue": "^3.5.38",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1",
+    "@tailwindcss/vite": "^4",
+    "eslint": "^9",
+    "tailwindcss": "^4",
+    "typescript": "^6.0.3"
+  }
+}
