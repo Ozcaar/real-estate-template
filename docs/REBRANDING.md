@@ -224,6 +224,7 @@ When a module is `false`:
 * Its footer link is hidden.
 * Its home page section is hidden (where applicable).
 * Its dedicated route still exists; disabling the module does not 404 the route, it just removes the entry points.
+* A disabled module also removes its entries from `/sitemap.xml`.
 
 The default ships with `blog: false` because the blog module is not part of the MVP. Flip it to `true` once a blog implementation lands.
 
@@ -231,13 +232,15 @@ The default ships with `blog: false` because the blog module is not part of the 
 
 `usePageSeo()` reads `runtimeConfig.public.siteUrl` to build absolute canonical URLs and Open Graph URLs. In development the value is empty; in production it must be set or the canonical and `og:url` tags will be omitted.
 
+The template also serves `/sitemap.xml` and `/robots.txt` at runtime. Both are produced by Nitro server routes and read the same `NUXT_PUBLIC_SITE_URL` env var. With the env var empty, the sitemap returns 503 and `robots.txt` blocks all crawling. With the env var set, the sitemap lists every public route gated by `agency.modules.*` and excludes `status: 'hidden'` properties.
+
 Set the env var in the deployment environment:
 
 ```bash
 NUXT_PUBLIC_SITE_URL=https://www.acme-realestate.com
 ```
 
-The value is read by `nuxt.config.ts` at build time. Trailing slashes are stripped automatically by `usePageSeo()`.
+The value is read by `nuxt.config.ts` at build time. Trailing slashes are stripped automatically by `usePageSeo()` and by the sitemap/robots routes.
 
 When `siteUrl` is empty, `canonicalUrl` returns `null` and pages skip emitting canonical and `og:url` tags — this is intentional for local development.
 
@@ -323,6 +326,14 @@ For each route, check:
 * `usePageSeo()` only emits canonical and `og:url` when `NUXT_PUBLIC_SITE_URL` is set.
 * Confirm the env var is set at build time (it is read from `runtimeConfig`, which is baked at build time).
 * View the page source and confirm the meta tags are present.
+
+### My sitemap shows the wrong domain
+
+* Check that `NUXT_PUBLIC_SITE_URL` is set at build time. The sitemap reads the same env var as canonical URLs and `og:url`. The value is baked at build time, so rebuild after changing it.
+
+### My sitemap includes a sold property
+
+* Verify the property's `status` is not `hidden`. The sitemap uses `propertiesService.getAll()`, which already filters out `status: 'hidden'`. Sold, reserved, rented, and available properties are still public listing states and should appear in the sitemap.
 
 ### My translated copy is missing
 

@@ -77,57 +77,101 @@ export interface Property {
 ## 3. Development
 
 ```ts
-export interface DevelopmentCoordinates {
-  lat: number
-  lng: number
-}
+export type DevelopmentStatus =
+  | 'pre-sale'
+  | 'under-construction'
+  | 'ready-to-deliver'
+  | 'sold-out'
 
 export interface Development {
+  /** Unique development identifier. */
   id: string
+  /** Display name (agency content, not an i18n key). */
   name: string
+  /** Slug reserved for a future detail page (`/developments/[slug]`). */
   slug: string
-  shortDescription: string
-  description: string
+  /** Current build / sales status. */
+  status: DevelopmentStatus
+  /** Location: neighborhood, city, state (agency content). */
   location: string
-  city: string
-  state: string
-  country: string
-  coverImage: string
-  gallery: string[]
-  amenities: string[]
-  propertyTypes: PropertyType[]
-  availablePropertiesCount: number
-  coordinates?: DevelopmentCoordinates
-  active: boolean
+  /** Short marketing description (agency content). */
+  description: string
+  /** Cover image path (served from `public/`). */
+  image: string
+  /** Starting price in the configured currency. Optional. */
+  priceFrom?: number
+  /** Ending price in the configured currency. Optional. */
+  priceTo?: number
+  /** ISO 4217 currency code. Defaults to the agency currency at render time. */
+  currency?: string
+  /** Total number of units in the development. */
+  units?: number
+  /** Typical bedroom count, e.g. 2 or 3. */
+  bedrooms?: number
   /**
    * Unit of `areaFrom` and `areaTo`. Defaults to the agency
-   * `measurementUnit` when omitted. The number is rendered as-is in the
-   * declared unit — the template does not perform automatic m² ↔ ft²
-   * conversion. Set this per record when a real agency mixes units in
-   * the same catalog.
+   * `measurementUnit` when omitted so a record that pre-dates this field
+   * continues to render correctly.
+   *
+   * The number is rendered **as-is** in the declared unit — the template does
+   * not perform automatic m² ↔ ft² conversion. When a real agency mixes
+   * units in the same catalog, set this per record.
    */
   sizeUnit?: MeasurementUnit
+  /** Smallest unit size. */
+  areaFrom?: number
+  /** Largest unit size. */
+  areaTo?: number
+  /** Expected delivery date as an ISO 8601 string (`YYYY-MM` or `YYYY-MM-DD`). */
+  deliveryDate?: string
+  /** Whether to highlight this development in showcases. */
+  featured?: boolean
 }
 ```
+
+> **Runtime validation.** `Development` currently has no Zod schema. The
+> hand-written `Development` interface above is the current source of
+> truth and is enforced by the TypeScript compiler. A future task may
+> add a development schema mirroring the property pattern
+> (`features/properties/schemas/property.schema.ts`).
 
 ## 4. Agent
 
 ```ts
 export interface Agent {
+  /** Unique agent identifier. */
   id: string
+  /** Display name. */
   name: string
-  slug: string
-  photo: string
-  position: string
-  email: string
-  phone: string
-  whatsapp: string
+  /** Role / position within the agency (agency content, not i18n). */
+  role: string
+  /** Short biography shown on the team card. */
   bio: string
-  active: boolean
+  /** Cover / portrait image path (served from `public/`). */
+  image: string
+  /** Direct phone line, optional. */
+  phone?: string
+  /** Direct email, optional. */
+  email?: string
+  /** WhatsApp number (digits or human-formatted), optional. */
+  whatsapp?: string
+  /** Short specialty tags, optional. */
+  specialties?: string[]
 }
 ```
 
+> **Runtime validation.** `Agent` currently has no Zod schema. The
+> hand-written `Agent` interface above is the current source of truth
+> and is enforced by the TypeScript compiler. A future task may add an
+> agent schema mirroring the property pattern
+> (`features/properties/schemas/property.schema.ts`).
+
 ## 5. Lead
+
+> **Status: planned, not yet implemented.** `app/features/leads/` is
+> reserved for the future lead-capture feature. The current contact
+> form is a UI placeholder until the lead module lands. The interface
+> below is the **planned** shape; do not consume it from code yet.
 
 ```ts
 export type LeadInterestType =
@@ -282,7 +326,33 @@ export interface SiteConfig {
   agency: AgencyConfig
   theme: ThemeConfig
 }
+
+/**
+ * A single navigation entry. `labelKey` is an i18n key (never raw text) and
+ * `module` optionally ties the item to an agency module so navigation can be
+ * filtered by what is enabled.
+ */
+export interface NavItem {
+  labelKey: string
+  to: string
+  module?: keyof AgencyModulesConfig
+}
+
+/**
+ * Non-textual SEO defaults. Human readable strings (titles, descriptions) live
+ * in i18n; this only holds structural/branding defaults.
+ */
+export interface SeoConfig {
+  /** Title template, `%s` is replaced by the page title. */
+  titleTemplate: string
+  /** Default Open Graph / fallback share image. */
+  ogImage: string
+  /** Twitter card type. */
+  twitterCard: 'summary' | 'summary_large_image'
+}
 ```
+
+`SiteConfig` is the resolved configuration consumed across the app (active agency + its resolved theme). `NavItem` powers the navigation configuration in `app/config/navigation.ts` and is consumed by `AppHeader`, `AppMobileMenu` and `AppFooter`; the optional `module` field lets layout components hide entries for disabled agency modules. `SeoConfig` powers structural SEO defaults in `app/config/seo.ts` and is consumed by the `usePageSeo` composable.
 
 ## 9. Model Rules
 

@@ -41,9 +41,23 @@ export default defineNuxtConfig({
   },
 
   // Apply the same Pinia ESM alias to the Nitro server bundle.
+  // Also prerender the SEO infrastructure routes so a `pnpm generate`
+  // static export writes `sitemap.xml` and `robots.txt` into
+  // `.output/public/`. Without this, Nitro's `crawlLinks` mode would
+  // skip them because no page links to them.
+  // `failOnError: false` lets the build pass when `NUXT_PUBLIC_SITE_URL`
+  // is not set — the routes return a deliberate 503 (sitemap) or a
+  // blocking `robots.txt`, which is a valid degraded response, not a
+  // build failure. The production `pnpm generate` step is expected to
+  // run with `NUXT_PUBLIC_SITE_URL` set, in which case both routes
+  // prerender as 200.
   nitro: {
     alias: {
       pinia: piniaEsm,
+    },
+    prerender: {
+      failOnError: false,
+      routes: ['/sitemap.xml', '/robots.txt'],
     },
   },
 
