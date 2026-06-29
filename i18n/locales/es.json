@@ -35,6 +35,22 @@
       "title": "No se encontraron propiedades",
       "description": "No encontramos propiedades que coincidan con tus criterios. Ajusta los filtros o vuelve pronto — nuestro catálogo se actualiza con frecuencia."
     },
+    "detail": {
+      "backToProperties": "Volver a propiedades",
+      "features": "Características",
+      "description": "Descripción",
+      "amenities": "Amenidades",
+      "contactTitle": "¿Te interesa esta propiedad?",
+      "contactDescription": "Habla con nuestro equipo para obtener más información, agendar una visita o iniciar el proceso de compra o renta.",
+      "notFoundTitle": "Propiedad no encontrada",
+      "notFoundMessage": "La propiedad que buscas no existe o ya no está disponible.",
+      "featuresLabels": {
+        "bedrooms": "Recámaras",
+        "bathrooms": "Baños",
+        "parking": "Estacionamientos",
+        "area": "Superficie"
+      }
+    },
     "types": {
       "house": "Casa",
       "apartment": "Departamento",

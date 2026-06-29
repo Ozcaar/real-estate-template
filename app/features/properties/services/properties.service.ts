@@ -16,6 +16,17 @@ export const propertiesService = {
   },
 
   /**
+   * Look up a single visible property by its slug. Returns `undefined` when
+   * the property does not exist or is hidden, so callers can map that to a
+   * proper 404 (e.g. via `createError({ statusCode: 404, ... })`).
+   */
+  getBySlug(slug: string): Property | undefined {
+    return sampleProperties.find(
+      property => property.slug === slug && property.status !== 'hidden',
+    )
+  },
+
+  /**
    * Featured properties for showcases such as the homepage.
    * @param limit Optional maximum number of properties to return.
    */

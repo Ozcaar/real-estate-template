@@ -35,6 +35,22 @@
       "title": "No properties found",
       "description": "We could not find any properties matching your criteria. Try adjusting your filters or check back soon — our catalog is updated regularly."
     },
+    "detail": {
+      "backToProperties": "Back to properties",
+      "features": "Features",
+      "description": "Description",
+      "amenities": "Amenities",
+      "contactTitle": "Interested in this property?",
+      "contactDescription": "Get in touch with our team for more information, to schedule a visit or to start the buying or renting process.",
+      "notFoundTitle": "Property not found",
+      "notFoundMessage": "The property you are looking for does not exist or is no longer available.",
+      "featuresLabels": {
+        "bedrooms": "Bedrooms",
+        "bathrooms": "Bathrooms",
+        "parking": "Parking spaces",
+        "area": "Area"
+      }
+    },
     "types": {
       "house": "House",
       "apartment": "Apartment",
