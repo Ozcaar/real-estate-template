@@ -48,6 +48,14 @@
       "priceAsc": "Price (low to high)",
       "priceDesc": "Price (high to low)"
     },
+    "pagination": {
+      "nav": "Pagination",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {n}",
+      "currentPage": "Current page, page {n} of {total}",
+      "pageStatus": "Page {page} of {total}"
+    },
     "detail": {
       "features": "Features",
       "description": "Description",

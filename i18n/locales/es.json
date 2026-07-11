@@ -48,6 +48,14 @@
       "priceAsc": "Precio (de menor a mayor)",
       "priceDesc": "Precio (de mayor a menor)"
     },
+    "pagination": {
+      "nav": "Paginación",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "page": "Página {n}",
+      "currentPage": "Página actual, página {n} de {total}",
+      "pageStatus": "Página {page} de {total}"
+    },
     "detail": {
       "features": "Características",
       "description": "Descripción",

@@ -356,7 +356,7 @@ export interface SeoConfig {
 
 ## 9. Listing Query & Sort Shape
 
-The `/properties` page reads four optional query params and routes them through `propertiesService.filter(filters, sort)`. The shape is defined in code (not in the `Property` model) and consumed by `app/features/properties/services/properties.service.ts`.
+The `/properties` page reads five optional query params and routes them through `propertiesService.filter(filters, sort)` and a small generic `paginate()` utility. The shape is defined in code (not in the `Property` model) and consumed by `app/features/properties/services/properties.service.ts` and `app/core/utils/paginate.ts`.
 
 ### Query keys
 
@@ -366,6 +366,7 @@ The `/properties` page reads four optional query params and routes them through 
 | `type` | `house`, `apartment`, `land`, `commercial`, `office` | `PropertyType` | Exact match on `Property.propertyType`, case-insensitive |
 | `location` | free text | `string` | Substring match against `location + city + state + country` joined with spaces. **Case-insensitive** and **accent-insensitive** (Unicode NFD + combining-mark strip — no external dependency). `Mexico` matches `México`, `Queretaro` matches `Querétaro`, `Leon` matches `Nuevo León` |
 | `sort` | `featured`, `price-asc`, `price-desc` | `PropertySort` (see below) | See the sort table |
+| `page` | positive integer, default `1` | `number` (1-based) | Selects which slice of the filtered + sorted list is rendered. Read via `parsePageParam` and clamped inside `paginate` to `[1, totalPages]` |
 
 ### `PropertySort`
 
@@ -379,9 +380,15 @@ export type PropertySort = 'featured' | 'price-asc' | 'price-desc'
 | `price-asc` | `price` ascending, then `id` ascending for ties |
 | `price-desc` | `price` descending, then `id` ascending for ties |
 
-**Stable order.** Every sort branch uses `id.localeCompare(otherId)` as a tiebreaker so equal-scoring or equal-priced properties always render in the same order across SSR and CSR. The `ItemList` JSON-LD on the listing page reflects the same order as the visible cards via `position: index + 1`.
+**Stable order.** Every sort branch uses `id.localeCompare(otherId)` as a tiebreaker so equal-scoring or equal-priced properties render in the same order across SSR and CSR. The `ItemList` JSON-LD on the listing page reflects the same order as the visible cards via **global** `position: (currentPage - 1) * PAGE_SIZE + index + 1`.
 
 **URL hygiene.** Empty values are stripped from the URL. The default sort (`featured`) is also omitted — bare `/properties` means "all visible, sorted by featured first". Unknown `?sort=` values are coerced to `featured` via the `isPropertySort` guard. The canonical URL strips the entire query string for SEO, so all filtered variants canonicalize to `/properties`.
+
+**`?page=` URL hygiene.** `?page=1` is omitted from the URL by `BasePagination` (page 1 is the default). `?page=N` is included for N ≥ 2. Out-of-range values (for example `?page=99` on a 3-page result set) are silently clamped to the last available page by `paginate()` so the route never 404s and never renders an empty grid. The user can always click the correct page link to fix the URL.
+
+**Filter and sort form submissions reset to `?page=1`.** The in-page filter form's `applyFilters` handler builds a fresh query object from non-empty / non-default values. `page` is never part of that object, so submitting the form always navigates to page 1 of the new filtered set. The "Clear filters" button navigates to bare `/properties` with no query, which also strips `?page=N`. Sort changes go through the same form handler, so a sort change also resets to page 1.
+
+**Pagination links preserve active filters and sort.** `BasePagination` receives the page's pre-filtered `query` (operation, type, location, non-default sort) and rebuilds it for every page link. A `?operation=sale&type=house&page=2` URL produces page 1 and page 3 links of the form `?operation=sale&type=house` and `?operation=sale&type=house&page=3` respectively — the active filters travel with the pagination navigation.
 
 ### Type guard
 
@@ -392,6 +399,23 @@ export function isPropertySort(value: unknown): value is PropertySort {
 ```
 
 Use this guard in the page to coerce a raw `route.query.sort` value (which is `string | string[] | null | undefined`) into a safe `PropertySort` before passing it to the service.
+
+### `parsePageParam`
+
+```ts
+export function parsePageParam(raw: unknown): number
+```
+
+Normalises a raw `useRoute().query` value into a 1-based page number. `null`, `undefined`, empty string, whitespace-only, non-numeric, zero, and negative values all resolve to `1`. Decimal values are truncated to an integer. Array values use the first scalar entry. Out-of-range values are NOT clamped here — the page layer clamps the effective page against the resolved `totalPages` inside `paginate()` so the helper stays generic and dataset-agnostic.
+
+### `paginate`
+
+```ts
+export interface PaginatedResult<T> { items: T[]; page: number; pageSize: number; totalItems: number; totalPages: number }
+export function paginate<T>(items: readonly T[], requestedPage: number, pageSize: number): PaginatedResult<T>
+```
+
+Pure helper. Slices a list into a single page. The input array is never mutated. An empty input returns `{ items: [], page: 1, totalItems: 0, totalPages: 0 }`. `pageSize < 1` is coerced to `1`. The effective page is clamped to `[1, max(1, totalPages)]`.
 
 ## 10. Model Rules
 

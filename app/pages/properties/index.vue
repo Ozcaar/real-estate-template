@@ -9,16 +9,28 @@ import {
 } from '~/features/properties/constants/property-types'
 import { usePageSeo } from '~/core/composables/usePageSeo'
 import { useJsonLd } from '~/core/composables/useJsonLd'
+import { paginate, parsePageParam } from '~/core/utils/paginate'
 
 /**
  * Properties listing page (`/properties`).
  *
- * Thin route: it reads optional `operation`, `type`, `location` and
- * `sort` query params (matching the shape produced by `HomeSearchBar`,
- * `HomeCategories` and `HomeLocations`), filters and sorts the visible
- * catalog through the documented service, and composes the page header
- * and {@link PropertyGrid}. When no params are present it falls back to
- * the full visible catalog sorted by `featured` first.
+ * Thin route: it reads optional `operation`, `type`, `location`,
+ * `sort` and `page` query params (matching the shape produced by
+ * `HomeSearchBar`, `HomeCategories`, `HomeLocations` and
+ * `BasePagination`), filters and sorts the visible catalog through the
+ * documented service, paginates the result through a small generic
+ * utility, and composes the page header, {@link PropertyGrid} and
+ * {@link BasePagination}. When no params are present it falls back to
+ * the full visible catalog sorted by `featured` first on page 1.
+ *
+ * **Pagination model.** The page reads `?page=` and runs it through
+ * {@link parsePageParam} (which coerces missing / empty / zero /
+ * negative / decimal / array / non-numeric values to `1`). The
+ * effective page is then clamped inside {@link paginate} against the
+ * resolved `totalPages`, so a `?page=99` on a 3-page result set
+ * silently renders page 3 instead of 404 or an empty grid. The
+ * component renders nothing when `totalPages <= 1` — for the current
+ * 6-record placeholder catalog, no control is visible at all.
  */
 const { t } = useI18n()
 const route = useRoute()
@@ -38,6 +50,9 @@ function pickQueryValue(raw: unknown): string | undefined {
 
 const DEFAULT_SORT: PropertySort = 'featured'
 
+/** Number of properties per page. Standard for a 3-col property grid. */
+const PAGE_SIZE = 12
+
 const filters = computed(() => ({
   operation: pickQueryValue(route.query.operation),
   type: pickQueryValue(route.query.type),
@@ -47,9 +62,33 @@ const filters = computed(() => ({
 const formSort = ref<PropertySort>(DEFAULT_SORT)
 
 const totalVisible = computed(() => propertiesService.getAll().length)
-const properties = computed(() => propertiesService.filter(filters.value, formSort.value))
-const propertiesCount = computed(() => properties.value.length)
-const isFiltered = computed(() => propertiesCount.value !== totalVisible.value)
+
+/**
+ * Full filtered + sorted list, BEFORE pagination. `filteredCount` is
+ * what the status line renders — the user always sees the total
+ * number of matching properties, not just the count on the current
+ * page. `propertiesService.filter()` is unchanged; pagination is a
+ * page-layer concern.
+ */
+const filtered = computed(() => propertiesService.filter(filters.value, formSort.value))
+const filteredCount = computed(() => filtered.value.length)
+
+/**
+ * Page number comes from the URL — there is no separate `formPage`
+ * ref because the URL is the single source of truth. The form's
+ * submit handler (`applyFilters`) builds a fresh query object that
+ * does NOT include `page`, so submitting the form always resets to
+ * page 1. The "Clear filters" button navigates to bare `/properties`
+ * with no query, which also strips `?page=N`.
+ */
+const formPage = computed(() => parsePageParam(route.query.page))
+
+const paginated = computed(() => paginate(filtered.value, formPage.value, PAGE_SIZE))
+const properties = computed(() => paginated.value.items)
+const currentPage = computed(() => paginated.value.page)
+const totalPages = computed(() => paginated.value.totalPages)
+
+const isFiltered = computed(() => filteredCount.value !== totalVisible.value)
 
 // Build a localized, human-readable description of the active filters for
 // the visible count line. Falls back to a plain count when no filter is
@@ -242,24 +281,45 @@ useHead({
 
 // --- JSON-LD ------------------------------------------------------------
 /**
- * `ItemList` of the visible properties. Uses the same `properties`
- * computed the page renders (`propertiesService.filter(filters.value)`)
- * so the structured data matches the visible cards. The `agency.modules.properties`
+ * `ItemList` of the properties visible on the current page. Uses the
+ * same `paginated` computed the page renders so the structured data
+ * matches the visible cards. Positions are global, 1-based, and stable
+ * across pages: `(currentPage - 1) * PAGE_SIZE + index + 1`. The
+ * first item on page 2 (size 12) is position 13, the last item on
+ * page 3 (with 6 items) is position 30, etc. The `agency.modules.properties`
  * gate is enforced by the route itself (the page is not rendered when
- * the module is disabled), so the JSON-LD can be emitted unconditionally.
+ * the module is disabled), so the JSON-LD can be emitted
+ * unconditionally.
  */
 const jsonLd = computed(() => ({
   '@context': 'https://schema.org',
   '@type': 'ItemList',
-  itemListElement: properties.value.map((property, index) => ({
+  itemListElement: paginated.value.items.map((property, index) => ({
     '@type': 'ListItem',
-    position: index + 1,
+    position: (currentPage.value - 1) * PAGE_SIZE + index + 1,
     url: toAbsoluteUrl(`/properties/${property.slug}`),
     name: property.title,
   })),
 }))
 
 useJsonLd(jsonLd)
+
+/**
+ * Query values that every generated `BasePagination` link must
+ * preserve. The component itself drops `undefined` / `''` entries and
+ * omits `?page=1`, so the caller is only responsible for stripping
+ * the default sort (a small domain-specific decision the component
+ * is not aware of). On the bare `/properties` URL this object is
+ * empty and the component falls back to plain `?page=N` links.
+ */
+const preservedQuery = computed<Record<string, string | undefined>>(() => {
+  const q: Record<string, string | undefined> = {}
+  if (filters.value.operation) q.operation = filters.value.operation
+  if (filters.value.type) q.type = filters.value.type
+  if (filters.value.location) q.location = filters.value.location
+  if (formSort.value !== DEFAULT_SORT) q.sort = formSort.value
+  return q
+})
 
 // Page-level helpers for the visible header.
 const emptyMessage = computed(
@@ -390,7 +450,7 @@ const emptyMessage = computed(
       class="mx-auto mt-6 flex max-w-5xl flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)] sm:flex-row sm:justify-center sm:gap-3"
     >
       <p>
-        <span class="font-semibold text-[var(--color-foreground)]">{{ propertiesCount }}</span>
+        <span class="font-semibold text-[var(--color-foreground)]">{{ filteredCount }}</span>
         <span v-if="isFiltered" class="ml-1">
           {{ t('properties.filters.activeLabel') }}
           <span v-if="activeFilterLabel" class="text-[var(--color-foreground)]"> · {{ activeFilterLabel }}</span>
@@ -404,5 +464,12 @@ const emptyMessage = computed(
     <div class="mt-10">
       <PropertyGrid :properties="properties" :empty-message="emptyMessage" :clear-filters-href="route.path" />
     </div>
+
+    <BasePagination
+      :current-page="currentPage"
+      :total-pages="totalPages"
+      :base-path="route.path"
+      :query="preservedQuery"
+    />
   </BaseSection>
 </template>
