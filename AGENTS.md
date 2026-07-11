@@ -159,8 +159,6 @@ The folder structure, Tailwind setup, i18n locale files, agency config, theme to
 
 Verified current gaps:
 
-* **Mobile-filter SSR / no-JavaScript fallback verification** — owned by the active task (Task 067 in `docs/ROADMAP.md`). The collapse shipped but the rendered SSR HTML and the no-JS behaviour have not been audited yet.
-* **Lint warnings on `app/pages/properties/index.vue`** — eight `vue/first-attribute-linebreak` warnings introduced by the latest commit (`0ccb8b3`). They are part of Task 067's deliverable because that task already modifies the same file; do not leave them behind for a future task.
 * **Pagination** — pending the audit in Task 068. The `BasePagination` primitive and the `paginate` helper are not built yet, and the upcoming Task 071 may be skipped if the audit concludes the catalog does not need it.
 * **Breadcrumbs** — not implemented. Audit first (Task 069), then build (Task 070).
 * **Structured `PostalAddress`** — not implemented on the agency or the property records. Audit first (Task 072), then build (Task 073).

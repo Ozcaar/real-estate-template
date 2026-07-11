@@ -119,34 +119,45 @@ function applyFilters() {
  * collapsed by default behind a "Filters" toggle button. On tablet and
  * desktop (`sm+`) the form is always visible and the toggle is hidden.
  *
- * The breakpoint is a `matchMedia('(max-width: 639px)')` listener, matching
+ * **Hydration model.** Three independent booleans drive the markup:
+ *
+ * - `isHydrated` — flips to `true` from inside `onMounted`. It is `false`
+ *   during SSR and during the brief window before the client takes over,
+ *   so the SSR HTML never renders the mobile-only toggle and never
+ *   hides the form. Without this gate, a JS-enabled mobile user would
+ *   see a ~1-frame flash where the form is visible and the toggle is
+ *   missing before the media query resolves.
+ * - `isMobile` — bound to `window.matchMedia('(max-width: 639px)')`. It
+ *   starts as `false` so SSR and no-JS clients always behave like a
+ *   desktop viewport (form visible, no toggle). After hydration it
+ *   reflects the real breakpoint and updates on every resize.
+ * - `isFilterOpen` — drives the mobile-only collapse. It starts as
+ *   `false` so post-hydration mobile users see a collapsed form with a
+ *   visible toggle. Crossing the breakpoint into mobile from `sm+`
+ *   resets it back to `false`; crossing back into `sm+` leaves the
+ *   state alone because the form is always visible on `sm+` regardless
+ *   of `isFilterOpen`.
+ *
+ * The form uses `v-show` (not `v-if`) so its DOM and selected values
+ * are preserved when the form is collapsed and re-opened.
+ *
+ * **No-JavaScript fallback.** The `<form>` keeps its native
+ * `method="get"` + `action="/properties"` attributes. On a no-JS
+ * client `isHydrated` stays `false` forever, `isMobile` stays `false`,
+ * the toggle button is never rendered, and the form is always visible
+ * and natively submittable — exactly what the SSR HTML delivers.
+ *
+ * The toggle button is gated on `v-if="isHydrated && isMobile"` so it
+ * is only in the DOM after the client has taken over AND the viewport
+ * is in the mobile range. It never appears in the SSR HTML, so the
+ * no-JS experience cannot land on a non-functional toggle.
+ *
+ * The breakpoint is `matchMedia('(max-width: 639px)')`, matching
  * Tailwind's `sm` breakpoint (640px).
- *
- * **SSR-safe defaults.** Both `isMobile` and `isFilterOpen` start as
- * `false`, so the SSR render — and the no-JS experience — always shows
- * the form. This is critical for users without JavaScript: the form is
- * always visible and always submits natively to `/properties` via its
- * `method="get"` + `action="/properties"` attributes. Without these
- * defaults, the form would be hidden in the SSR HTML (`v-show="false"`
- * via inline `style="display: none"`) and no-JS users on mobile would
- * see an empty page with no way to reach the form.
- *
- * After hydration, `onMounted` runs the media query and corrects the
- * state: on mobile, `isMobile` becomes `true` and the form collapses
- * (`v-show` re-evaluates to `false`); on `sm+`, `isMobile` stays
- * `false` and the form stays visible. This produces a brief
- * (~1-frame) flash on mobile where the form is visible before
- * collapsing, which is the inherent cost of the SSR + media-query
- * approach. Desktop has no flash: the form is visible from the first
- * paint through the last reactive update. The toggle button uses
- * `v-if="isMobile"` so it is not in the DOM on desktop (no
- * "toggle appears and disappears" flicker on first paint).
- *
- * The form's state (selected options, input values) is preserved across
- * collapse/expand because `v-show` toggles `display: none` rather than
- * removing the form from the DOM.
  */
+const isHydrated = ref(false)
 const isFilterOpen = ref(false)
+const isMobile = ref(false)
 
 const activeFilterCount = computed(() => {
   let n = 0
@@ -158,7 +169,6 @@ const activeFilterCount = computed(() => {
 })
 
 const MOBILE_MQ = '(max-width: 639px)'
-const isMobile = ref(false)
 let mq: MediaQueryList | null = null
 
 function syncIsMobile(event: MediaQueryListEvent | MediaQueryList) {
@@ -179,6 +189,9 @@ onMounted(() => {
   mq = window.matchMedia(MOBILE_MQ)
   syncIsMobile(mq)
   mq.addEventListener('change', syncIsMobile)
+  // Flip the hydration gate last so the first client-side render uses
+  // the real `isMobile` value, not the SSR default.
+  isHydrated.value = true
 })
 
 onBeforeUnmount(() => {
@@ -256,29 +269,50 @@ const emptyMessage = computed(
 
 <template>
   <BaseSection spacing="lg">
-    <SectionHeader align="center" :eyebrow="t('nav.properties')" :title="t('properties.page.title')"
-      :subtitle="t('properties.page.subtitle')" />
+    <SectionHeader
+      align="center"
+      :eyebrow="t('nav.properties')"
+      :title="t('properties.page.title')"
+      :subtitle="t('properties.page.subtitle')"
+    />
 
-    <button v-if="isMobile" type="button"
+    <button
+      v-if="isHydrated && isMobile"
+      type="button"
       class="mx-auto mt-8 mb-3 flex w-full max-w-5xl items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-foreground)] hover:bg-[var(--color-surface-muted)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 sm:hidden"
-      :aria-expanded="isFilterOpen ? 'true' : 'false'" aria-controls="filter-form"
-      @click="isFilterOpen = !isFilterOpen">
+      :aria-expanded="isFilterOpen ? 'true' : 'false'"
+      aria-controls="filter-form"
+      @click="isFilterOpen = !isFilterOpen"
+    >
       <span>{{ activeFilterCount > 0 ? t('properties.filters.toggleCount', { count: activeFilterCount }) :
         t('properties.filters.toggle') }}</span>
       <BaseIcon :name="isFilterOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'" size="sm" />
     </button>
 
-    <form v-show="!isMobile || isFilterOpen" id="filter-form" method="get" action="/properties"
-      class="mx-auto max-w-5xl sm:mt-8" @submit.prevent="applyFilters">
+    <form
+      v-show="!isHydrated || !isMobile || isFilterOpen"
+      id="filter-form"
+      method="get"
+      action="/properties"
+      class="mx-auto max-w-5xl sm:mt-8"
+      @submit.prevent="applyFilters"
+    >
       <div class="grid grid-cols-1 items-end gap-y-3">
 
         <div class="flex gap-x-3">
           <div class="flex flex-col w-full gap-1">
-            <label for="filter-operation" class="text-xs font-medium text-[var(--color-muted)]">
+            <label
+              for="filter-operation"
+              class="text-xs font-medium text-[var(--color-muted)]"
+            >
               {{ t('home.search.operationLabel') }}
             </label>
-            <select id="filter-operation" v-model="formOperation" name="operation"
-              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20">
+            <select
+              id="filter-operation"
+              v-model="formOperation"
+              name="operation"
+              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            >
               <option value="">{{ t('home.search.anyOperation') }}</option>
               <option v-for="option in OPERATION_TYPE_OPTIONS" :key="option.value" :value="option.value">
                 {{ t(option.labelKey) }}
@@ -287,11 +321,18 @@ const emptyMessage = computed(
           </div>
 
           <div class="flex flex-col w-full gap-1">
-            <label for="filter-type" class="text-xs font-medium text-[var(--color-muted)]">
+            <label
+              for="filter-type"
+              class="text-xs font-medium text-[var(--color-muted)]"
+            >
               {{ t('home.search.typeLabel') }}
             </label>
-            <select id="filter-type" v-model="formType" name="type"
-              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20">
+            <select
+              id="filter-type"
+              v-model="formType"
+              name="type"
+              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            >
               <option value="">{{ t('home.search.anyType') }}</option>
               <option v-for="option in PROPERTY_TYPE_OPTIONS" :key="option.value" :value="option.value">
                 {{ t(option.labelKey) }}
@@ -300,21 +341,36 @@ const emptyMessage = computed(
           </div>
 
           <div class="flex flex-col w-full gap-1">
-            <label for="filter-location" class="text-xs font-medium text-[var(--color-muted)]">
+            <label
+              for="filter-location"
+              class="text-xs font-medium text-[var(--color-muted)]"
+            >
               {{ t('home.search.locationLabel') }}
             </label>
-            <input id="filter-location" v-model="formLocation" name="location" type="search"
+            <input
+              id="filter-location"
+              v-model="formLocation"
+              name="location"
+              type="search"
               :placeholder="t('home.search.locationPlaceholder')"
-              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20">
+              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            >
           </div>
         </div>
 
         <div class="flex flex-col gap-1 mb-3 sm:col-span-2 lg:col-span-4">
-          <label for="filter-sort" class="text-xs font-medium text-[var(--color-muted)]">
+          <label
+            for="filter-sort"
+            class="text-xs font-medium text-[var(--color-muted)]"
+          >
             {{ t('properties.sort.label') }}
           </label>
-          <select id="filter-sort" v-model="formSort" name="sort"
-            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20">
+          <select
+            id="filter-sort"
+            v-model="formSort"
+            name="sort"
+            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          >
             <option value="featured">{{ t('properties.sort.featured') }}</option>
             <option value="price-asc">{{ t('properties.sort.priceAsc') }}</option>
             <option value="price-desc">{{ t('properties.sort.priceDesc') }}</option>
@@ -329,8 +385,10 @@ const emptyMessage = computed(
       </div>
     </form>
 
-    <div aria-live="polite"
-      class="mx-auto mt-6 flex max-w-5xl flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)] sm:flex-row sm:justify-center sm:gap-3">
+    <div
+      aria-live="polite"
+      class="mx-auto mt-6 flex max-w-5xl flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)] sm:flex-row sm:justify-center sm:gap-3"
+    >
       <p>
         <span class="font-semibold text-[var(--color-foreground)]">{{ propertiesCount }}</span>
         <span v-if="isFiltered" class="ml-1">
