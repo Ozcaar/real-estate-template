@@ -16,7 +16,11 @@ Use:
 * `COMPONENTS.md` for component rules and naming conventions.
 * `DATA_MODELS.md` for TypeScript interfaces.
 * `I18N.md` for translations and localization rules.
-* `ROADMAP.md` for implementation order.
+* `ROADMAP.md` for implementation order, current state, the active task, and the upcoming sequence.
+
+### 0.1 Roadmap-first rule
+
+Before continuing an in-progress task or choosing the next task, read `docs/ROADMAP.md`. The roadmap is the canonical entry point for resuming work in a new session: it identifies the current active task, lists upcoming tasks, and summarizes the most important architectural decisions.
 
 ## 3. Implementation Rules
 

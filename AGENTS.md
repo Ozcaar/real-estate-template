@@ -2,7 +2,7 @@
 
 ## Project state
 
-Draft project — `app/app.vue` still shows `<NuxtWelcome />`.
+The application shell in `app/app.vue` is wired up. It renders `<NuxtRouteAnnouncer />` inside `<NuxtLayout>`, which hosts `<NuxtPage />` for the route tree. The shell also keeps the document language in sync with the active locale via `useHead({ htmlAttrs: { lang: locale } })`.
 
 The architecture, folder layout, data models, theme system, branding strategy, and component conventions are specified in `docs/`.
 
@@ -153,20 +153,21 @@ A page should not contain heavy business logic or large UI implementations.
 
 ## Current gaps
 
-MVP scope is defined in `docs/ROADMAP.md`.
+MVP scope and task order are defined in `docs/ROADMAP.md`. The roadmap is the canonical list of completed milestones, the active task, and the upcoming sequence — do not duplicate that list here. This section is the short list of verified current gaps a new session needs to know about.
 
-The following items may not exist yet:
+The folder structure, Tailwind setup, i18n locale files, agency config, theme tokens, components, pages, layouts, and SEO config all exist. Do not reimplement them.
 
-* Folder structure from `docs/ARCHITECTURE.md`
-* Tailwind config or CSS variable setup
-* i18n locale files
-* Agency config files
-* Theme token files
-* Components, pages, and layouts
-* Production-ready SEO config
-* Final property data source
+Verified current gaps:
 
-ESLint config is expected to be auto-resolved by `@nuxt/eslint`; do not add a manual ESLint config unless the existing setup requires it.
+* **Mobile-filter SSR / no-JavaScript fallback verification** — owned by the active task (Task 067 in `docs/ROADMAP.md`). The collapse shipped but the rendered SSR HTML and the no-JS behaviour have not been audited yet.
+* **Lint warnings on `app/pages/properties/index.vue`** — eight `vue/first-attribute-linebreak` warnings introduced by the latest commit (`0ccb8b3`). They are part of Task 067's deliverable because that task already modifies the same file; do not leave them behind for a future task.
+* **Pagination** — pending the audit in Task 068. The `BasePagination` primitive and the `paginate` helper are not built yet, and the upcoming Task 071 may be skipped if the audit concludes the catalog does not need it.
+* **Breadcrumbs** — not implemented. Audit first (Task 069), then build (Task 070).
+* **Structured `PostalAddress`** — not implemented on the agency or the property records. Audit first (Task 072), then build (Task 073).
+* **Property gallery lightbox** — not implemented. Audit first (Task 074), then build (Task 075).
+* **Real external data integration** — the MVP reads from static data under `app/features/*/data/*.ts`. A CMS, API, or external image source is not wired in; the schemas are the runtime boundary that will validate the future source.
+
+ESLint config is auto-resolved by `@nuxt/eslint`; do not add a manual ESLint config unless the existing setup requires it.
 
 ## Validation
 
