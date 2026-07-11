@@ -18,7 +18,8 @@
     "mainNavigation": "Navegación principal",
     "mobileNavigation": "Navegación móvil",
     "selectLanguage": "Seleccionar idioma",
-    "skipToContent": "Saltar al contenido"
+    "skipToContent": "Saltar al contenido",
+    "breadcrumb": "Migas de pan"
   },
   "properties": {
     "title": "Propiedades",
@@ -48,7 +49,6 @@
       "priceDesc": "Precio (de mayor a menor)"
     },
     "detail": {
-      "backToProperties": "Volver a propiedades",
       "features": "Características",
       "description": "Descripción",
       "amenities": "Amenidades",

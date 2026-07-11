@@ -5,6 +5,7 @@ import { propertyTypeLabelKey, operationTypeLabelKey } from '~/features/properti
 import { usePageSeo } from '~/core/composables/usePageSeo'
 import { useJsonLd } from '~/core/composables/useJsonLd'
 import type { PropertyStatus } from '~/features/properties/types/property.types'
+import type { BreadcrumbItem } from '~/types/breadcrumb.types'
 
 /**
  * Property detail page (`/properties/[slug]`).
@@ -158,6 +159,45 @@ const jsonLd = computed(() => ({
 
 useJsonLd(jsonLd)
 
+// --- Breadcrumb JSON-LD -------------------------------------------------
+/**
+ * `BreadcrumbList` schema for the visible breadcrumb trail. The list
+ * mirrors the order, labels, and URLs of the `<SeoBreadcrumbs>` rendered
+ * at the top of the page exactly. Positions are 1-based, ancestor
+ * `item` URLs are absolute via `toAbsoluteUrl`, and the current page's
+ * `item` is the page's own canonical URL with a defensive fallback to
+ * `toAbsoluteUrl('/properties/${p.slug}')` (which itself returns the
+ * relative path when `NUXT_PUBLIC_SITE_URL` is empty — matching the
+ * `usePageSeo` contract).
+ *
+ * This is a third `<script type="application/ld+json">` block on the
+ * page, registered through the same `useJsonLd` composable as the
+ * `RealEstateListing` and the related-properties `ItemList` blocks. No
+ * `@graph` wrapper is needed: Google parses multiple scripts on the
+ * same page independently, and the `BreadcrumbList` is a distinct
+ * schema.org entity from the listing and the related `ItemList`.
+ */
+const breadcrumbItems = computed<BreadcrumbItem[]>(() => [
+  { label: t('nav.home'), to: '/' },
+  { label: t('nav.properties'), to: '/properties' },
+  { label: p.title },
+])
+
+const breadcrumbJsonLd = computed(() => ({
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: breadcrumbItems.value.map((item, index) => ({
+    '@type': 'ListItem',
+    position: index + 1,
+    name: item.label,
+    item: index === breadcrumbItems.value.length - 1
+      ? (canonicalUrl.value ?? toAbsoluteUrl(`/properties/${p.slug}`))
+      : toAbsoluteUrl(item.to ?? ''),
+  })),
+}))
+
+useJsonLd(breadcrumbJsonLd)
+
 // --- Related-properties JSON-LD -----------------------------------------
 /**
  * `ItemList` of `ListItem` for the visible related properties section.
@@ -190,21 +230,10 @@ useJsonLd(relatedJsonLd)
 <template>
   <article>
     <BaseSection spacing="lg">
-      <div class="mb-6">
-        <BaseButton
-          to="/properties"
-          variant="ghost"
-          size="sm"
-          class="-ml-3"
-        >
-          <template #default>
-            <span class="inline-flex items-center gap-1">
-              <BaseIcon name="mdi:arrow-left" size="sm" />
-              {{ t('properties.detail.backToProperties') }}
-            </span>
-          </template>
-        </BaseButton>
-      </div>
+      <SeoBreadcrumbs
+        :items="breadcrumbItems"
+        class="mb-6"
+      />
 
       <div class="grid items-start gap-10 lg:grid-cols-2">
         <PropertyGallery

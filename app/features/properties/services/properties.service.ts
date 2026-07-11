@@ -40,6 +40,17 @@ function normalize(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase()
 }
 
+function slugify(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+
 /**
  * Accent-insensitive text normalization: lowercase, trim, and strip
  * diacritics (combining marks) so that searches like "Mexico" match
@@ -117,14 +128,14 @@ export const propertiesService = {
       }
       if (location) {
         const haystack = [
-          property.location,
-          property.city,
-          property.state,
-          property.country,
+          slugify(property.location),
+          slugify(property.city),
+          slugify(property.state),
+          slugify(property.country),
         ]
           .map(normalizeText)
           .join(' ')
-        if (!haystack.includes(location)) return false
+        if (!haystack.includes(slugify(location))) return false
       }
       return true
     })

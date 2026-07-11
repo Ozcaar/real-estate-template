@@ -409,5 +409,57 @@ Both attributes are forwarded to `<NuxtImg>` (which passes them through to the u
 
 ### My LCP image looks slow
 
-* Confirm the above-the-fold image uses both `loading="eager"` and `fetchpriority="high"`. The `<ResponsiveImage>` wrapper's defaults are `'lazy'` and `'auto'` respectively, so both attributes must be set on the call site. Check `app/features/home/components/HomeHero.vue` (home hero) and `app/pages/properties/[slug].vue` via `<PropertyGallery>` (property detail cover).
+* Confirm the above-the-fold image uses both `loading="eager"` and `fetchpriority="high"`. The `<ResponsiveImage>` wrapper's defaults are `'lazy'` and `'auto'` respectively, so both attributes must be set at the call site. Check `app/features/home/components/HomeHero.vue` (home hero) and `app/pages/properties/[slug].vue` via `<PropertyGallery>` (property detail cover).
 * Re-verify the LCP after replacing the placeholder image — a real photo may be much larger than the SVG placeholder, and the `sizes` attribute may need to be re-tuned. Export the new asset as WebP or AVIF for the best LCP.
+
+## 14. Breadcrumbs
+
+The template ships a visible, accessible breadcrumb trail plus a matching `BreadcrumbList` JSON-LD on the property detail page (`/properties/{slug}`). Listing pages and the top-level pages (`/`, `/about`, `/contact`, `/properties`, `/developments`, `/agents`) do not get visible breadcrumbs in v1.0 — they are themselves top-level destinations and a one-step `Home` link would add no navigation value.
+
+### Property detail trail
+
+The shipped trail is:
+
+```txt
+Home › Properties › {property.title}
+```
+
+`Home` and `Properties` are resolved from the existing `nav.*` i18n keys (`nav.home`, `nav.properties`). The current item is the property's own `title` (a free-text agency string, not an i18n key). The component is generic over its `items` prop, so any future detail page can build the same trail with one extra array — for example, `/agents/{id}` will use `Home › Agents › {agent.name}` and `/developments/{slug}` will use `Home › Developments › {development.name}`.
+
+### Reusable component
+
+The visible trail is rendered by `app/components/shared/SeoBreadcrumbs.vue` with a typed `BreadcrumbItem[]` from `app/types/breadcrumb.types.ts`:
+
+```ts
+export interface BreadcrumbItem {
+  label: string
+  to?: string          // omit on the current (final) item
+  ariaLabel?: string   // optional screen-reader-only override
+}
+```
+
+To add a breadcrumb to a new detail page:
+
+1. Build a `BreadcrumbItem[]` in the page setup. Resolve i18n keys via `$t(...)` before passing them in.
+2. Render `<SeoBreadcrumbs :items="breadcrumbItems" class="mb-6" />` near the start of the page content.
+3. Register a `BreadcrumbList` JSON-LD via `useJsonLd`, mirroring the same `items` array — see the property detail page (`app/pages/properties/[slug].vue`) for the exact pattern. Linked items use `toAbsoluteUrl(item.to)`; the current item uses `canonicalUrl.value` with a `toAbsoluteUrl('/...')` fallback.
+
+### Landmark label
+
+The `<nav>` element's `aria-label` comes from the `common.breadcrumb` translation key:
+
+| Locale | Value |
+| --- | --- |
+| English | `Breadcrumb` |
+| Spanish | `Migas de pan` |
+
+Add or rename this key in both `i18n/locales/en.json` and `i18n/locales/es.json` if a rebrand prefers different copy. Do not hardcode the landmark label inside the component — it is always i18n-driven.
+
+### Future reuse
+
+The component is intentionally generic. When the future per-development and per-agent detail pages land (Tasks deferred in `docs/ROADMAP.md` §6), each one only needs:
+
+* A three-item `BreadcrumbItem[]` with `Home`, the section, and the record's name.
+* A matching `BreadcrumbList` JSON-LD via the existing `useJsonLd` composable.
+
+No new component, no new composable, no new i18n key. The `common.breadcrumb` key is shared across every breadcrumb in the app.

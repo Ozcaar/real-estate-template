@@ -32,7 +32,8 @@ The MVP public site is functional end-to-end with static data.
 | Per-development detail page (`/developments/[slug]`) | Not implemented |
 | Per-agent detail page (`/agents/[slug]`) | Not implemented |
 | Lightbox / advanced property gallery | Not implemented |
-| Breadcrumbs, pagination | Not implemented |
+| Pagination | Audit complete; `BasePagination` + paginate utility scheduled (Task 071) |
+| Breadcrumbs | Complete on the property detail page; `SeoBreadcrumbs` + `BreadcrumbList` JSON-LD shipped (Task 070) |
 | Structured `PostalAddress` data on agency / property | Not implemented |
 | Admin / dashboard / auth / backend / CRM | Not implemented (out of MVP scope) |
 
@@ -60,36 +61,39 @@ The following milestones are committed to the repository. Treat them as the base
 12. **M11 — Property schema hardening.** `property.schema.ts` (`propertySchema`, `propertyListSchema`) with a compile-time guard against the `Property` interface. `coverImage` and all required string fields are `.min(1)`; `images` and `amenities` are non-empty per entry; the schema is the runtime boundary used to validate the static catalog at module load.
 13. **M12 — Mobile filter responsiveness.** The `/properties` filter form is collapsed by default on `< sm` viewports behind a "Filters" toggle button that reflects the active filter count, and the form is always visible on `sm+`. The form retains `method="get" action="/properties"` so it submits natively.
 14. **M13 — Mobile filter SSR / hydration fix (Task 067).** Added an explicit `isHydrated` gate in `app/pages/properties/index.vue`. The form uses `v-show="!isHydrated || !isMobile || isFilterOpen"` so the SSR HTML and no-JavaScript clients always render the form. The mobile toggle uses `v-if="isHydrated && isMobile"` so it only enters the DOM after the client takes over AND the viewport is in the mobile range. `isHydrated` is flipped to `true` at the end of `onMounted`, so the first client-side reactive update uses the real `matchMedia` value with no flash. The form still uses `v-show` (not `v-if`) so its DOM and selected values are preserved across collapse/expand. The same commit fixed the eight pre-existing `vue/first-attribute-linebreak` warnings on the file.
+15. **M14 — Pagination audit (Task 068).** Pagination is part of the v1.0 template scope and is **not** deferred because the current placeholder catalog is small. The placeholder record count is not a reason to skip the build; the template must be production-ready for any agency on day one. The agreed architecture is: URL state via `?page=N`; page `1` is omitted from generated URLs; invalid `?page=` values (missing, empty, zero, negative, decimal, array, out-of-range, non-numeric) normalize safely; filter changes reset to `?page=1`; sort changes and pagination links preserve the existing `?operation=&type=&location=&sort=` query; `propertiesService.filter()` is unchanged; the page layer paginates the local placeholder data; the pagination UI must be reusable for a future API or CMS source. The build target is a reusable `BasePagination` UI primitive plus a small generic pagination utility. The component must render nothing when `totalPages <= 1`.
+16. **M15 — Breadcrumb audit (Task 069).** Visible breadcrumbs and `BreadcrumbList` JSON-LD land on `/properties/[slug]` only. Listing pages (`/properties`, `/developments`, `/agents`) and the top-level pages (`/`, `/about`, `/contact`) do not get visible breadcrumbs in v1.0 because they are themselves top-level destinations. Reusable `SeoBreadcrumbs` shared component + typed `BreadcrumbItem` + `BreadcrumbList` JSON-LD via the existing `useJsonLd`. The component renders `null` when `items.length <= 1`. The trail is `Home › Properties › {property.title}`. i18n strategy is `no_prefix` so breadcrumb URLs are bare paths; `toAbsoluteUrl()` handles the absolute-URL conversion.
+17. **M16 — Breadcrumbs MVP (Task 070).** New shared component `app/components/shared/SeoBreadcrumbs.vue` + new `BreadcrumbItem` type in `app/types/breadcrumb.types.ts` + new `common.breadcrumb` i18n key (English `Breadcrumb`, Spanish `Migas de pan`). Wired into `app/pages/properties/[slug].vue` with a three-item trail (`Home › Properties › {property.title}`) and a third JSON-LD payload via the existing `useJsonLd` composable — a `BreadcrumbList` with 1-based positions, absolute URLs via `toAbsoluteUrl`, and the current item using `canonicalUrl.value` with a `toAbsoluteUrl('/properties/${slug}')` fallback. The existing `RealEstateListing` and related-properties `ItemList` JSON-LD payloads are unchanged. The standalone "Back to properties" block on the property detail page is removed because the breadcrumb's second item points to the same destination. No breadcrumbs are added to listing or top-level pages. `docs/REBRANDING.md` Section 14 documents the trail, the reusable component, the `common.breadcrumb` key, and the future reuse on agent and development detail pages.
 
 ## 4. Current Work
 
 ### Active task
 
-**Task 068 — Pagination UX Audit.** Owner: the next OpenCode session.
+**Task 071 — Pagination MVP.** Owner: the next OpenCode session.
 
-The mobile-filter SSR / hydration work shipped in M13 is complete. The next task audits the listing page for pagination needs. The full audit checklist lives in Section 5; the next session should:
+The breadcrumb audit and build (M15 / Task 069 and M16 / Task 070) are complete; the property detail page now ships a visible breadcrumb trail plus a matching `BreadcrumbList` JSON-LD. The next active task implements pagination per the architecture recorded in M14. The build target is a reusable `BasePagination` UI primitive plus a small generic pagination utility; the component must render nothing when `totalPages <= 1`, must be reusable for a future API or CMS source, and must not depend on the current placeholder record count. The page layer paginates the local placeholder data; `propertiesService.filter()` stays unchanged. The full build checklist lives in Section 5; the next session should:
 
-* Read the current page (`app/pages/properties/index.vue`) and the service (`app/features/properties/services/properties.service.ts`) to understand the existing filter / sort flow.
-* Open `app/features/properties/data/properties.ts` to check the current sample catalog size.
-* Decide whether the catalog needs `BasePagination` + a `paginate` helper today, or whether it can be deferred. The decision gates Task 071.
-* Record the conclusion in this file: add M14 and mark Task 071 done if the audit concludes pagination is not needed, or move Task 071 to "In progress" with the build target if it is.
+* Read `app/pages/properties/index.vue`, `app/features/properties/services/properties.service.ts`, and `app/features/properties/data/properties.ts` to understand the existing filter / sort flow and the data shape.
+* Add `app/core/utils/paginate.ts` with a small generic pagination utility and a `parsePageParam` helper that normalises invalid `?page=` values silently (matching the existing `?sort=` coercion pattern).
+* Add `app/components/ui/BasePagination.vue` with `currentPage`, `totalPages`, `baseHref`, `query`, `siblings`, `boundaries` props. The component renders `null` when `totalPages <= 1`.
+* Wire `?page=` into `app/pages/properties/index.vue`: read the query, run `parsePageParam`, slice the filtered + sorted list with the paginate helper, render `<BasePagination>` below `<PropertyGrid>`. Filter submit and clear reset to `?page=1`; sort changes preserve `?page=N`.
+* Add `properties.pagination.*` i18n keys to both `i18n/locales/en.json` and `i18n/locales/es.json`.
+* Update `docs/DATA_MODELS.md` Section 9 with the `page` row and the validation / coercion table.
+* Re-run `pnpm lint` and `pnpm build`. Update the roadmap (Section 3) with M17 once the build ships.
 
 ### Working tree
 
-`git status` is clean after the M13 work. The branch is one commit ahead of `origin/master` (commit `0ccb8b3`); the M13 changes are still in the working tree and must be committed before opening Task 068.
+`git status` is clean after the M13 work. The branch is one commit ahead of `origin/master` (commit `0ccb8b3`); the M13 changes are still in the working tree and must be committed before opening Task 071.
 
 ## 5. Upcoming Tasks
 
 The remaining tasks, in order. Each task should follow the same lifecycle: read the relevant `docs/`, plan in this file, implement, run `pnpm lint` + `pnpm build`, then advance the milestone status here.
 
-1. **Task 069 — Breadcrumb UX and SEO Audit.** Audit where breadcrumbs add value (property detail, agent detail when it ships, development detail, about, contact) and whether the existing `usePageSeo` canonical setup needs a `BreadcrumbList` JSON-LD extension.
-2. **Task 070 — Breadcrumbs MVP.** Implement the agreed breadcrumb set (TBD by 069) using a shared `SeoBreadcrumbs` component under `components/shared/` and a `useBreadcrumbs` composable; wire `BreadcrumbList` JSON-LD where applicable.
-3. **Task 071 — Pagination MVP, only if justified by the audit.** Implement `BasePagination` under `components/ui/`, a `paginate` helper in the properties service, and URL round-tripping via `?page=`. Skip entirely if 068 concludes that the current dataset does not need it.
-4. **Task 072 — Structured Address / PostalAddress Audit.** Decide whether the agency and the property records should carry a schema.org `PostalAddress` payload (street, city, state, postal code, country), and which fields are needed. Coordinate with the rebranding flow in `docs/REBRANDING.md`.
-5. **Task 073 — Structured Address / PostalAddress Build.** Extend `AgencyConfig` and `Property` models, add the Zod schemas, surface the values on the home / contact / property detail pages, and emit `PostalAddress` inside the existing `RealEstateAgent` / `RealEstateListing` JSON-LD.
-6. **Task 074 — Property Gallery Enhancement Audit.** Audit `PropertyGallery` for keyboard navigation, swipe support, fullscreen / lightbox need, deep-linkable slides, and accessibility. Coordinate with `Swiper` (already a dependency).
-7. **Task 075 — Property Gallery Lightbox MVP.** Build a lightbox overlay (or `Swiper` modal) for the property detail gallery, preserving focus trap, `Esc` to close, and the existing LCP behavior on the main image.
-8. **Task 076 — Documentation and Accessibility Review.** Update `docs/REBRANDING.md`, `docs/DESIGN.md`, and `docs/DATA_MODELS.md` to reflect everything shipped in tasks 068–075; run an `axe` / Lighthouse pass on the affected routes.
+1. **Task 072 — Structured Address / PostalAddress Audit.** Decide whether the agency and the property records should carry a schema.org `PostalAddress` payload (street, city, state, postal code, country), and which fields are needed. Coordinate with the rebranding flow in `docs/REBRANDING.md`.
+2. **Task 073 — Structured Address / PostalAddress Build.** Extend `AgencyConfig` and `Property` models, add the Zod schemas, surface the values on the home / contact / property detail pages, and emit `PostalAddress` inside the existing `RealEstateAgent` / `RealEstateListing` JSON-LD.
+3. **Task 074 — Property Gallery Enhancement Audit.** Audit `PropertyGallery` for keyboard navigation, swipe support, fullscreen / lightbox need, deep-linkable slides, and accessibility. Coordinate with `Swiper` (already a dependency).
+4. **Task 075 — Property Gallery Lightbox MVP.** Build a lightbox overlay (or `Swiper` modal) for the property detail gallery, preserving focus trap, `Esc` to close, and the existing LCP behavior on the main image.
+5. **Task 076 — Documentation and Accessibility Review.** Update `docs/REBRANDING.md`, `docs/DESIGN.md`, and `docs/DATA_MODELS.md` to reflect everything shipped in tasks 071–075; run an `axe` / Lighthouse pass on the affected routes.
 
 ## 6. Deferred Work
 
@@ -124,12 +128,14 @@ These are the decisions a new session needs to know to avoid re-litigating them.
 * **Global stores are reserved for app-wide state only.** `app/stores/` is a `.gitkeep`. The current MVP has no global Pinia store; per-feature stores would live under their feature folder. See `docs/ARCHITECTURE.md` Section 7.
 * **`server/routes/` is the right home for Nitro endpoints** (current files: `sitemap.xml.ts`, `robots.txt.ts`). The `app/server/` path does not exist; do not create it.
 * **ESLint is auto-resolved by `@nuxt/eslint`.** Do not add a manual ESLint config.
+* **Pagination is in v1.0 scope regardless of the placeholder catalog size.** The shipped `app/features/properties/data/properties.ts` is placeholder content for a single template demonstration, not a production agency. The template must be production-ready for any agency on day one, so `BasePagination` and the pagination utility are scheduled in Task 071 — they are not gated on the placeholder catalog reaching a threshold. Audit decision recorded in M14.
+* **Breadcrumbs are in v1.0 scope for the property detail page only.** Listing pages and top-level pages do not get visible breadcrumbs in v1.0 because they are themselves top-level destinations. The `SeoBreadcrumbs` shared component + `BreadcrumbList` JSON-LD payload shipped in M16 will be reused unchanged by the future `/agents/[id]` and `/developments/[slug]` detail pages — each one only needs a different three-item `items` array. Audit decision recorded in M15.
 
 ## 8. How to Resume Work in a New Session
 
 1. **Read `AGENTS.md`** for the project-wide rules (stack, conventions, naming, validation).
 2. **Read `docs/OPENCODE.md`** (now includes the "Roadmap-first rule" in Section 0.1) and **`docs/ROADMAP.md` (this file)**. The roadmap is the canonical entry point for what is done, what is active, and what is next.
-3. **Read the task-specific doc** in `docs/` for the task you are about to start. For the active task (Task 068), the relevant code is `app/pages/properties/index.vue` and `app/features/properties/services/properties.service.ts`.
+3. **Read the task-specific doc** in `docs/` for the task you are about to start. For the active task (Task 071), the relevant code is `app/pages/properties/index.vue`, `app/features/properties/services/properties.service.ts`, and `app/features/properties/data/properties.ts`; the relevant composable is `app/core/composables/usePageSeo.ts`.
 4. **Check `git status` and `git log --oneline -10`** to confirm the working tree state and the latest commits.
 5. **Reuse existing primitives** — `usePageSeo`, `useJsonLd`, `useSiteConfig`, `propertiesService`, `BaseButton`, `BaseIcon`, `BaseSection`, `SectionHeader`, `CtaBlock`, `ResponsiveImage`, etc. — instead of building parallel helpers.
 6. **Update i18n in both locales** when adding or changing visible strings.
