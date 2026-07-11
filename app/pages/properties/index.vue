@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { propertiesService, isPropertySort, type PropertySort } from '~/features/properties/services/properties.service'
 import {
   OPERATION_TYPE_OPTIONS,
@@ -113,6 +113,81 @@ function applyFilters() {
   navigateTo({ path: route.path, query })
 }
 
+// --- Mobile filter collapse -----------------------------------------------
+/**
+ * On mobile (`< sm`, i.e. viewport width below 640px), the filter form is
+ * collapsed by default behind a "Filters" toggle button. On tablet and
+ * desktop (`sm+`) the form is always visible and the toggle is hidden.
+ *
+ * The breakpoint is a `matchMedia('(max-width: 639px)')` listener, matching
+ * Tailwind's `sm` breakpoint (640px).
+ *
+ * **SSR-safe defaults.** Both `isMobile` and `isFilterOpen` start as
+ * `false`, so the SSR render — and the no-JS experience — always shows
+ * the form. This is critical for users without JavaScript: the form is
+ * always visible and always submits natively to `/properties` via its
+ * `method="get"` + `action="/properties"` attributes. Without these
+ * defaults, the form would be hidden in the SSR HTML (`v-show="false"`
+ * via inline `style="display: none"`) and no-JS users on mobile would
+ * see an empty page with no way to reach the form.
+ *
+ * After hydration, `onMounted` runs the media query and corrects the
+ * state: on mobile, `isMobile` becomes `true` and the form collapses
+ * (`v-show` re-evaluates to `false`); on `sm+`, `isMobile` stays
+ * `false` and the form stays visible. This produces a brief
+ * (~1-frame) flash on mobile where the form is visible before
+ * collapsing, which is the inherent cost of the SSR + media-query
+ * approach. Desktop has no flash: the form is visible from the first
+ * paint through the last reactive update. The toggle button uses
+ * `v-if="isMobile"` so it is not in the DOM on desktop (no
+ * "toggle appears and disappears" flicker on first paint).
+ *
+ * The form's state (selected options, input values) is preserved across
+ * collapse/expand because `v-show` toggles `display: none` rather than
+ * removing the form from the DOM.
+ */
+const isFilterOpen = ref(false)
+
+const activeFilterCount = computed(() => {
+  let n = 0
+  if (formOperation.value) n++
+  if (formType.value) n++
+  if (formLocation.value) n++
+  if (formSort.value !== DEFAULT_SORT) n++
+  return n
+})
+
+const MOBILE_MQ = '(max-width: 639px)'
+const isMobile = ref(false)
+let mq: MediaQueryList | null = null
+
+function syncIsMobile(event: MediaQueryListEvent | MediaQueryList) {
+  const mobile = event.matches
+  isMobile.value = mobile
+  // On a transition into the mobile breakpoint, collapse the form so
+  // the user sees the post-hydration default (collapsed) on the next
+  // paint. On a transition into the desktop breakpoint, leave the
+  // toggle state alone — the toggle is hidden on desktop regardless, and
+  // the form is always visible there.
+  if (mobile) {
+    isFilterOpen.value = false
+  }
+}
+
+onMounted(() => {
+  if (typeof window === 'undefined') return
+  mq = window.matchMedia(MOBILE_MQ)
+  syncIsMobile(mq)
+  mq.addEventListener('change', syncIsMobile)
+})
+
+onBeforeUnmount(() => {
+  if (mq) {
+    mq.removeEventListener('change', syncIsMobile)
+    mq = null
+  }
+})
+
 // --- SEO ----------------------------------------------------------------
 /**
  * Page-level SEO building blocks come from `usePageSeo`. This page owns
@@ -181,116 +256,81 @@ const emptyMessage = computed(
 
 <template>
   <BaseSection spacing="lg">
-    <SectionHeader
-      align="center"
-      :eyebrow="t('nav.properties')"
-      :title="t('properties.page.title')"
-      :subtitle="t('properties.page.subtitle')"
-    />
+    <SectionHeader align="center" :eyebrow="t('nav.properties')" :title="t('properties.page.title')"
+      :subtitle="t('properties.page.subtitle')" />
 
-    <form
-      method="get"
-      action="/properties"
-      class="mx-auto mt-8 max-w-5xl"
-      @submit.prevent="applyFilters"
-    >
-      <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="flex flex-col gap-1">
-          <label
-            for="filter-operation"
-            class="text-xs font-medium text-[var(--color-muted)]"
-          >
-            {{ t('home.search.operationLabel') }}
-          </label>
-          <select
-            id="filter-operation"
-            v-model="formOperation"
-            name="operation"
-            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-          >
-            <option value="">{{ t('home.search.anyOperation') }}</option>
-            <option
-              v-for="option in OPERATION_TYPE_OPTIONS"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ t(option.labelKey) }}
-            </option>
-          </select>
+    <button v-if="isMobile" type="button"
+      class="mx-auto mt-8 mb-3 flex w-full max-w-5xl items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-foreground)] hover:bg-[var(--color-surface-muted)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 sm:hidden"
+      :aria-expanded="isFilterOpen ? 'true' : 'false'" aria-controls="filter-form"
+      @click="isFilterOpen = !isFilterOpen">
+      <span>{{ activeFilterCount > 0 ? t('properties.filters.toggleCount', { count: activeFilterCount }) :
+        t('properties.filters.toggle') }}</span>
+      <BaseIcon :name="isFilterOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'" size="sm" />
+    </button>
+
+    <form v-show="!isMobile || isFilterOpen" id="filter-form" method="get" action="/properties"
+      class="mx-auto max-w-5xl sm:mt-8" @submit.prevent="applyFilters">
+      <div class="grid grid-cols-1 items-end gap-y-3">
+
+        <div class="flex gap-x-3">
+          <div class="flex flex-col w-full gap-1">
+            <label for="filter-operation" class="text-xs font-medium text-[var(--color-muted)]">
+              {{ t('home.search.operationLabel') }}
+            </label>
+            <select id="filter-operation" v-model="formOperation" name="operation"
+              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20">
+              <option value="">{{ t('home.search.anyOperation') }}</option>
+              <option v-for="option in OPERATION_TYPE_OPTIONS" :key="option.value" :value="option.value">
+                {{ t(option.labelKey) }}
+              </option>
+            </select>
+          </div>
+
+          <div class="flex flex-col w-full gap-1">
+            <label for="filter-type" class="text-xs font-medium text-[var(--color-muted)]">
+              {{ t('home.search.typeLabel') }}
+            </label>
+            <select id="filter-type" v-model="formType" name="type"
+              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20">
+              <option value="">{{ t('home.search.anyType') }}</option>
+              <option v-for="option in PROPERTY_TYPE_OPTIONS" :key="option.value" :value="option.value">
+                {{ t(option.labelKey) }}
+              </option>
+            </select>
+          </div>
+
+          <div class="flex flex-col w-full gap-1">
+            <label for="filter-location" class="text-xs font-medium text-[var(--color-muted)]">
+              {{ t('home.search.locationLabel') }}
+            </label>
+            <input id="filter-location" v-model="formLocation" name="location" type="search"
+              :placeholder="t('home.search.locationPlaceholder')"
+              class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20">
+          </div>
         </div>
 
-        <div class="flex flex-col gap-1">
-          <label
-            for="filter-type"
-            class="text-xs font-medium text-[var(--color-muted)]"
-          >
-            {{ t('home.search.typeLabel') }}
-          </label>
-          <select
-            id="filter-type"
-            v-model="formType"
-            name="type"
-            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-          >
-            <option value="">{{ t('home.search.anyType') }}</option>
-            <option
-              v-for="option in PROPERTY_TYPE_OPTIONS"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ t(option.labelKey) }}
-            </option>
-          </select>
-        </div>
-
-        <div class="flex flex-col gap-1">
-          <label
-            for="filter-location"
-            class="text-xs font-medium text-[var(--color-muted)]"
-          >
-            {{ t('home.search.locationLabel') }}
-          </label>
-          <input
-            id="filter-location"
-            v-model="formLocation"
-            name="location"
-            type="search"
-            :placeholder="t('home.search.locationPlaceholder')"
-            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-          >
-        </div>
-
-        <div>
-          <BaseButton type="submit" size="md" block>
-            {{ t('home.search.submit') }}
-          </BaseButton>
-        </div>
-
-        <div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
-          <label
-            for="filter-sort"
-            class="text-xs font-medium text-[var(--color-muted)]"
-          >
+        <div class="flex flex-col gap-1 mb-3 sm:col-span-2 lg:col-span-4">
+          <label for="filter-sort" class="text-xs font-medium text-[var(--color-muted)]">
             {{ t('properties.sort.label') }}
           </label>
-          <select
-            id="filter-sort"
-            v-model="formSort"
-            name="sort"
-            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-          >
+          <select id="filter-sort" v-model="formSort" name="sort"
+            class="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-foreground)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20">
             <option value="featured">{{ t('properties.sort.featured') }}</option>
             <option value="price-asc">{{ t('properties.sort.priceAsc') }}</option>
             <option value="price-desc">{{ t('properties.sort.priceDesc') }}</option>
           </select>
         </div>
+
+        <div class="sm:col-span-2 lg:col-span-4">
+          <BaseButton type="submit" size="md" block>
+            {{ t('home.search.submit') }}
+          </BaseButton>
+        </div>
       </div>
     </form>
 
-    <div
-      aria-live="polite"
-      class="mx-auto mt-6 flex max-w-5xl flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)] sm:flex-row sm:justify-center sm:gap-3"
-    >
+    <div aria-live="polite"
+      class="mx-auto mt-6 flex max-w-5xl flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)] sm:flex-row sm:justify-center sm:gap-3">
       <p>
         <span class="font-semibold text-[var(--color-foreground)]">{{ propertiesCount }}</span>
         <span v-if="isFiltered" class="ml-1">
@@ -298,22 +338,13 @@ const emptyMessage = computed(
           <span v-if="activeFilterLabel" class="text-[var(--color-foreground)]"> · {{ activeFilterLabel }}</span>
         </span>
       </p>
-      <BaseButton
-        v-if="isFiltered"
-        :to="route.path"
-        variant="ghost"
-        size="sm"
-      >
+      <BaseButton v-if="isFiltered" :to="route.path" variant="ghost" size="sm">
         {{ t('properties.filters.clear') }}
       </BaseButton>
     </div>
 
     <div class="mt-10">
-      <PropertyGrid
-        :properties="properties"
-        :empty-message="emptyMessage"
-        :clear-filters-href="route.path"
-      />
+      <PropertyGrid :properties="properties" :empty-message="emptyMessage" :clear-filters-href="route.path" />
     </div>
   </BaseSection>
 </template>

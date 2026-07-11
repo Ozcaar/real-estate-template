@@ -37,7 +37,9 @@
     },
     "filters": {
       "activeLabel": "Filtered by",
-      "clear": "Clear filters"
+      "clear": "Clear filters",
+      "toggle": "Filters",
+      "toggleCount": "Filters ({count})"
     },
     "sort": {
       "label": "Sort by",

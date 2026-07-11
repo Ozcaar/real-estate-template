@@ -37,7 +37,9 @@
     },
     "filters": {
       "activeLabel": "Filtrado por",
-      "clear": "Limpiar filtros"
+      "clear": "Limpiar filtros",
+      "toggle": "Filtros",
+      "toggleCount": "Filtros ({count})"
     },
     "sort": {
       "label": "Ordenar por",
