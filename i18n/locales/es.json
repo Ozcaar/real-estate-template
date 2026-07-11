@@ -72,7 +72,14 @@
       },
       "gallery": {
         "viewImage": "Ver imagen {n} de {total}",
-        "thumbnails": "Imágenes de la propiedad"
+        "thumbnails": "Imágenes de la propiedad",
+        "ariaLabel": "Carrusel de imágenes de la propiedad",
+        "previous": "Imagen anterior",
+        "next": "Imagen siguiente",
+        "first": "Esta es la primera imagen",
+        "last": "Esta es la última imagen",
+        "slideLabel": "Imagen {n} de {t}",
+        "counter": "Imagen {n} de {total}"
       },
       "similar": {
         "title": "Propiedades similares",

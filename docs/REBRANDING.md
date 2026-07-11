@@ -524,3 +524,63 @@ The component is intentionally generic. When the future per-development and per-
 * A matching `BreadcrumbList` JSON-LD via the existing `useJsonLd` composable.
 
 No new component, no new composable, no new i18n key. The `common.breadcrumb` key is shared across every breadcrumb in the app.
+
+## 15. Property Gallery
+
+The property detail page ships a Swiper-based carousel for the main image and an accessible thumbnail strip for navigation. The gallery is a presentation concern — the data shape (`Property.images`, `Property.coverImage`) is unchanged and a rebrand never needs to touch the gallery component.
+
+### Data shape
+
+* `Property.images: string[]` — the full photo set. Ordered; the first entry is the default cover.
+* `Property.coverImage: string` — the cover image path. Used as the fallback when `images` is empty (a record that only declares a cover image still renders).
+* The carousel never requires more than these two fields. Replacing the sample data with a CMS export does not change the gallery behaviour.
+
+### Carousel behaviour
+
+* **Multiple images.** A Swiper carousel renders one slide per image with real `<button type="button">` previous and next controls. The thumbnail strip below the carousel mirrors the slides; clicking a thumbnail calls `swiper.slideTo(index)`. A visible counter (`Image N of T`) lives between the controls and updates with a polite live region.
+* **Single image.** A single image renders without thumbnails, arrows, or counter — just the `ResponsiveImage` with the LCP attributes.
+* **Empty `images` array.** `displayImages` falls back to `[coverImage]`, so a record that only declares a cover image still renders as a single image. The cover-image fallback is preserved from the pre-carousel implementation.
+* **Swipe and drag.** Swiper's default touch + mouse drag works on every viewport.
+* **Keyboard.** Arrow keys move between slides. Keyboard navigation is enabled only when the carousel is in the viewport (`onlyInViewport: true`) so the page-level Tab order is not hijacked when the user is on a different section.
+* **No loop, no rewind.** The first slide has the previous control disabled; the last slide has the next control disabled. The `disabled` attribute is set on the native `<button>` element so screen readers announce the boundary.
+* **Autoplay and pagination dots are not enabled.** The thumbnail strip is the richer pagination.
+
+### First-image LCP contract
+
+The first image is the property detail page LCP candidate. The contract is preserved across the Swiper integration:
+
+* The SSR HTML contains the first image as a plain `ResponsiveImage` (the `<ClientOnly>` `#fallback` slot) with `loading="eager"` and `fetchpriority="high"`.
+* After hydration the Swiper replaces the fallback with its own DOM. The first slide uses the same `ResponsiveImage` with the same `loading="eager"` and `fetchpriority="high"` attributes. The same `src` is used on both sides, so the browser cache prevents a duplicate download.
+* Later main images use `loading="lazy"` and no high fetch priority. Thumbnails always use `loading="lazy"`.
+
+### Lazy loading
+
+* Every later main image (slide 2+) is `loading="lazy"`.
+* Every thumbnail is `loading="lazy"`.
+* The carousel's first image is the only `loading="eager"` request.
+
+### Reduced motion
+
+`prefers-reduced-motion: reduce` sets Swiper's transition `speed` to 0 via VueUse's `usePreferredReducedMotion` composable. Slide changes become instantaneous; swipe and keyboard navigation still work. The carousel does not invent unsupported Swiper configuration options.
+
+### Fullscreen lightbox
+
+A fullscreen lightbox (focus trap, body-scroll lock, Escape-close, backdrop click) is **intentionally deferred** to a future audit. A real-estate user wanting a larger view can use the browser's built-in image controls on the current main image; introducing a generic modal system solely for the gallery is not justified by the current placeholder data. The carousel MVP covers the three real gaps the audit identified — mobile swipe, keyboard arrow nav, and desktop prev/next — without the complexity cost.
+
+### Translation keys
+
+Under `properties.detail.gallery`:
+
+| Key | English | Spanish | Used by |
+| --- | --- | --- | --- |
+| `viewImage` | `View image {n} of {total}` | `Ver imagen {n} de {total}` | Thumbnail button `aria-label` (reused from the pre-carousel implementation) |
+| `thumbnails` | `Property images` | `Imágenes de la propiedad` | `<ul>` `aria-label` (reused from the pre-carousel implementation) |
+| `ariaLabel` | `Property image carousel` | `Carrusel de imágenes de la propiedad` | Swiper `aria-roledescription` |
+| `previous` | `Previous image` | `Imagen anterior` | Prev button label + Swiper A11y `prevSlideMessage` |
+| `next` | `Next image` | `Imagen siguiente` | Next button label + Swiper A11y `nextSlideMessage` |
+| `first` | `This is the first image` | `Esta es la primera imagen` | Swiper A11y `firstSlideMessage` |
+| `last` | `This is the last image` | `Esta es la última imagen` | Swiper A11y `lastSlideMessage` |
+| `slideLabel` | `Image {n} of {total}` | `Imagen {n} de {total}` | Swiper A11y `slideLabelMessage` and `itemRoleDescriptionMessage` |
+| `counter` | `Image {n} of {total}` | `Imagen {n} de {total}` | Visible counter element |
+
+A rebrand that needs different copy can edit these nine keys in both `i18n/locales/en.json` and `i18n/locales/es.json` without touching any component code.

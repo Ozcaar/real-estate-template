@@ -159,7 +159,7 @@ The folder structure, Tailwind setup, i18n locale files, agency config, theme to
 
 Verified current gaps:
 
-* **Property gallery lightbox** — not implemented. Audit first (Task 074), then build (Task 075).
+* **Property gallery fullscreen lightbox** — intentionally deferred (audit decision recorded in `docs/ROADMAP.md` M20, build decisions in M21). The Swiper carousel MVP shipped in M21 covers the three real gaps the audit identified (mobile swipe, keyboard arrow navigation, desktop prev/next) without the complexity cost of a generic modal system. A fullscreen lightbox with focus trap, body-scroll lock, Escape handler, and backdrop click remains a future task; a real-estate user wanting a larger view can use the browser's built-in image controls on the current main image.
 * **Real external data integration** — the MVP reads from static data under `app/features/*/data/*.ts`. A CMS, API, or external image source is not wired in; the schemas are the runtime boundary that will validate the future source.
 
 ESLint config is auto-resolved by `@nuxt/eslint`; do not add a manual ESLint config unless the existing setup requires it.

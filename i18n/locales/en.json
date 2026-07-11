@@ -72,7 +72,14 @@
       },
       "gallery": {
         "viewImage": "View image {n} of {total}",
-        "thumbnails": "Property images"
+        "thumbnails": "Property images",
+        "ariaLabel": "Property image carousel",
+        "previous": "Previous image",
+        "next": "Next image",
+        "first": "This is the first image",
+        "last": "This is the last image",
+        "slideLabel": "Image {n} of {t}",
+        "counter": "Image {n} of {total}"
       },
       "similar": {
         "title": "Similar properties",
