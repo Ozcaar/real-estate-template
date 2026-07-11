@@ -4,6 +4,7 @@ import type {
   AgencyContactConfig,
   AgencyModulesConfig,
   AgencySocialConfig,
+  AgencyStructuredAddress,
   MeasurementUnit,
 } from '~/types/agency.types'
 import type { ThemeConfig } from '~/types/theme.types'
@@ -50,11 +51,27 @@ const publicPathSchema = z
  * Nested config schemas
  * ------------------------------------------------------------------ */
 
+/**
+ * Optional schema.org `PostalAddress` companion. Every field is
+ * optional AND must be non-empty when supplied (`.min(1).optional()`),
+ * so the runtime rejects empty strings but accepts the field being
+ * absent. The JSON-LD builder (`app/core/utils/postal-address.ts`)
+ * omits absent or empty fields from the final payload.
+ */
+export const agencyStructuredAddressSchema = z.object({
+  streetAddress: z.string().min(1).optional(),
+  addressLocality: z.string().min(1).optional(),
+  addressRegion: z.string().min(1).optional(),
+  postalCode: z.string().min(1).optional(),
+  addressCountry: z.string().min(1).optional(),
+}) satisfies z.ZodType<AgencyStructuredAddress>
+
 export const agencyContactConfigSchema = z.object({
   phone: z.string().min(1),
   whatsapp: z.string().min(1),
   email: z.string().min(1),
   address: z.string().min(1),
+  structuredAddress: agencyStructuredAddressSchema.optional(),
   businessHours: z.string().optional(),
 }) satisfies z.ZodType<AgencyContactConfig>
 

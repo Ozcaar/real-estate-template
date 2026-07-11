@@ -159,7 +159,6 @@ The folder structure, Tailwind setup, i18n locale files, agency config, theme to
 
 Verified current gaps:
 
-* **Structured `PostalAddress`** — not implemented on the agency or the property records. Audit first (Task 072), then build (Task 073).
 * **Property gallery lightbox** — not implemented. Audit first (Task 074), then build (Task 075).
 * **Real external data integration** — the MVP reads from static data under `app/features/*/data/*.ts`. A CMS, API, or external image source is not wired in; the schemas are the runtime boundary that will validate the future source.
 

@@ -6,6 +6,7 @@ import { homeLocations } from '~/features/home/data/locations'
 import { homeTestimonials } from '~/features/home/data/testimonials'
 import { homeStats } from '~/features/home/data/stats'
 import { usePageSeo } from '~/core/composables/usePageSeo'
+import { agencyPostalAddress } from '~/core/utils/postal-address'
 
 /**
  * Home page. Stays thin: it loads route-level data, sets SEO metadata and
@@ -92,7 +93,7 @@ const jsonLd = computed(() => {
     image: toAbsoluteUrl(agency.logo),
     telephone: agency.contact.phone,
     email: agency.contact.email,
-    address: agency.contact.address,
+    address: agencyPostalAddress(agency),
     sameAs,
     ...(canonicalUrl.value ? { url: canonicalUrl.value } : {}),
   }

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { buildWhatsAppLink } from '~/core/utils/whatsapp-link'
 import { usePageSeo } from '~/core/composables/usePageSeo'
 import { useJsonLd } from '~/core/composables/useJsonLd'
+import { agencyPostalAddress } from '~/core/utils/postal-address'
 
 /**
  * Contact page (`/contact`).
@@ -146,7 +147,7 @@ const jsonLd = computed(() => ({
     name: site.value.agency.name,
     telephone: site.value.agency.contact.phone,
     email: site.value.agency.contact.email,
-    address: site.value.agency.contact.address,
+    address: agencyPostalAddress(site.value.agency),
     ...(canonicalUrl.value ? { url: canonicalUrl.value } : {}),
   },
 }))

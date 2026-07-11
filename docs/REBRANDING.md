@@ -42,7 +42,7 @@ The agency config controls:
 * `availableLocales` — array of enabled locales (e.g. `['en', 'es']`)
 * `currency` — ISO 4217 code (`'USD'`, `'MXN'`, `'EUR'`, …) used to format prices
 * `measurementUnit` — `'metric'` (m²) or `'imperial'` (ft²) for area display
-* `contact` — `phone`, `whatsapp`, `email`, `address`, optional `businessHours`
+* `contact` — `phone`, `whatsapp`, `email`, `address` (required free-text), optional `structuredAddress` (schema.org `PostalAddress` companion for the JSON-LD), optional `businessHours`
 * `social` — optional `facebook`, `instagram`, `linkedin`, `tiktok`, `youtube` URLs
 * `modules` — booleans for `properties`, `developments`, `agents`, `blog`, `testimonials`, `contact`
 
@@ -78,6 +78,67 @@ Edit `app/config/agencies/default.agency.ts` directly. This is the simplest path
    ```
 
 No component change is required. `useSiteConfig()` reads from `siteConfig.agency` and every consumer re-renders.
+
+## 3a. Configure the Structured Agency Address
+
+The agency contact config carries two address fields that coexist:
+
+* `contact.address` — required free-text human-readable address. This is the **only** source of truth for the visible UI: the footer (`app/components/layout/AppFooter.vue`) and the contact-page contact-method card (`app/pages/contact/index.vue`) both render it directly.
+* `contact.structuredAddress` — **optional** schema.org `PostalAddress` companion. Consumed only by the JSON-LD builder (`app/core/utils/postal-address.ts`) on the home, contact and about `RealEstateAgent` nodes.
+
+A rebrand that does not configure `structuredAddress` is unaffected — the JSON-LD falls back to the plain `contact.address` string it emitted before this build. A rebrand that wants `PostalAddress` structured data in the JSON-LD populates `structuredAddress` alongside `address`.
+
+### Supported fields
+
+The `structuredAddress` object accepts five optional fields, named after the schema.org `PostalAddress` properties so the JSON-LD builder can spread them directly into the payload:
+
+| Field | schema.org property | Example |
+| --- | --- | --- |
+| `streetAddress` | `streetAddress` | `'123 Main Street'` |
+| `addressLocality` | `addressLocality` | `'Anytown'` |
+| `addressRegion` | `addressRegion` | `'California'` |
+| `postalCode` | `postalCode` | `'94016'` |
+| `addressCountry` | `addressCountry` | `'USA'` |
+
+Every field is optional AND must be non-empty when supplied (the Zod schema uses `z.string().min(1).optional()`). Empty strings are rejected at module load. Fields that are absent or empty are omitted from the JSON-LD payload.
+
+### Example
+
+```ts
+contact: {
+  phone: '+1 555 123 4567',
+  whatsapp: '+1 555 123 4567',
+  email: 'hello@acme-realestate.com',
+  address: '123 Main Street, Anytown, CA 94016, USA',
+  structuredAddress: {
+    streetAddress: '123 Main Street',
+    addressLocality: 'Anytown',
+    addressRegion: 'CA',
+    postalCode: '94016',
+    addressCountry: 'USA',
+  },
+  businessHours: 'Mon-Fri 9am-5pm',
+},
+```
+
+The free-text `address` above stays the source of truth for the visible footer and contact card. The structured fields are only consumed by the JSON-LD on the home, contact and about pages.
+
+### Fallback behaviour
+
+The `agencyPostalAddress(agency)` helper at `app/core/utils/postal-address.ts` returns:
+
+* a schema.org `PostalAddress` object with only the non-empty structured fields, when `structuredAddress` is present and at least one field is non-empty;
+* the free-text `contact.address` string otherwise (no `structuredAddress`, or every field is empty / whitespace-only).
+
+This means a rebrand that has not migrated still gets the legacy plain-string `address` in the JSON-LD, and a migrated agency gets a `PostalAddress` object. The two fields are independent — a rebrand can keep them in sync, or keep `address` as a marketing-friendly display and let `structuredAddress` carry the postal-accurate values.
+
+### Free-text remains required
+
+`contact.address` is **not** made optional. It is the source of truth for the visible UI, and the footer / contact card render it directly. Do not delete it. The `structuredAddress` companion is purely additive.
+
+### Migration-safe
+
+Every existing rebranded agency config that has populated `address` continues to work unchanged: the Zod schema is satisfied, the visible UI renders, and the three agency JSON-LD blocks fall back to the plain-string `address` they emitted before this build. No existing config needs to be touched to keep building.
 
 ## 4. Step 2 — Replace Logo, Favicon, and Placeholder Images
 

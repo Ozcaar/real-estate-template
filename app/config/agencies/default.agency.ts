@@ -25,6 +25,19 @@ export const defaultAgencyConfig: AgencyConfig = {
     whatsapp: '1-800-555-1234',
     email: 'example@email.com',
     address: '123 Main Street, Anytown, USA',
+    /**
+     * Optional `PostalAddress` companion. The free-text `address` above
+     * remains the source of truth for the visible footer and contact
+     * card. The fields below are only consumed by the JSON-LD builder
+     * (`app/core/utils/postal-address.ts`) and are intentionally limited
+     * to the three values that can be derived from the existing free-text
+     * — `addressRegion` and `postalCode` are not invented.
+     */
+    structuredAddress: {
+      streetAddress: '123 Main Street',
+      addressLocality: 'Anytown',
+      addressCountry: 'USA',
+    },
     businessHours: 'Mon-Fri 9am-5pm',
   },
   social: {

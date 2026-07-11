@@ -209,8 +209,30 @@ export interface AgencyContactConfig {
   whatsapp: string
   email: string
   address: string
+  structuredAddress?: AgencyStructuredAddress
   businessHours?: string
 }
+
+export interface AgencyStructuredAddress {
+  streetAddress?: string
+  addressLocality?: string
+  addressRegion?: string
+  postalCode?: string
+  addressCountry?: string
+}
+
+> `address` is the free-text human-readable address used by the visible
+> footer (`app/components/layout/AppFooter.vue`) and the contact page
+> contact-method card (`app/pages/contact/index.vue`). It is **required**
+> and **unchanged** by the PostalAddress build. `structuredAddress` is
+> the optional schema.org `PostalAddress` companion consumed only by
+> the JSON-LD builder (`app/core/utils/postal-address.ts`) on the home,
+> contact and about `RealEstateAgent` nodes. The two fields coexist: a
+> rebrand that has not migrated still gets the legacy plain-string
+> `address` in the JSON-LD; a migrated agency gets a `PostalAddress`
+> object with only the non-empty structured fields. `addressRegion` and
+> `postalCode` are not invented for the default agency — they are
+> omitted because the shipped free-text address does not declare them.
 
 export interface AgencySocialConfig {
   facebook?: string

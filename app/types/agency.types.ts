@@ -9,11 +9,46 @@
 
 export type MeasurementUnit = 'metric' | 'imperial'
 
+/**
+ * Optional schema.org `PostalAddress` companion for the agency contact
+ * config. Every field is optional so a rebrand can supply as much or as
+ * little as it has, and so an existing agency config that has not been
+ * migrated keeps working without changes.
+ *
+ * The field names match the schema.org `PostalAddress` properties so
+ * the JSON-LD builder can spread the object directly into a
+ * `PostalAddress` payload without a rename step. The free-text
+ * `AgencyContactConfig.address` is the source of truth for the visible
+ * UI (footer and contact card); this object only drives the JSON-LD.
+ */
+export interface AgencyStructuredAddress {
+  streetAddress?: string
+  addressLocality?: string
+  addressRegion?: string
+  postalCode?: string
+  addressCountry?: string
+}
+
 export interface AgencyContactConfig {
   phone: string
   whatsapp: string
   email: string
+  /**
+   * Free-text human-readable address. Required, unchanged, and still the
+   * source of truth for the visible footer and contact-page address card.
+   * The optional `structuredAddress` companion below drives the
+   * `PostalAddress` JSON-LD emitted on the home, contact and about
+   * pages — the two fields coexist.
+   */
   address: string
+  /**
+   * Optional schema.org `PostalAddress` companion. When present and at
+   * least one field is non-empty, the JSON-LD builder emits a
+   * `PostalAddress` object on the three agency nodes. When absent or
+   * empty, the builder falls back to the plain `address` string above
+   * so a rebrand that has not migrated is unaffected.
+   */
+  structuredAddress?: AgencyStructuredAddress
   businessHours?: string
 }
 
