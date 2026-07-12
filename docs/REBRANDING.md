@@ -537,7 +537,7 @@ The property detail page ships a Swiper-based carousel for the main image and an
 
 ### Carousel behaviour
 
-* **Multiple images.** A Swiper carousel renders one slide per image with real `<button type="button">` previous and next controls. The thumbnail strip below the carousel mirrors the slides; clicking a thumbnail calls `swiper.slideTo(index)`. A visible counter (`Image N of T`) lives between the controls and updates with a polite live region.
+* **Multiple images.** A Swiper carousel renders one slide per image with real `<button type="button">` previous and next controls. The thumbnail strip below the carousel mirrors the slides; clicking a thumbnail calls `swiper.slideTo(index)`. A visible counter (`Image N of T`) lives between the controls and updates as a plain `<p>` for sighted users. Swiper's own `.swiper-notification` element (`wrapperLiveRegion: true` by default) is the single screen reader announcement source; a second `aria-live` on the counter would announce the same slide change twice and has therefore been deliberately avoided.
 * **Single image.** A single image renders without thumbnails, arrows, or counter — just the `ResponsiveImage` with the LCP attributes.
 * **Empty `images` array.** `displayImages` falls back to `[coverImage]`, so a record that only declares a cover image still renders as a single image. The cover-image fallback is preserved from the pre-carousel implementation.
 * **Swipe and drag.** Swiper's default touch + mouse drag works on every viewport.
