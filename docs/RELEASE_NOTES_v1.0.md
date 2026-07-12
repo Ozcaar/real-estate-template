@@ -4,8 +4,18 @@ Real Estate Website Template — version 1.0.0.
 
 ## Release summary
 
-v1.0 is the first production-ready release of the Real Estate
-Website Template. It ships a Nuxt 4 application that renders a 7-page
+v1.0 is the first stable release of the Real Estate Website
+Template. It is **release-ready based on the verifiable checks
+documented in this file** (lint, build, static generation, source-level
+review, and configuration validation) and the documented rebrand
+workflow (verified end-to-end with a temporary second-agency
+configuration; see "Rebranding verification" below). Browser-level
+accessibility, runtime performance, CI, automated tests, and
+provider-specific deployment (Vercel, Netlify, Cloudflare, etc.)
+are explicitly **not** part of the v1.0 release and are deferred to
+v1.0.x and v1.1 (see "Explicitly deferred from v1.0" below).
+
+It ships a Nuxt 4 application that renders a 7-page
 public site (home, properties listing, property detail, developments
 listing, agents listing, about, contact), a static-data contract
 validated by Zod at module load, a configuration-driven branding
@@ -200,23 +210,105 @@ permissive format warnings surfaced via `console.warn`).
 
 The v1.0 release candidate was tested end-to-end with a temporary
 second-agency configuration (`app/config/agencies/second.agency.ts`)
-that exercises a different identity (`acme` vs `default`),
-different default locale (`es` vs `en`), different currency
-(`MXN` vs `USD`), different measurement unit (`imperial` vs
-`metric`), different contact data (Mexican phone + Mexican
-PostalAddress), different social links (3 platforms instead of
-5), and different module flags (developments + testimonials
-disabled). The agency was registered through the documented
-rebrand path (swap the import in `app/config/site.config.ts`).
-`pnpm lint` reported 0 errors and 0 warnings, and `pnpm build`
-completed successfully. The cross-config Zod validation
-(`defaultLocale` ⊆ `availableLocales`, theme id in the
-registry, locales registered in `defaultI18nLocales`) accepted
-the new agency. The temporary file was deleted and the
-default agency was restored. The verification confirms that
-the rebrand workflow documented in `docs/REBRANDING.md` §3
-Option B works end-to-end for an agency that differs from the
-sample on every meaningful axis.
+that exercises a different value on **every documented verification
+axis**. The agency was registered through the documented rebrand
+path (swap the import in `app/config/site.config.ts`). A temporary
+alternative theme (`app/themes/coastal.theme.ts`, registered in
+`app/themes/index.ts` as `coastal`) was also created and selected
+from the temporary agency. `pnpm lint` and `pnpm build` reported
+0 errors / 0 warnings and completed successfully. The cross-config
+Zod validation (`defaultLocale` ⊆ `availableLocales`, theme id in
+the registry, locales registered in `defaultI18nLocales`) accepted
+the new agency. `NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate`
+also completed successfully. The temporary agency and theme files
+were deleted and the defaults restored. After restoration, the
+default configuration also passed `pnpm lint`, `pnpm build`, and
+`NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate`. **No
+temporary implementation remains in the final diff.**
+
+### Axes tested
+
+| Axis | Default | Temporary second-agency | Verified by |
+| --- | --- | --- | --- |
+| `id` | `default` | `coastal-acme` | `og:site_name` not used; JSON-LD `RealEstateAgent.@id`; Nuxt payload |
+| `name` | "Real Estate Agency" | "Coastal Acme Real Estate" | `og:site_name`; `<title>`; logo `alt`; footer copyright |
+| `slogan` | "Find your ideal property" | "Coastal Acme finds your place by the sea" | Footer tagline (`agency.slogan \|\| $t('footer.tagline')`) |
+| `theme` (id + tokens) | `default` (teal `#0F766E`) | `coastal` (steel-blue `#0E5C8A`, larger radii, Lato font stack) | HTML `style="background-color:var(--color-accent);color:var(--color-accent-foreground);"`, font-family `var(--font-heading)`, radius `var(--radius-xl)` |
+| `defaultLocale` | `en` | `es` | Declared in `AgencyConfig.defaultLocale`. (The active i18n module default is the `defaultLocale` in `nuxt.config.ts → i18n.defaultLocale`, set to `en`. The agency's `defaultLocale` is part of the rebrand contract but is not yet wired into the i18n module's default; the language switcher exposes both `en` and `es` for either agency.) |
+| `availableLocales` | `['en', 'es']` | `['es', 'en']` (reordered; both registered in `defaultI18nLocales`) | Language switcher renders both options; cross-config Zod accepted |
+| `currency` | `USD` | `MXN` | Declared in `AgencyConfig.currency`. (Per-record `currency` takes priority on `PropertyCard`; agency default is the documented fallback.) |
+| `measurementUnit` | `metric` | `imperial` | Declared in `AgencyConfig.measurementUnit`; per-record `sizeUnit` fallback documented |
+| `contact.phone` / `whatsapp` / `email` / `address` / `businessHours` | US placeholders | Mexican placeholders (+52 phone, hola@..., Av. Constitución 1500, Lun-Vie 9am-6pm) | Footer "Contact" column; `tel:` / `mailto:` / `https://wa.me/...` anchors; JSON-LD `RealEstateAgent.telephone` / `email` / `address` |
+| `contact.structuredAddress` (5-field PostalAddress) | 3 fields (no `addressRegion` / `postalCode`) | 5 fields (full Mexican PostalAddress) | JSON-LD `RealEstateAgent.address` |
+| `social` (Facebook, Instagram, LinkedIn, TikTok, YouTube) | 5 platforms | 3 platforms (Facebook, Instagram, LinkedIn) | Footer social icons; JSON-LD `RealEstateAgent.sameAs` |
+| `modules` | all 4 of properties / developments / agents / testimonials / contact enabled | `developments` + `testimonials` disabled; properties / agents / contact enabled | (a) Configuration validation accepted the disabled flags; (b) Sitemap omitted `/developments`; (c) `AppHeader` and `AppFooter` quick-links nav omitted `Developments`; (d) Home page omitted the testimonials section (`HomeTestimonials v-if="modules.testimonials"`); (e) Property, agent, contact, and home sections rendered normally. |
+| Cross-config Zod validation | passes | passes | `validateAgencyConfig` accepted the temporary agency and the `coastal` theme without error. |
+| Static generation (`pnpm generate`) with `NUXT_PUBLIC_SITE_URL` | passes | passes | 171 routes prerendered in both configurations; the supplied URL appears in canonical, og:url, og:image, JSON-LD `@id` / `url`, and the sitemap. |
+| `pnpm lint` | 0 errors, 0 warnings | 0 errors, 0 warnings | ESLint clean in both configurations. |
+| `pnpm build` | succeeds | succeeds | Nitro build in both configurations. Pre-existing unrelated `@nuxt/image` Windows `sharp` warning is emitted (documented in §13 of `docs/REBRANDING.md`). |
+
+### What the verification does **not** claim
+
+- **Browser-level accessibility.** No browser, no axe, no NVDA / VoiceOver. The v1.0 accessibility was reviewed at the source level by M22 (Task 076).
+- **Runtime performance.** No Lighthouse, no WebPageTest, no production-network measurement. The `pnpm build` and `pnpm generate` outputs are size counts only.
+- **Provider-specific deployment.** The static generation was performed with `NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate` on a Windows development host. Vercel, Netlify, Cloudflare Pages, and other static hosts are **not** validated by this build. A rebrand deploying to a specific provider must validate the provider's deployment behavior separately.
+- **CI.** No continuous integration is configured.
+- **Cross-config Zod validation** is exercised but the **second-agency file is not added to the agency's multi-file `.gitignore` workflow or to a CI matrix**; the verification is a one-time execution during the v1.0 release-candidate preparation.
+
+## Static-generation verification
+
+The v1.0 release candidate was also verified against the documented
+`pnpm generate` deployment path. The exact command category is:
+
+```bash
+NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate
+```
+
+(On Windows PowerShell, the equivalent is `$env:NUXT_PUBLIC_SITE_URL = 'https://example.test'; pnpm generate`.)
+
+The generated static output is under `.output/public/` and contains:
+
+- The 7 public pages: `index.html` (`/`), `about/index.html`, `contact/index.html`, `agents/index.html`, `properties/index.html`, the 6 property detail pages (`properties/<slug>/index.html`).
+- A `developments/index.html` page (with the default agency that has `modules.developments: true`).
+- The SEO infrastructure routes: `sitemap.xml` and `robots.txt`. Both are pre-rendered at build time (configured in `nuxt.config.ts → nitro.prerender.routes`).
+- The Nuxt asset bundles under `_nuxt/` and image-optimized variants under `_ipx/`.
+
+**Generated `sitemap.xml` (with the default agency, `NUXT_PUBLIC_SITE_URL=https://example.test`):**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.test/</loc></url>
+  <url><loc>https://example.test/about</loc></url>
+  <url><loc>https://example.test/contact</loc></url>
+  <url><loc>https://example.test/agents</loc></url>
+  <url><loc>https://example.test/properties</loc></url>
+  <url><loc>https://example.test/properties/modern-hillside-villa</loc></url>
+  <url><loc>https://example.test/properties/downtown-skyline-apartment</loc></url>
+  <url><loc>https://example.test/properties/coastal-family-home</loc></url>
+  <url><loc>https://example.test/properties/prime-commercial-space</loc></url>
+  <url><loc>https://example.test/properties/garden-view-building-lot</loc></url>
+  <url><loc>https://example.test/properties/executive-office-suite</loc></url>
+  <url><loc>https://example.test/developments</loc></url>
+</urlset>
+```
+
+**Generated `robots.txt` (with the default agency, `NUXT_PUBLIC_SITE_URL=https://example.test`):**
+
+```text
+User-Agent: *
+Allow: /
+
+Sitemap: https://example.test/sitemap.xml
+```
+
+### Static-generation findings
+
+- The supplied `NUXT_PUBLIC_SITE_URL` is used in the `<loc>` of every sitemap entry, in the `Sitemap:` line of `robots.txt`, in `<link rel="canonical">`, in `og:url`, in `og:image`, in the JSON-LD `@id` and `url` fields, and in the `__NUXT_DATA__` payload.
+- When the temporary agency disabled `developments` and `testimonials`, the sitemap correctly omitted the `/developments` entry. The disabled-modules gate works end-to-end through static generation: `server/routes/sitemap.xml.ts` reads `siteConfig.agency.modules.*` at build time and includes / excludes accordingly.
+- **v1.0 exposes no `/api/contact` endpoint.** A `grep` of the generated `.output/public/` for `api/contact` returns zero matches. The lead-capture branch (`feature/lead-capture-v1.1`, commit `343abeb`) ships a `POST /api/contact` Nitro endpoint; that branch is **not** part of v1.0 and is **not** present in the v1.0 static output.
+- The pre-existing unrelated `@nuxt/image` Windows `sharp` warning is emitted during static generation on Windows. The warning is documented as non-fatal in `docs/REBRANDING.md` §13.
+- 171 routes are prerendered in ~4.2 seconds on the development host.
 
 ## Deployment modes
 
@@ -230,7 +322,13 @@ infrastructure target, not the v1.0 feature set.
   static output includes the SEO infrastructure.
   `NUXT_PUBLIC_SITE_URL` must be set at build time when the
   SEO infrastructure routes need absolute URLs. The v1.0
-  release is fully usable on a pure static host.
+  release's static-export behavior was verified with
+  `NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate` on
+  a Windows development host (see "Static-generation
+  verification" below). Provider-specific deployment (Vercel,
+  Netlify, Cloudflare Pages, etc.) is **not** validated by this
+  build and must be tested by the rebrand for the chosen
+  provider.
 * **`pnpm build`** produces a Nitro server build under
   `.output/server/`. The same dynamic routes are served at
   request time, gated by the same env var. Use this target
