@@ -403,6 +403,18 @@ Both attributes are forwarded to `<NuxtImg>` (which passes them through to the u
 * The favicon is resolved from `agency.favicon` if set, otherwise it falls back to `/favicon.ico`.
 * Browsers cache the favicon aggressively. Hard refresh (Ctrl+Shift+R) or open a private window to verify.
 
+### The build emits a Windows `sharp` warning
+
+* On Windows, `pnpm build` may emit a pre-existing `@nuxt/image` warning similar to:
+
+  ```text
+  [@nuxt/image] WARN sharp binaries for win32-x64 cannot be found.
+  ```
+
+  This warning is currently **non-fatal**: the build completes successfully, the generated site renders correctly, and the template ships with SVG placeholder images that do not require `sharp`. A rebrand that replaces the placeholders with raster images (`webp`, `jpg`, `avif`) may want `sharp` to be installed to allow on-the-fly resizing.
+* The warning is **not** a v1.0 release-blocker. It is documented here so a rebrand deploying on Windows is not surprised by it.
+* If a rebrand wants to silence the warning, run `pnpm rebuild sharp` (or `pnpm install --shamefully-hoist` if the postinstall script does not pick the platform-specific binary automatically). This is a troubleshooting step, not a fix to the template; the template itself does not claim the warning has been resolved.
+
 ### My nav link is missing
 
 * The `mainNavigation` array filters entries by `agency.modules.*`. Confirm the relevant module is `true` in the agency config.
