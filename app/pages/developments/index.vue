@@ -58,6 +58,7 @@ useHead({
   <div>
     <BaseSection spacing="lg">
       <SectionHeader
+        :level="1"
         align="center"
         :eyebrow="t('nav.developments')"
         :title="t('developments.page.title')"

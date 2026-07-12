@@ -146,6 +146,7 @@ useJsonLd(jsonLd)
   <div>
     <BaseSection spacing="lg">
       <SectionHeader
+        :level="1"
         align="center"
         :eyebrow="t('about.story.eyebrow')"
         :title="pageTitle"

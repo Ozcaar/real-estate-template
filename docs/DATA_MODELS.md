@@ -365,8 +365,6 @@ export interface NavItem {
  * in i18n; this only holds structural/branding defaults.
  */
 export interface SeoConfig {
-  /** Title template, `%s` is replaced by the page title. */
-  titleTemplate: string
   /** Default Open Graph / fallback share image. */
   ogImage: string
   /** Twitter card type. */

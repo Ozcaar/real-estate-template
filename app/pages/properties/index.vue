@@ -330,6 +330,7 @@ const emptyMessage = computed(
 <template>
   <BaseSection spacing="lg">
     <SectionHeader
+      :level="1"
       align="center"
       :eyebrow="t('nav.properties')"
       :title="t('properties.page.title')"

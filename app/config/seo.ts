@@ -11,7 +11,6 @@ import type { SeoConfig } from '~/types/site.types'
  * never a 404; agencies are expected to ship their own logo at this path.
  */
 export const defaultSeoConfig: SeoConfig = {
-  titleTemplate: '%s',
   ogImage: '/images/logo.svg',
   twitterCard: 'summary_large_image',
 }

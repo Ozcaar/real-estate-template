@@ -158,6 +158,7 @@ useJsonLd(jsonLd)
 <template>
   <BaseSection spacing="lg">
     <SectionHeader
+      :level="1"
       align="center"
       :eyebrow="t('nav.contact')"
       :title="t('contact.page.title')"

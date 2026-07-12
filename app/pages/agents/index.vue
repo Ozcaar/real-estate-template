@@ -97,6 +97,7 @@ useJsonLd(jsonLd)
   <div>
     <BaseSection spacing="lg">
       <SectionHeader
+        :level="1"
         align="center"
         :eyebrow="t('nav.agents')"
         :title="t('agents.page.title')"
