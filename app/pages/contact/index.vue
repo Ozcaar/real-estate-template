@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { buildWhatsAppLink } from '~/core/utils/whatsapp-link'
 import { usePageSeo } from '~/core/composables/usePageSeo'
 import { useJsonLd } from '~/core/composables/useJsonLd'
@@ -10,34 +10,26 @@ import { agencyPostalAddress } from '~/core/utils/postal-address'
  *
  * Thin route: it reads every contact channel from the documented agency
  * config (no hardcoded phone, email, WhatsApp or address), renders a
- * contact-methods card column and a static contact-form column. The form
- * is intentionally non-functional for the MVP — a `placeholderNotice` and
- * `disabled` submit make that clear without inventing a backend. Wiring a
- * real submission is a future-phase task.
+ * contact-methods card column, and embeds the `LeadForm` component for
+ * the message column. The lead form is **driven by
+ * `agency.leads.enabled`** — when the agency has opted in, the form is
+ * fully interactive and posts to `POST /api/contact`; when the agency has
+ * not opted in, the form keeps the historical placeholder behavior
+ * (visible notice + permanently disabled submit) and the contact
+ * methods column remains the canonical completion path.
+ *
+ * **Fallback.** The contact methods column (tel / mailto / WhatsApp) is
+ * always available regardless of the form's state. A user whose form
+ * submission fails, who has JavaScript disabled, or who is browsing a
+ * pure-static deployment that does not run the `/api/contact` endpoint
+ * can complete the contact journey in 1 click from this page.
  */
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const site = useSiteConfig()
-
-// `useId()`-derived form field ids so the form is safe to render multiple
-// times on the same page (e.g. inside a modal later) without breaking the
-// label / input association.
-const formNameId = useId()
-const formEmailId = useId()
-const formPhoneId = useId()
-const formMessageId = useId()
 
 const contact = computed(() => site.value.agency.contact)
 const whatsappLink = computed(() => buildWhatsAppLink(contact.value.whatsapp))
-
-// Form UI state. The form is a placeholder; values are kept in refs so the
-// UI is fully interactive (labels, validation hints, disabled submit) even
-// though nothing is sent.
-const form = ref({
-  name: '',
-  email: '',
-  phone: '',
-  message: '',
-})
+const leadsEnabled = computed(() => site.value.agency.leads.enabled)
 
 // Methods rendered as cards. Each entry is only shown when the
 // corresponding config field is non-empty, so an agency can enable or
@@ -212,91 +204,11 @@ useJsonLd(jsonLd)
             {{ t('contact.form.description') }}
           </p>
 
-          <form
-            class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2"
-            @submit.prevent
-          >
-            <div class="sm:col-span-2">
-              <label
-                :for="formNameId"
-                class="mb-1 block text-xs font-medium text-[var(--color-muted)]"
-              >
-                {{ t('contact.form.nameLabel') }}
-              </label>
-              <input
-                :id="formNameId"
-                v-model="form.name"
-                type="text"
-                autocomplete="name"
-                :placeholder="t('contact.form.namePlaceholder')"
-                class="h-11 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm text-[var(--color-foreground)]"
-              >
-            </div>
-
-            <div>
-              <label
-                :for="formEmailId"
-                class="mb-1 block text-xs font-medium text-[var(--color-muted)]"
-              >
-                {{ t('contact.form.emailLabel') }}
-              </label>
-              <input
-                :id="formEmailId"
-                v-model="form.email"
-                type="email"
-                autocomplete="email"
-                :placeholder="t('contact.form.emailPlaceholder')"
-                class="h-11 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm text-[var(--color-foreground)]"
-              >
-            </div>
-
-            <div>
-              <label
-                :for="formPhoneId"
-                class="mb-1 block text-xs font-medium text-[var(--color-muted)]"
-              >
-                {{ t('contact.form.phoneLabel') }}
-              </label>
-              <input
-                :id="formPhoneId"
-                v-model="form.phone"
-                type="tel"
-                autocomplete="tel"
-                :placeholder="t('contact.form.phonePlaceholder')"
-                class="h-11 w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 text-sm text-[var(--color-foreground)]"
-              >
-            </div>
-
-            <div class="sm:col-span-2">
-              <label
-                :for="formMessageId"
-                class="mb-1 block text-xs font-medium text-[var(--color-muted)]"
-              >
-                {{ t('contact.form.messageLabel') }}
-              </label>
-              <textarea
-                :id="formMessageId"
-                v-model="form.message"
-                rows="5"
-                :placeholder="t('contact.form.messagePlaceholder')"
-                class="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-foreground)]"
-              />
-            </div>
-
-            <div class="sm:col-span-2">
-              <p class="mb-4 rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3 text-xs text-[var(--color-muted)]">
-                {{ t('contact.form.placeholderNotice') }}
-              </p>
-              <BaseButton
-                type="submit"
-                size="lg"
-                disabled
-                block
-              >
-                {{ t('contact.form.submit') }}
-              </BaseButton>
-            </div>
-          </form>
+          <LeadForm
+            class="mt-6"
+            :enabled="leadsEnabled"
+            :locale="String(locale)"
+          />
         </BaseCard>
       </div>
     </div>

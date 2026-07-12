@@ -247,7 +247,23 @@
       "messageLabel": "Mensaje",
       "messagePlaceholder": "¿En qué podemos ayudarte?",
       "submit": "Enviar mensaje",
-      "placeholderNotice": "El envío del formulario aún no está habilitado en esta plantilla. Por favor usa uno de los métodos de contacto de la izquierda mientras se completa la integración."
+      "placeholderNotice": "El envío del formulario aún no está habilitado en esta plantilla. Por favor usa uno de los métodos de contacto de la izquierda mientras se completa la integración.",
+      "honeypotLabel": "Deja este campo vacío",
+      "success": "Gracias — tu mensaje está en camino. Referencia: {id}.",
+      "error": "No pudimos enviar tu mensaje en este momento. Por favor usa uno de los métodos de contacto de la izquierda mientras resolvemos el problema.",
+      "errors": {
+        "name_too_short": "Por favor ingresa tu nombre completo.",
+        "name_too_long": "El nombre es demasiado largo.",
+        "email_too_long": "El correo electrónico es demasiado largo.",
+        "email_invalid": "Por favor ingresa un correo electrónico válido.",
+        "phone_too_long": "El teléfono es demasiado largo.",
+        "phone_invalid": "Por favor ingresa un número de teléfono válido.",
+        "message_too_short": "Por favor escribe un mensaje más largo.",
+        "message_too_long": "El mensaje es demasiado largo.",
+        "contact_channel_required": "Por favor proporciona un correo electrónico o un número de teléfono.",
+        "locale_invalid": "La configuración regional no es válida.",
+        "honeypot": "Spam detectado."
+      }
     }
   },
   "about": {

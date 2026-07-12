@@ -69,6 +69,26 @@ export interface AgencyModulesConfig {
   contact: boolean
 }
 
+/**
+ * Lead capture configuration.
+ *
+ * `enabled` controls whether the visible `/contact` form is
+ * interactive. When `false`, the form keeps the historical
+ * placeholder behavior (visible notice + permanently disabled
+ * submit). When `true`, the form posts to `POST /api/contact`.
+ *
+ * The active **delivery adapter** is selected at the server via
+ * server-only runtime config (`NUXT_LEADS_ADAPTER`,
+ * `NUXT_LEADS_WEBHOOK_URL`, `NUXT_LEADS_WEBHOOK_SECRET`). The
+ * adapter is treated as **operational** server configuration, not
+ * agency branding configuration, and intentionally does not live
+ * on `AgencyConfig` — rebrand changes must never require touching
+ * a delivery destination.
+ */
+export interface AgencyLeadsConfig {
+  enabled: boolean
+}
+
 export interface AgencyConfig {
   /** Unique agency identifier. */
   id: string
@@ -93,4 +113,5 @@ export interface AgencyConfig {
   contact: AgencyContactConfig
   social: AgencySocialConfig
   modules: AgencyModulesConfig
+  leads: AgencyLeadsConfig
 }

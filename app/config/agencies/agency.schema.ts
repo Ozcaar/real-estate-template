@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type {
   AgencyConfig,
   AgencyContactConfig,
+  AgencyLeadsConfig,
   AgencyModulesConfig,
   AgencySocialConfig,
   AgencyStructuredAddress,
@@ -92,6 +93,16 @@ export const agencyModulesConfigSchema = z.object({
   contact: z.boolean(),
 }) satisfies z.ZodType<AgencyModulesConfig>
 
+/**
+ * Lead capture configuration. The `enabled` flag controls whether
+ * the visible `/contact` form is interactive. The actual delivery
+ * adapter is selected at the server via server-only runtime config
+ * and is intentionally not part of agency branding.
+ */
+export const agencyLeadsConfigSchema = z.object({
+  enabled: z.boolean(),
+}) satisfies z.ZodType<AgencyLeadsConfig>
+
 /* ------------------------------------------------------------------ *
  * Full agency schema
  * ------------------------------------------------------------------ */
@@ -110,6 +121,7 @@ export const agencyConfigSchema = z.object({
   contact: agencyContactConfigSchema,
   social: agencySocialConfigSchema,
   modules: agencyModulesConfigSchema,
+  leads: agencyLeadsConfigSchema,
 }) satisfies z.ZodType<AgencyConfig>
 
 /**

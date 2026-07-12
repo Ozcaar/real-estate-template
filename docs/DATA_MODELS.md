@@ -168,38 +168,140 @@ export interface Agent {
 
 ## 5. Lead
 
-> **Status: planned, not yet implemented.** `app/features/leads/` is
-> reserved for the future lead-capture feature. The current contact
-> form is a UI placeholder until the lead module lands. The interface
-> below is the **planned** shape; do not consume it from code yet.
+> **Status: shipped (Task 080 / M26).** `app/features/leads/` owns
+> the public input contract, the shared Zod schema, the form
+> component, and the type definitions. Server-side delivery lives
+> in `server/services/leads/` and is documented in
+> `docs/REBRANDING.md` §12.
+
+### 5.1 Public input contract
+
+The form posts a flat JSON object to `POST /api/contact`. Server-side
+re-validation runs the same schema (`app/features/leads/schemas/lead.schema.ts`).
+The contract is intentionally a subset of the planned `Lead` shape
+— the server stamps the server-only fields (`id`, `receivedAt`,
+`source`) before delivery.
 
 ```ts
-export type LeadInterestType =
-  | 'buy'
-  | 'rent'
-  | 'sell'
-  | 'invest'
-  | 'info'
+import type { LeadInput } from '~/features/leads/types/lead.types'
 
-export type LeadSource =
-  | 'contact'
-  | 'property'
-  | 'development'
-  | 'whatsapp'
-  | 'cta'
-
-export interface Lead {
-  id?: string
-  name: string
-  email?: string
-  phone: string
-  message?: string
-  interestType: LeadInterestType
-  propertyId?: string
-  developmentId?: string
-  source: LeadSource
+// Shape of the JSON body the form posts to /api/contact.
+export interface LeadInput {
+  name: string          // 2–120 trimmed characters, required
+  email: string         // optional, but if present must be a valid email
+  phone: string         // optional, 6–32 chars, permissive formatting
+  message: string       // 10–4000 trimmed characters, required
+  website: string       // honeypot — must be empty
+  locale: string        // optional, 2–12 characters
 }
 ```
+
+### 5.2 Field rules
+
+| Field    | Required | Rule                                                                |
+| -------- | -------- | ------------------------------------------------------------------- |
+| `name`   | yes      | trimmed, 2–120 chars                                                |
+| `email`  | no       | trimmed, ≤ 254 chars, must be a valid email when present            |
+| `phone`  | no       | 6–32 chars; accepts digits, spaces, dashes, parentheses, leading `+` |
+| `message`| yes      | trimmed, 10–4000 chars                                              |
+| `website`| yes      | honeypot — must be empty (any non-empty value is a bot signal)      |
+| `locale` | no       | 2–12 chars; BCP-47-shaped; falls back to `accept-language`         |
+
+**Cross-field rule.** At least one of `email` or `phone` must be
+non-empty. A real lead has at least one contact channel.
+
+### 5.3 Stamped (internal) lead shape
+
+The server stamps the input before delivery. The stamped shape
+includes three server-only fields. The raw IP, user-agent, and
+cookies are **never** carried into the stamped shape and **never**
+leave the server.
+
+```ts
+export type LeadSource = 'contact'
+
+export interface Lead {
+  id: string           // crypto.randomUUID()
+  receivedAt: string   // ISO 8601 timestamp
+  source: LeadSource
+  name: string
+  email: string
+  phone: string
+  message: string
+  locale: string
+}
+```
+
+### 5.4 Honeypot
+
+The `website` field is a hidden text input that real users never
+touch. The server treats any non-empty value as a bot and returns
+the same generic `200 { "ok": true }` response without delivering or
+logging the lead. Bots that read the response body cannot tell
+they have been detected.
+
+### 5.5 Validation
+
+The shared Zod schema lives at
+`app/features/leads/schemas/lead.schema.ts`:
+
+```ts
+export const leadInputSchema = z.object({
+  name: z.string().trim().min(2, 'name_too_short').max(120, 'name_too_long'),
+  email: z.string().trim().max(254, 'email_too_long').email('email_invalid').optional().or(z.literal('')),
+  phone: z.string().trim().max(32, 'phone_too_long').regex(/^[+]?[0-9 ()\-]{6,32}$/u, 'phone_invalid').optional().or(z.literal('')),
+  message: z.string().trim().min(10, 'message_too_short').max(4000, 'message_too_long'),
+  website: z.string().max(0, 'honeypot').optional().or(z.literal('')),
+  locale: z.string().trim().min(2, 'locale_invalid').max(12, 'locale_invalid').optional().or(z.literal('')),
+})
+
+export const leadInputRefined = leadInputSchema.refine(
+  (data) => Boolean(data.email) || Boolean(data.phone),
+  { message: 'contact_channel_required', path: ['email'] },
+)
+```
+
+The schema emits **stable error codes** (e.g. `name_too_short`) so
+the i18n layer can map them to per-locale copy without coupling the
+schema to a particular translation file.
+
+### 5.6 Endpoint and response shapes
+
+The `POST /api/contact` endpoint maps the server-side service result
+to one of six HTTP responses. The shapes are stable and the
+client never receives provider details, webhook URLs, secrets, or
+stack traces.
+
+| Status | Body | When |
+| ------ | ---- | ---- |
+| 200    | `{ "ok": true, "id": "..." }` | Successful delivery |
+| 200    | `{ "ok": true }` | Honeypot tripped (silent) |
+| 400    | `{ "ok": false, "error": "validation", "issues": [{ "path", "message" }] }` | Schema validation failed (client or server) |
+| 413    | `{ "ok": false, "error": "payload_too_large" }` | Body larger than 16 KB |
+| 415    | `{ "ok": false, "error": "unsupported_media_type" }` | Content-Type is not `application/json` |
+| 429    | `{ "ok": false, "error": "rate_limited" }` | Per-process rate limit exceeded |
+| 502    | `{ "ok": false, "error": "delivery" }` | Adapter returned a non-success result |
+| 503    | `{ "ok": false, "error": "adapter_disabled" }` | Runtime adapter is `disabled` |
+
+### 5.7 Defenses and privacy
+
+- **Honeypot.** As above. No new dependency.
+- **Body size limit.** 16 KB, checked before JSON parsing.
+- **Per-process rate limit.** 5 accepted attempts per 10 minutes
+  per request key (`ip + user-agent`, truncated to 200 chars).
+  In-memory `Map`, opportunistic cleanup. **Not** distributed; a
+  future v1.x task can move it to a Nitro storage driver backed
+  by an external KV.
+- **Privacy.** The endpoint never logs the body. The rate-limit
+  key is the only thing that sees the IP. The stamped lead shape
+  carries no IP, no user-agent, no cookies. The `log` adapter
+  writes only `{ id, source, presence flags, message length }` to
+  stdout; the `webhook` adapter sends the stamped lead as JSON to
+  the agency's endpoint under the agency's own retention policy.
+- **No storage.** The endpoint does not persist leads to
+  disk, to `useStorage()`, or to any external sink the agency
+  did not configure. A persistence adapter is a deliberate future
+  task and is out of scope for the MVP.
 
 ## 6. Agency Config
 

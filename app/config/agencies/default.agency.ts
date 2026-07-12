@@ -55,4 +55,16 @@ export const defaultAgencyConfig: AgencyConfig = {
     testimonials: true,
     contact: true,
   },
+  /**
+   * Lead capture is intentionally disabled by default in the sample
+   * agency. The visible form keeps the historical placeholder
+   * behavior (visible notice + permanently disabled submit) until
+   * a rebrand explicitly opts in. To enable live lead capture, set
+   * `leads.enabled: true` here AND set `NUXT_LEADS_ADAPTER` plus the
+   * matching env vars at deploy time. The adapter is server-only
+   * operational configuration and never lives in this file.
+   */
+  leads: {
+    enabled: false,
+  },
 }

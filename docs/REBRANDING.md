@@ -584,3 +584,196 @@ Under `properties.detail.gallery`:
 | `counter` | `Image {n} of {total}` | `Imagen {n} de {total}` | Visible counter element |
 
 A rebrand that needs different copy can edit these nine keys in both `i18n/locales/en.json` and `i18n/locales/es.json` without touching any component code.
+
+## 12. Lead Capture and Delivery
+
+The template ships a configurable lead-capture pipeline that posts
+contact-form submissions to a single Nitro endpoint
+(`POST /api/contact`) and routes the stamped lead through one of
+three pluggable server-side adapters: `disabled`, `log`, or
+`webhook`. The visible `/contact` form is driven by
+`agency.leads.enabled`; the active delivery adapter is selected
+at request time by server-only runtime config.
+
+The form's structure, the schema, and the adapter boundary are all
+generic. A rebrand that wants email delivery, a CRM webhook, or a
+queue-backed delivery can add a new adapter without changing the
+form, the schema, or the endpoint.
+
+### 12.1 Form interactivity
+
+```ts
+// app/config/agencies/<your-agency>.agency.ts
+export default {
+  // ... existing fields ...
+  leads: {
+    enabled: false, // true to enable live lead capture
+  },
+}
+```
+
+When `leads.enabled === false` (the default in the sample
+agency), the visible form keeps the historical placeholder
+behavior: a visible `contact.form.placeholderNotice` and a
+permanently disabled submit button. The contact-methods column
+(tel / mailto / WhatsApp / address / business hours) is the
+canonical completion path and is always rendered.
+
+When `leads.enabled === true`, the form is fully interactive and
+posts to `POST /api/contact`. The form's state machine is
+`idle ? submitting ? success | validation | error`, with field-level
+`aria-invalid` / `aria-describedby` and one mutually exclusive
+`role="status"` / `role="alert"` region.
+
+### 12.2 Server-only runtime config
+
+The active delivery adapter is selected at request time by
+server-only runtime config. These env vars are read by Nitro at
+boot, never sent to the client bundle, and never logged.
+
+| Env var                       | Default       | Required when                         |
+| ----------------------------- | ------------- | ------------------------------------- |
+| `NUXT_LEADS_ADAPTER`          | `disabled`    | any submission path                   |
+| `NUXT_LEADS_WEBHOOK_URL`      | `''`          | adapter is `webhook`                  |
+| `NUXT_LEADS_WEBHOOK_SECRET`   | `''`          | adapter is `webhook`                  |
+
+`NUXT_LEADS_ADAPTER` accepts one of three values:
+
+- `disabled` — the default. The endpoint returns 503 on every
+  submission. The form is still wired so a rebrand that flips
+  `leads.enabled` and the adapter together goes live without code
+  changes.
+- `log` — useful in development. The endpoint writes a single
+  `console.info` line per accepted lead, with **no name, email,
+  phone, message content, IP, or user-agent** in the line. Only
+  the lead id, source, presence booleans, and message length.
+- `webhook` — production. The endpoint POSTs the stamped lead
+  as JSON to `NUXT_LEADS_WEBHOOK_URL` with a 5-second timeout,
+  no redirect following, and an `X-Lead-Signature` HMAC SHA-256
+  header over the exact JSON payload. The agency-side endpoint
+  verifies the signature with `NUXT_LEADS_WEBHOOK_SECRET`.
+
+### 12.3 Webhook signature
+
+The webhook adapter signs the exact JSON payload sent to the
+upstream. The agency-side endpoint verifies the signature with
+the shared secret using a constant-time comparison. The header
+is `X-Lead-Signature` with the value `sha256=<hex>`:
+
+```ts
+// agency-side endpoint pseudocode
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
+function verify(body: string, header: string | undefined, secret: string): boolean {
+  if (!header) return false
+  const expected = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`
+  const a = Buffer.from(expected)
+  const b = Buffer.from(header)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+```
+
+A 5-second timeout caps each delivery. Non-2xx responses,
+timeouts, and network errors all become a generic 502 response
+at the endpoint; the upstream body is never exposed to the
+client.
+
+### 12.4 Deployment requirements
+
+The lead-capture pipeline requires a **server-capable** Nitro
+deployment:
+
+- `pnpm build` produces `.output/server/index.mjs` and the
+  endpoint is reachable at `/api/contact`. This is the
+  recommended deploy target.
+- Serverless presets (Cloudflare Workers, Vercel, Netlify) that
+  ship a Nitro server runtime also work as long as the runtime
+  supports `crypto.randomUUID`, `node:crypto.createHmac`, and the
+  global `fetch`. The default Nitro presets used by `pnpm build`
+  satisfy all three.
+
+A **pure static** `pnpm generate` deployment does **not**
+include server routes and cannot serve `/api/contact`. An agency
+that ships static-only builds keeps the placeholder form
+behavior and the contact methods column is the canonical
+completion path. `pnpm generate` does not error on the lead
+module — the server route is simply not emitted in the static
+output.
+
+### 12.5 No-JavaScript and failed-delivery fallback
+
+The form is not progressively enhanced for no-JS POST in the
+MVP. A no-JS user sees the placeholder form (or, when
+`leads.enabled === true`, the form with a disabled submit and
+no native action target). The contact methods column is the
+no-JS completion path: `tel:`, `mailto:`, and `https://wa.me/`
+are real anchor tags that work without JavaScript.
+
+When `leads.enabled === true` and a submission fails, the
+form re-renders with the entered values intact and a
+non-provider-specific `contact.form.error` message. The user
+can switch to the contact methods column at any time without
+leaving the page.
+
+### 12.6 Privacy stance
+
+The endpoint does not persist leads. The configured delivery
+adapter is the only place that sees the stamped lead shape, and
+the stamped shape carries no IP, no user-agent, and no cookies.
+The `log` adapter writes no PII; the `webhook` adapter sends
+the stamped lead to the agency-side endpoint under the
+agency's own retention policy.
+
+The template makes no claim of GDPR, CCPA, or LFPDPPP
+compliance. A rebrand that requires a privacy policy, a consent
+checkbox, or a data-subject-access flow should add those on top
+of the shipped pipeline. The end-to-end audit of retention,
+export, and deletion is the agency's responsibility, not the
+template's.
+
+### 12.7 Rebranding checklist addition
+
+1. Decide whether you want live lead capture or the
+   placeholder form. The default is the placeholder.
+2. To enable live capture, set `leads.enabled: true` in your
+   agency config.
+3. Set `NUXT_LEADS_ADAPTER` in the deploy environment
+   (`disabled`, `log`, or `webhook`).
+4. For `webhook`, set `NUXT_LEADS_WEBHOOK_URL` to a URL you
+   control (a Cloudflare Worker, a Make / Zapier / n8n hook,
+   or your own server) and set `NUXT_LEADS_WEBHOOK_SECRET` to
+   a random 32+ character string. The agency-side endpoint
+   must verify the `X-Lead-Signature` header.
+5. Confirm the contact methods column is correct for the
+   agency. It remains the no-JS and failed-delivery fallback.
+6. If you need a privacy policy, consent checkbox, or data
+   retention schedule, add it on top of the shipped pipeline.
+
+### 12.8 Troubleshooting
+
+**The form posts but nothing arrives.** Confirm the
+`NUXT_LEADS_ADAPTER` env var is set in the deploy environment
+(not in `.env.local` if the deploy platform does not load it).
+Restart the server after the env var change. The endpoint
+returns 503 when the adapter is `disabled` and the agency has
+enabled the form.
+
+**The form posts and the endpoint returns 502.** Inspect the
+agency-side webhook endpoint. The endpoint returns 502 when
+the upstream returns non-2xx, times out after 5 seconds, or
+refuses the connection. The agency-side body is logged
+server-side at `warn`; the client never sees it.
+
+**The form posts and the endpoint returns 429.** A
+per-connection rate limit of 5 accepted attempts per 10
+minutes is in effect. The limit is in-memory and per-process;
+a multi-process deployment (PM2 cluster, Cloudflare Workers
+isolates) shares no state between instances. A rebrand that
+needs a higher rate can move the limiter to a Nitro storage
+driver backed by an external KV in a future v1.x task.
+
+**The form is interactive but the lead never reaches
+`pnpm dev` stdout.** Confirm `NUXT_LEADS_ADAPTER=log` is set
+in `.env.local` (Nitro reads `.env` / `.env.local` in dev) and
+restart `pnpm dev`. The `log` adapter writes one line per
+accepted lead to the dev server's stdout.

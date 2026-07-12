@@ -247,7 +247,23 @@
       "messageLabel": "Message",
       "messagePlaceholder": "How can we help?",
       "submit": "Send message",
-      "placeholderNotice": "Form submission is not enabled in this template yet. Please use one of the contact methods on the left while the integration is being built."
+      "placeholderNotice": "Form submission is not enabled in this template yet. Please use one of the contact methods on the left while the integration is being built.",
+      "honeypotLabel": "Leave this field empty",
+      "success": "Thanks — your message is on its way. Reference: {id}.",
+      "error": "We could not send your message right now. Please use one of the contact methods on the left while we resolve the issue.",
+      "errors": {
+        "name_too_short": "Please enter your full name.",
+        "name_too_long": "Name is too long.",
+        "email_too_long": "Email is too long.",
+        "email_invalid": "Please enter a valid email address.",
+        "phone_too_long": "Phone is too long.",
+        "phone_invalid": "Please enter a valid phone number.",
+        "message_too_short": "Please write a longer message.",
+        "message_too_long": "Message is too long.",
+        "contact_channel_required": "Please provide an email or a phone number.",
+        "locale_invalid": "Locale is invalid.",
+        "honeypot": "Spam detected."
+      }
     }
   },
   "about": {
