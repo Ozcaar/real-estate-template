@@ -32,9 +32,15 @@ config — no component edits required.
 The v1.0 release is the validated code state at commit
 `edac775` ("Se finalizan correcciones de pre-release v1.0") plus
 four release-candidate documentation corrections applied in the
-v1.0.0 commit on the `release/v1.0.0` branch. The lead-capture
-work that exists on the `feature/lead-capture-v1.1` branch
-(commit `343abeb`) is **not** part of v1.0.
+v1.0.0 commit on the `release/v1.0.0` branch, plus the
+documentation refinements in the v1.0.0 final-correction commit
+on the same branch (Task 082, M27 — re-verification of the
+second-agency rebrand path and the `pnpm generate`
+static-export path; see "Rebranding verification", "Static-
+generation verification", and "Milestone-divergence note"
+below). The lead-capture work that exists on the
+`feature/lead-capture-v1.1` branch (commit `343abeb`) is **not**
+part of v1.0.
 
 ## Public routes (7)
 
@@ -208,44 +214,58 @@ permissive format warnings surfaced via `console.warn`).
 
 ## Rebranding verification
 
-The v1.0 release candidate was tested end-to-end with a temporary
-second-agency configuration (`app/config/agencies/second.agency.ts`)
-that exercises a different value on **every documented verification
-axis**. The agency was registered through the documented rebrand
-path (swap the import in `app/config/site.config.ts`). A temporary
-alternative theme (`app/themes/coastal.theme.ts`, registered in
+The v1.0 release candidate was re-verified end-to-end as part of
+Task 082 (M27) with a temporary second-agency configuration
+(`app/config/agencies/second.agency.ts`) that exercises a
+different value on every documented verification axis. The agency
+was registered through the documented rebrand path (swap the
+import in `app/config/site.config.ts`). Because only one permanent
+theme is registered, a temporary alternative theme
+(`app/themes/coastal.theme.ts`, registered in
 `app/themes/index.ts` as `coastal`) was also created and selected
-from the temporary agency. `pnpm lint` and `pnpm build` reported
-0 errors / 0 warnings and completed successfully. The cross-config
-Zod validation (`defaultLocale` ⊆ `availableLocales`, theme id in
-the registry, locales registered in `defaultI18nLocales`) accepted
-the new agency. `NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate`
-also completed successfully. The temporary agency and theme files
-were deleted and the defaults restored. After restoration, the
-default configuration also passed `pnpm lint`, `pnpm build`, and
-`NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate`. **No
-temporary implementation remains in the final diff.**
+from the temporary agency. The cross-config Zod validation
+(`defaultLocale` ⊆ `availableLocales`, theme id in the registry,
+locales registered in `defaultI18nLocales`) accepted the new
+agency. `pnpm lint` and `pnpm build` reported 0 errors / 0
+warnings and completed successfully. The disabled-module flag
+(`developments: false`, `testimonials: false`) was accepted by
+the configuration validation, the navigation generator omitted
+the `Developments` quick-link, the home page omitted the
+`HomeTestimonials` section, and the static-generated sitemap
+omitted the `/developments` entry (see the table below).
+`NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate`
+prerendered 171 routes successfully on the temporary agency
+configuration. The temporary agency and theme files were then
+deleted, the default agency and theme registry were restored,
+and the same `pnpm lint`, `pnpm build`, and
+`NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate`
+pipeline was re-run on the default v1.0 configuration: all three
+passed. The restored default sitemap includes `/developments`
+(12 entries vs 11 with the temporary agency), confirming the
+disabled-module gate is the only difference. **No temporary
+implementation remains in the final diff.**
 
-### Axes tested
+### Axes tested (Task 082, M27 — re-verification)
 
 | Axis | Default | Temporary second-agency | Verified by |
 | --- | --- | --- | --- |
-| `id` | `default` | `coastal-acme` | `og:site_name` not used; JSON-LD `RealEstateAgent.@id`; Nuxt payload |
-| `name` | "Real Estate Agency" | "Coastal Acme Real Estate" | `og:site_name`; `<title>`; logo `alt`; footer copyright |
+| `id` | `default` | `coastal-acme` | `<title>`; `og:site_name`; JSON-LD `RealEstateAgent.name`; `__NUXT_DATA__` payload |
+| `name` | "Real Estate Agency" | "Coastal Acme Real Estate" | `<title>`; `og:site_name`; logo `alt`; footer copyright; JSON-LD `RealEstateAgent.name` |
 | `slogan` | "Find your ideal property" | "Coastal Acme finds your place by the sea" | Footer tagline (`agency.slogan \|\| $t('footer.tagline')`) |
-| `theme` (id + tokens) | `default` (teal `#0F766E`) | `coastal` (steel-blue `#0E5C8A`, larger radii, Lato font stack) | HTML `style="background-color:var(--color-accent);color:var(--color-accent-foreground);"`, font-family `var(--font-heading)`, radius `var(--radius-xl)` |
-| `defaultLocale` | `en` | `es` | Declared in `AgencyConfig.defaultLocale`. (The active i18n module default is the `defaultLocale` in `nuxt.config.ts → i18n.defaultLocale`, set to `en`. The agency's `defaultLocale` is part of the rebrand contract but is not yet wired into the i18n module's default; the language switcher exposes both `en` and `es` for either agency.) |
-| `availableLocales` | `['en', 'es']` | `['es', 'en']` (reordered; both registered in `defaultI18nLocales`) | Language switcher renders both options; cross-config Zod accepted |
-| `currency` | `USD` | `MXN` | Declared in `AgencyConfig.currency`. (Per-record `currency` takes priority on `PropertyCard`; agency default is the documented fallback.) |
+| `theme` (id + tokens) | `default` (teal `#0F766E`, Inter font stack) | `coastal` (steel-blue `#0E5C8A`, Lato font stack, larger radii) | `<html data-theme="coastal">`; `<style id="agency-theme">` CSS variables; `__NUXT_DATA__` theme tokens; font-family `var(--font-heading)` |
+| `defaultLocale` | `en` | `es` | Declared in `AgencyConfig.defaultLocale` and surfaced in `__NUXT_DATA__`. (The active i18n module default is `nuxt.config.ts → i18n.defaultLocale`, set to `en`. The agency's `defaultLocale` is part of the rebrand contract but is not yet wired into the i18n module's default; the language switcher exposes both `en` and `es` for either agency.) |
+| `availableLocales` | `['en', 'es']` | `['es', 'en']` (reordered; both registered in `defaultI18nLocales`) | Language switcher renders both options in either order; cross-config Zod accepted |
+| `currency` | `USD` | `MXN` | Declared in `AgencyConfig.currency` and surfaced in `__NUXT_DATA__`. (Per-record `currency` takes priority on `PropertyCard`; agency default is the documented fallback.) |
 | `measurementUnit` | `metric` | `imperial` | Declared in `AgencyConfig.measurementUnit`; per-record `sizeUnit` fallback documented |
-| `contact.phone` / `whatsapp` / `email` / `address` / `businessHours` | US placeholders | Mexican placeholders (+52 phone, hola@..., Av. Constitución 1500, Lun-Vie 9am-6pm) | Footer "Contact" column; `tel:` / `mailto:` / `https://wa.me/...` anchors; JSON-LD `RealEstateAgent.telephone` / `email` / `address` |
-| `contact.structuredAddress` (5-field PostalAddress) | 3 fields (no `addressRegion` / `postalCode`) | 5 fields (full Mexican PostalAddress) | JSON-LD `RealEstateAgent.address` |
-| `social` (Facebook, Instagram, LinkedIn, TikTok, YouTube) | 5 platforms | 3 platforms (Facebook, Instagram, LinkedIn) | Footer social icons; JSON-LD `RealEstateAgent.sameAs` |
-| `modules` | all 4 of properties / developments / agents / testimonials / contact enabled | `developments` + `testimonials` disabled; properties / agents / contact enabled | (a) Configuration validation accepted the disabled flags; (b) Sitemap omitted `/developments`; (c) `AppHeader` and `AppFooter` quick-links nav omitted `Developments`; (d) Home page omitted the testimonials section (`HomeTestimonials v-if="modules.testimonials"`); (e) Property, agent, contact, and home sections rendered normally. |
-| Cross-config Zod validation | passes | passes | `validateAgencyConfig` accepted the temporary agency and the `coastal` theme without error. |
-| Static generation (`pnpm generate`) with `NUXT_PUBLIC_SITE_URL` | passes | passes | 171 routes prerendered in both configurations; the supplied URL appears in canonical, og:url, og:image, JSON-LD `@id` / `url`, and the sitemap. |
+| `contact.phone` / `whatsapp` / `email` / `address` / `businessHours` | US placeholders (`+1 800 555 1234`, `example@email.com`, `123 Main Street, Anytown, USA`, `Mon-Fri 9am-5pm`) | Mexican placeholders (`+52 55 5555 1234`, `+52 1 55 5555 1234`, `hola@coastal-acme.test`, `Av. Constitución 1500, Col. Centro, Puerto Vallarta, Jalisco, México`, `Lun-Vie 9am-6pm`) | Footer "Contact" column; home contact-CTA row; `tel:` / `mailto:` / `https://wa.me/...` anchors; JSON-LD `RealEstateAgent.telephone` / `email` / `address` |
+| `contact.structuredAddress` (5-field PostalAddress) | 3 fields (no `addressRegion` / `postalCode`) | 5 fields (full Mexican PostalAddress) | JSON-LD `RealEstateAgent.address` (an `@type: PostalAddress` object with `streetAddress`, `addressLocality`, `addressRegion`, `postalCode`, `addressCountry`) |
+| `social` (Facebook, Instagram, LinkedIn, TikTok, YouTube) | 5 platforms | 3 platforms (Facebook, Instagram, LinkedIn) | Footer social icons (3 vs 5); JSON-LD `RealEstateAgent.sameAs` (3 vs 5 entries) |
+| `modules` | `properties` / `developments` / `agents` / `testimonials` / `contact` all enabled; `blog` disabled (default) | `developments` + `testimonials` disabled; `properties` / `agents` / `contact` enabled; `blog` disabled (unchanged) | (a) Cross-config Zod accepted the disabled flags; (b) Sitemap omitted `/developments`; (c) `AppHeader` and `AppFooter` quick-links nav omitted `Developments`; (d) Home page omitted the `HomeTestimonials` section; (e) Property, agent, contact, and home sections rendered normally. |
+| Cross-config Zod validation | passes | passes | `validateAgencyConfig` accepted both configurations without error or warning. |
+| Static generation (`pnpm generate`) with `NUXT_PUBLIC_SITE_URL` | passes | passes | 171 routes prerendered in both configurations; the supplied URL appears in canonical, `og:url`, `og:image`, JSON-LD `@id` / `url`, the sitemap `<loc>` entries, and the `Sitemap:` line of `robots.txt`. |
 | `pnpm lint` | 0 errors, 0 warnings | 0 errors, 0 warnings | ESLint clean in both configurations. |
-| `pnpm build` | succeeds | succeeds | Nitro build in both configurations. Pre-existing unrelated `@nuxt/image` Windows `sharp` warning is emitted (documented in §13 of `docs/REBRANDING.md`). |
+| `pnpm build` | succeeds | succeeds | Nitro build in both configurations. Pre-existing unrelated `@nuxt/image` Windows `sharp` warning is emitted (documented as non-fatal in `docs/REBRANDING.md` §13). |
+| Default re-verification after restoration | n/a | n/a | After deleting the temporary agency and theme and restoring the defaults, `pnpm lint`, `pnpm build`, and `NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate` all passed. The default sitemap contains 12 entries including `/developments` (vs 11 for the temporary agency), confirming the disabled-module gate is the only difference. |
 
 ### What the verification does **not** claim
 
@@ -305,10 +325,29 @@ Sitemap: https://example.test/sitemap.xml
 ### Static-generation findings
 
 - The supplied `NUXT_PUBLIC_SITE_URL` is used in the `<loc>` of every sitemap entry, in the `Sitemap:` line of `robots.txt`, in `<link rel="canonical">`, in `og:url`, in `og:image`, in the JSON-LD `@id` and `url` fields, and in the `__NUXT_DATA__` payload.
-- When the temporary agency disabled `developments` and `testimonials`, the sitemap correctly omitted the `/developments` entry. The disabled-modules gate works end-to-end through static generation: `server/routes/sitemap.xml.ts` reads `siteConfig.agency.modules.*` at build time and includes / excludes accordingly.
-- **v1.0 exposes no `/api/contact` endpoint.** A `grep` of the generated `.output/public/` for `api/contact` returns zero matches. The lead-capture branch (`feature/lead-capture-v1.1`, commit `343abeb`) ships a `POST /api/contact` Nitro endpoint; that branch is **not** part of v1.0 and is **not** present in the v1.0 static output.
-- The pre-existing unrelated `@nuxt/image` Windows `sharp` warning is emitted during static generation on Windows. The warning is documented as non-fatal in `docs/REBRANDING.md` §13.
-- 171 routes are prerendered in ~4.2 seconds on the development host.
+- When the temporary agency disabled `developments` and `testimonials`, the sitemap correctly omitted the `/developments` entry. The disabled-modules gate works end-to-end through static generation: `server/routes/sitemap.xml.ts` reads `siteConfig.agency.modules.*` at build time and includes / excludes accordingly. After restoration of the default agency, the sitemap contains 12 entries including `/developments` (vs 11 for the temporary agency) — confirming the disabled-module gate is the only difference between the two sitemaps.
+- **v1.0 exposes no `/api/contact` endpoint.** A `Get-ChildItem -Recurse` of the generated `.output/public/` for `*api*` and `contact.*` files returns zero matches. The only "contact" output is the static page at `/contact/index.html`. The lead-capture branch (`feature/lead-capture-v1.1`, commit `343abeb`) ships a `POST /api/contact` Nitro endpoint; that branch is **not** part of v1.0 and is **not** present in the v1.0 static output.
+- The pre-existing unrelated `@nuxt/image` Windows `sharp` warning is emitted during static generation on Windows. The warning is documented as non-fatal in `docs/REBRANDING.md` §13 and in the "Known Windows sharp warning" section below.
+- 171 routes are prerendered on the development host in both configurations (default and temporary agency). Route count and prerender timing are size/perf measurements only, not runtime performance validation.
+- The static-export verification was performed on a Windows development host. Provider-specific deployment (Vercel, Netlify, Cloudflare Pages, etc.) is **not** validated by this build. A rebrand deploying to a specific provider must validate the provider's deployment behavior separately.
+
+## Milestone-divergence note
+
+The release branch `release/v1.0.0` (M25, M26, M27) and the
+preserved branch `feature/lead-capture-v1.1` (which carries a
+**divergent** milestone history — it added its own M25 / M26
+entries for the lead-capture architecture audit and build) have
+different milestone numbers for the same milestone numbers
+because they were developed on parallel branches. When the
+lead-capture branch is later rebased or merged (e.g. for v1.1),
+the merging session **must reconcile the milestone numbers** —
+the lead-capture branch's M25 / M26 entries should be renumbered
+(e.g. to v1.1 M0 / M1) or otherwise disambiguated to avoid
+conflicting milestone numbers in the merged history. The release
+branch is **not** to be force-pushed or re-tagged to incorporate
+the lead-capture branch's numbering. See
+[`docs/ROADMAP.md` "Milestone-divergence note"](ROADMAP.md#milestone-divergence-note)
+for the full context.
 
 ## Deployment modes
 
