@@ -54,18 +54,25 @@ The project should be divided into the following modules:
 
 ## 5. Public Pages
 
-Required MVP pages:
+Required v1.0 pages:
 
 ```txt
 /
  /properties
  /properties/[slug]
  /developments
- /developments/[slug]
  /agents
  /about
  /contact
 ```
+
+> **Note on per-record detail routes.** Individual development and
+> agent detail routes (`/developments/[slug]`, `/agents/[slug]`) are
+> **post-v1.0 extensions** and are not required for the v1.0 release.
+> v1.0 ships the listing pages only; the per-record detail data
+> (`Development.slug`, `Agent.id`) is reserved in the type definitions
+> so a future v1.x release can add the routes without changing the
+> data shape. The canonical v1.0 scope is the §6 list below.
 
 Future admin pages:
 
