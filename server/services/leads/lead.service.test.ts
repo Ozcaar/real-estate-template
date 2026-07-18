@@ -227,6 +227,208 @@ describe('leadService.submit — rate limit', () => {
   })
 })
 
+/**
+ * Rate-limit window-expiry tests.
+ *
+ * The 10-minute sliding window is the most subtle rate-limit
+ * behavior: the cleanup loop in `checkRateLimit` filters out
+ * timestamps older than `RATE_LIMIT_WINDOW_MS` on every call. The
+ * tests below use `vi.useFakeTimers()` to advance the clock past
+ * the 10-minute boundary and verify that an old key is reset
+ * (the 6th attempt becomes the 1st of a new window) and that the
+ * cleanup is opportunistic (a stale key does not consume budget
+ * in a new window).
+ *
+ * `vi.useFakeTimers()` replaces `Date.now()`, `new Date()`, and the
+ * timer functions. The lead service reads `Date.now()` directly in
+ * `checkRateLimit`; the fake clock controls that read. The
+ * `realTimers()` cleanup in `afterEach` keeps the test suite
+ * isolated from the fake clock.
+ */
+describe('leadService.submit — rate limit window expiry', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    mockAdapter.deliver.mockReset()
+    mockAdapter.deliver.mockResolvedValue({ ok: true })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('allows a new submission after the 10-minute window expires', async () => {
+    const key = freshKey('rl-expiry')
+    const base = Date.now()
+
+    // Fill the window: 5 valid submissions at t = base.
+    for (let i = 0; i < 5; i++) {
+      const result = await leadService.submit(
+        { body: validLead },
+        { requestKey: key, fallbackLocale: 'en' },
+      )
+      expect(result.status).toBe('ok')
+    }
+
+    // 6th attempt within the window: blocked.
+    const sixth = await leadService.submit(
+      { body: validLead },
+      { requestKey: key, fallbackLocale: 'en' },
+    )
+    expect(sixth).toEqual({ status: 'rate_limited' })
+
+    // Advance the clock by 10 minutes + 1 second. The cleanup loop
+    // on the next call drops every timestamp in the old window.
+    vi.setSystemTime(base + 10 * 60 * 1000 + 1000)
+
+    // 7th attempt: the window has expired. The old timestamps are
+    // filtered out, the entry is reset, and the new attempt is the
+    // 1st of a fresh window.
+    const seventh = await leadService.submit(
+      { body: validLead },
+      { requestKey: key, fallbackLocale: 'en' },
+    )
+    expect(seventh.status).toBe('ok')
+  })
+
+  it('accepts a request at exactly 10 minutes (boundary: strict greater-than)', async () => {
+    const key = freshKey('rl-expiry-boundary')
+    const base = Date.now()
+
+    for (let i = 0; i < 5; i++) {
+      await leadService.submit(
+        { body: validLead },
+        { requestKey: key, fallbackLocale: 'en' },
+      )
+    }
+
+    // Advance to exactly 10 minutes. The cleanup filter is
+    // `t > cutoff` (strict greater-than), where
+    // `cutoff = now - RATE_LIMIT_WINDOW_MS`. At exactly 10
+    // minutes, `cutoff === base`, every stored timestamp equals
+    // `base`, and every timestamp is filtered out. The window
+    // is already considered "past" and the new attempt is
+    // accepted. This matches the documented behavior of a
+    // sliding-window rate limiter with strict greater-than.
+    vi.setSystemTime(base + 10 * 60 * 1000)
+    const passed = await leadService.submit(
+      { body: validLead },
+      { requestKey: key, fallbackLocale: 'en' },
+    )
+    expect(passed.status).toBe('ok')
+  })
+
+  it('resets all 5 slots after the window expires (not just 1)', async () => {
+    const key = freshKey('rl-expiry-reset')
+    const base = Date.now()
+
+    for (let i = 0; i < 5; i++) {
+      await leadService.submit(
+        { body: validLead },
+        { requestKey: key, fallbackLocale: 'en' },
+      )
+    }
+
+    // Advance past the window.
+    vi.setSystemTime(base + 10 * 60 * 1000 + 1000)
+
+    // All 5 slots should be available again — submit 5 times and
+    // expect every attempt to succeed.
+    for (let i = 0; i < 5; i++) {
+      const result = await leadService.submit(
+        { body: validLead },
+        { requestKey: key, fallbackLocale: 'en' },
+      )
+      expect(result.status).toBe('ok')
+    }
+
+    // The 6th attempt in the new window: blocked.
+    const blocked = await leadService.submit(
+      { body: validLead },
+      { requestKey: key, fallbackLocale: 'en' },
+    )
+    expect(blocked).toEqual({ status: 'rate_limited' })
+  })
+
+  it('opportunistically drops stale entries for unrelated keys on the next call', async () => {
+    const keyStale = freshKey('rl-stale')
+    const keyFresh = freshKey('rl-fresh')
+    const base = Date.now()
+
+    // Fill the stale key's window at t = base.
+    for (let i = 0; i < 5; i++) {
+      await leadService.submit(
+        { body: validLead },
+        { requestKey: keyStale, fallbackLocale: 'en' },
+      )
+    }
+
+    // Advance past the window. The next call (on a different key)
+    // runs the cleanup loop and drops the stale entry.
+    vi.setSystemTime(base + 10 * 60 * 1000 + 1000)
+
+    const fresh = await leadService.submit(
+      { body: validLead },
+      { requestKey: keyFresh, fallbackLocale: 'en' },
+    )
+    expect(fresh.status).toBe('ok')
+
+    // After the cleanup, the stale key is removed. A subsequent
+    // attempt on the stale key in a new window is also accepted
+    // (its old entries were dropped, not just reduced).
+    const staleResurrected = await leadService.submit(
+      { body: validLead },
+      { requestKey: keyStale, fallbackLocale: 'en' },
+    )
+    expect(staleResurrected.status).toBe('ok')
+  })
+
+  it('tracks timestamps across the window boundary — only in-window submissions count', async () => {
+    const key = freshKey('rl-partial-window')
+    const base = Date.now()
+
+    // 3 submissions at t = base.
+    for (let i = 0; i < 3; i++) {
+      await leadService.submit(
+        { body: validLead },
+        { requestKey: key, fallbackLocale: 'en' },
+      )
+    }
+
+    // Advance 5 minutes (half the window).
+    vi.setSystemTime(base + 5 * 60 * 1000)
+
+    // 2 more submissions — these are still in the window.
+    for (let i = 0; i < 2; i++) {
+      await leadService.submit(
+        { body: validLead },
+        { requestKey: key, fallbackLocale: 'en' },
+      )
+    }
+
+    // Advance to 10 minutes + 1 second. The first 3 are now outside
+    // the window; only the last 2 remain. After the cleanup,
+    // exactly 2 slots are consumed; 3 more are available.
+    vi.setSystemTime(base + 10 * 60 * 1000 + 1000)
+
+    // 3 more accepted (the last 2 fell off, leaving 2 used → 3 free).
+    for (let i = 0; i < 3; i++) {
+      const result = await leadService.submit(
+        { body: validLead },
+        { requestKey: key, fallbackLocale: 'en' },
+      )
+      expect(result.status).toBe('ok')
+    }
+
+    // Now 5 are used again; 6th is blocked.
+    const blocked = await leadService.submit(
+      { body: validLead },
+      { requestKey: key, fallbackLocale: 'en' },
+    )
+    expect(blocked).toEqual({ status: 'rate_limited' })
+  })
+})
+
 describe('leadService.submit — lead stamping', () => {
   beforeEach(() => {
     mockAdapter.deliver.mockResolvedValue({ ok: true })
