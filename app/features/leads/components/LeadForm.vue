@@ -174,11 +174,22 @@ async function onSubmit() {
   }
 }
 
+// Template refs. Declared here so the `ref="..."` attributes in the
+// template bind to real `Ref` instances — the previous shape declared
+// only the `fieldRefs` map and the template strings (`ref="nameRef"`,
+// etc.) were unbound, so `focusFirstInvalid()` could not focus the
+// invalid field after a server-side validation failure.
+const nameRef = ref<HTMLInputElement | null>(null)
+const emailRef = ref<HTMLInputElement | null>(null)
+const phoneRef = ref<HTMLInputElement | null>(null)
+const messageRef = ref<HTMLTextAreaElement | null>(null)
+const honeypotRef = ref<HTMLInputElement | null>(null)
+
 const fieldRefs = {
-  name: ref<HTMLInputElement | null>(null),
-  email: ref<HTMLInputElement | null>(null),
-  phone: ref<HTMLInputElement | null>(null),
-  message: ref<HTMLTextAreaElement | null>(null),
+  name: nameRef,
+  email: emailRef,
+  phone: phoneRef,
+  message: messageRef,
 }
 
 async function focusFirstInvalid() {
