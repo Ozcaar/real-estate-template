@@ -9,6 +9,8 @@
     "preview": "nuxt preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
@@ -27,6 +29,7 @@
     "@tailwindcss/vite": "^4",
     "eslint": "^9",
     "tailwindcss": "^4",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.10"
   }
 }
