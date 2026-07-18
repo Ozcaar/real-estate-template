@@ -40,6 +40,8 @@ pnpm generate        # static export
 pnpm preview         # preview production build
 pnpm lint            # eslint .
 pnpm lint:fix        # eslint . --fix
+pnpm test            # vitest run (single-shot, CI-friendly)
+pnpm test:watch      # vitest (interactive watch mode)
 ```
 
 `postinstall` runs `nuxt prepare` automatically — no manual step needed.
@@ -160,7 +162,7 @@ The folder structure, Tailwind setup, i18n locale files, agency config, theme to
 Verified current gaps:
 
 * **Property gallery fullscreen lightbox** — intentionally deferred (audit decision recorded in `docs/ROADMAP.md` M20, build decisions in M21). The Swiper carousel MVP shipped in M21 covers the three real gaps the audit identified (mobile swipe, keyboard arrow navigation, desktop prev/next) without the complexity cost of a generic modal system. A fullscreen lightbox with focus trap, body-scroll lock, Escape handler, and backdrop click remains a future task; a real-estate user wanting a larger view can use the browser's built-in image controls on the current main image.
-* **Real lead capture** — post-v1.0 work, preserved on the `feature/lead-capture-v1.1` branch (commit `343abeb` on `master` HEAD before the release-candidate branch was cut). The v1.0 contact page ships a documented placeholder form (visible `placeholderNotice` and a permanently `disabled` submit button) plus the contact methods column (`tel:`, `mailto:`, `https://wa.me/`) as the canonical completion path. The lead-capture branch is **not** part of the v1.0 release.
+* **Real lead capture** — v1.1.0 development (in progress on the `feature/lead-capture-v1.1` branch; merged with v1.0.0 in commit `443890b`). v1.0.0 is released on the `release/v1.0.0` branch (tag `v1.0.0` at `456284c`) and ships a documented placeholder form. v1.1.0 ships a real `POST /api/contact` endpoint with three pluggable server-only delivery adapters (`disabled`, `log`, `webhook`), a shared Zod schema (`app/features/leads/schemas/lead.schema.ts`), a 16 KB body limit, a 5-per-10-minute **per-process** rate limit (`server/services/leads/lead.service.ts`), a `website` honeypot, and a PII-redacted `log` adapter. The visible form on `/contact` is gated by `agency.leads.enabled` and defaults to `false` in the sample agency (`app/config/agencies/default.agency.ts`), so a rebrand ships the same v1.0.0 placeholder behavior until it explicitly opts in. The contact-methods column (`tel:`, `mailto:`, `https://wa.me/`) is always available as the no-JS and failed-delivery fallback. The v1.1.0 branch also ships a Vitest foundation (`vitest.config.ts`, 6 test files, 104 tests) covering the lead-capture Zod schema, all three adapters, the adapter selector, and the lead service pipeline.
 * **Individual development detail page** (`/developments/[slug]`) — post-v1.0. The `Development.slug` field is reserved in the type definition; v1.0 ships the `/developments` listing only. A future v1.x release can add the route without changing the data shape.
 * **Real external data integration** — the MVP reads from static data under `app/features/*/data/*.ts`. A CMS, API, or external image source is not wired in; the schemas are the runtime boundary that will validate the future source.
 

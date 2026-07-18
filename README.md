@@ -60,13 +60,15 @@ pnpm generate   # static export
 pnpm preview    # preview the production build
 pnpm lint       # eslint .
 pnpm lint:fix   # eslint . --fix
+pnpm test       # vitest run (single-shot, CI-friendly)
+pnpm test:watch # vitest (interactive watch mode)
 ```
 
 ## Deployment modes
 
 The template supports two deployment targets.
 
-* **`pnpm generate`** produces a static export under `.output/public/`. The dynamic Nitro routes (`/sitemap.xml`, `/robots.txt`) are pre-rendered so the static output includes the SEO infrastructure. `NUXT_PUBLIC_SITE_URL` must be set at build time when the SEO infrastructure routes need absolute URLs. The v1.0 release is fully usable on a pure static host.
-* **`pnpm build`** produces a Nitro server build under `.output/server/`. The same dynamic routes are served at request time, gated by the same env var. Use this target when a future v1.1 feature (such as the lead-capture endpoint on the `feature/lead-capture-v1.1` branch) requires Nitro server endpoints that a pure static host cannot serve.
+* **`pnpm generate`** produces a static export under `.output/public/`. The dynamic Nitro routes (`/sitemap.xml`, `/robots.txt`) are pre-rendered so the static output includes the SEO infrastructure. `NUXT_PUBLIC_SITE_URL` must be set at build time when the SEO infrastructure routes need absolute URLs. The v1.0.0 release is fully usable on a pure static host.
+* **`pnpm build`** produces a Nitro server build under `.output/server/`. The same dynamic routes are served at request time, gated by the same env var. The v1.1.0 lead-capture pipeline (`POST /api/contact` with the `disabled`, `log`, and `webhook` adapters) requires this target — a pure static host cannot serve server endpoints. An agency that ships static-only builds keeps the placeholder form behavior and the contact-methods column is the canonical completion path.
 
-The v1.0 release does **not** ship any Nitro-only API endpoints; both targets are equivalent in scope at v1.0. The lead-capture branch (post-v1.0) ships a `POST /api/contact` endpoint that requires the Nitro server build or a serverless preset that ships a Nitro server runtime.
+v1.0.0 (tag `v1.0.0` on `release/v1.0.0` at `456284c`) does **not** ship any Nitro-only API endpoints; both targets are equivalent in scope at v1.0.0. v1.1.0 (in development on `feature/lead-capture-v1.1`) ships the `POST /api/contact` endpoint and requires the Nitro server build or a serverless preset that ships a Nitro server runtime.

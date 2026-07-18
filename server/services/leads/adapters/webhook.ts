@@ -30,9 +30,15 @@ import type {
  * - 5-second timeout via `AbortController`.
  * - `redirect: 'manual'` so a 3xx response is treated as a delivery
  *   failure rather than a silent redirect.
- * - Non-2xx responses become `{ ok: false, errorCode: 'transport' }`.
- * - Network errors, DNS failures, and timeout aborts become
+ * - Non-2xx responses become
  *   `{ ok: false, errorCode: 'transport', retryable: true }`.
+ * - Network errors and DNS failures become
+ *   `{ ok: false, errorCode: 'transport', retryable: true }`.
+ * - Timeout aborts (`AbortError` from the 5-second `AbortController`)
+ *   become `{ ok: false, errorCode: 'transport', retryable: false }`
+ *   because retrying immediately is unlikely to help an overloaded
+ *   upstream and the rate limiter at the service layer is the
+ *   dedicated anti-retry mechanism.
  * - 401 / 403 from the upstream (signature or auth failure) become
  *   `{ ok: false, errorCode: 'auth', retryable: false }`.
  *

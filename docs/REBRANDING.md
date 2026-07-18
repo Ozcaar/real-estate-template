@@ -651,15 +651,15 @@ boot, never sent to the client bundle, and never logged.
 
 `NUXT_LEADS_ADAPTER` accepts one of three values:
 
-- `disabled` � the default. The endpoint returns 503 on every
+- `disabled` — the default. The endpoint returns 503 on every
   submission. The form is still wired so a rebrand that flips
   `leads.enabled` and the adapter together goes live without code
   changes.
-- `log` � useful in development. The endpoint writes a single
+- `log` — useful in development. The endpoint writes a single
   `console.info` line per accepted lead, with **no name, email,
   phone, message content, IP, or user-agent** in the line. Only
   the lead id, source, presence booleans, and message length.
-- `webhook` � production. The endpoint POSTs the stamped lead
+- `webhook` — production. The endpoint POSTs the stamped lead
   as JSON to `NUXT_LEADS_WEBHOOK_URL` with a 5-second timeout,
   no redirect following, and an `X-Lead-Signature` HMAC SHA-256
   header over the exact JSON payload. The agency-side endpoint
@@ -690,6 +690,29 @@ timeouts, and network errors all become a generic 502 response
 at the endpoint; the upstream body is never exposed to the
 client.
 
+#### Webhook response → transport mapping
+
+The webhook adapter's `LeadDeliveryResult` is mapped to an HTTP
+status at the endpoint level. Provider details, webhook URLs,
+secrets, and stack traces are never exposed to the client.
+
+| Upstream / failure          | Adapter result                                  | Endpoint status |
+| --------------------------- | ----------------------------------------------- | --------------- |
+| 2xx response                | `{ ok: true }`                                  | 200             |
+| 401 or 403 from upstream     | `{ ok: false, errorCode: 'auth', retryable: false }` | 502             |
+| Other non-2xx (500, 502, 503, 3xx, …) | `{ ok: false, errorCode: 'transport', retryable: true }` | 502             |
+| `fetch` network error / DNS failure | `{ ok: false, errorCode: 'transport', retryable: true }` | 502             |
+| 5-second `AbortController` timeout | `{ ok: false, errorCode: 'transport', retryable: false }` | 502             |
+| Missing URL or missing secret | `{ ok: false, errorCode: 'unsupported', retryable: false }` | 502             |
+
+The `retryable` field is an internal hint used by the endpoint's
+server-side logging (retryable failures at `error`, non-retryable
+at `warn`); the client never sees it. The 5-second timeout is
+intentionally non-retryable because retrying immediately is
+unlikely to help an overloaded upstream and the per-process
+rate limiter at the service layer is the dedicated anti-retry
+mechanism.
+
 ### 12.4 Deployment requirements
 
 The lead-capture pipeline requires a **server-capable** Nitro
@@ -709,7 +732,7 @@ include server routes and cannot serve `/api/contact`. An agency
 that ships static-only builds keeps the placeholder form
 behavior and the contact methods column is the canonical
 completion path. `pnpm generate` does not error on the lead
-module � the server route is simply not emitted in the static
+module — the server route is simply not emitted in the static
 output.
 
 ### 12.5 No-JavaScript and failed-delivery fallback
@@ -777,15 +800,94 @@ refuses the connection. The agency-side body is logged
 server-side at `warn`; the client never sees it.
 
 **The form posts and the endpoint returns 429.** A
-per-connection rate limit of 5 accepted attempts per 10
-minutes is in effect. The limit is in-memory and per-process;
-a multi-process deployment (PM2 cluster, Cloudflare Workers
-isolates) shares no state between instances. A rebrand that
-needs a higher rate can move the limiter to a Nitro storage
-driver backed by an external KV in a future v1.x task.
+per-request-key rate limit of **5 accepted attempts per 10
+minutes** is in effect. The request key is opaque — it is
+derived from the request IP (honoring `x-forwarded-for` when
+behind a trusted proxy) and the `user-agent` header (truncated
+to 200 chars to bound the key size). The limit is in-memory and
+**per process**: a multi-process deployment (PM2 cluster,
+Cloudflare Workers isolates) shares no state between instances,
+so a determined attacker can multiply their effective rate by
+the number of processes. Validation failures and honeypot trips
+do **not** consume the budget — only submissions that would be
+delivered count against the window. A rebrand that needs a
+higher rate or a distributed limiter can move it to a Nitro
+storage driver backed by an external KV in a future v1.x task.
 
 **The form is interactive but the lead never reaches
 `pnpm dev` stdout.** Confirm `NUXT_LEADS_ADAPTER=log` is set
 in `.env.local` (Nitro reads `.env` / `.env.local` in dev) and
 restart `pnpm dev`. The `log` adapter writes one line per
 accepted lead to the dev server's stdout.
+
+### 12.9 Endpoint transport behavior
+
+The `POST /api/contact` endpoint is implemented in
+`server/api/contact.post.ts` and applies four transport-level
+guards **before** the lead service runs. These guards are not
+re-exercised by the adapter unit tests; they are the endpoint's
+responsibility.
+
+| Guard              | Trigger                                  | Status | Body |
+| ------------------ | ---------------------------------------- | ------ | ---- |
+| Method             | Anything other than `POST`               | 404 (Nitro file-based routing for the `.post.ts` extension) | standard 404 |
+| Content type       | `Content-Type` does not contain `application/json` | 415 | `{ ok: false, error: 'unsupported_media_type' }` |
+| Body size          | Raw body > 16 KB (16 × 1024 bytes), checked **before** JSON parsing | 413 | `{ ok: false, error: 'payload_too_large' }` |
+| JSON parse         | Body present but malformed JSON          | 400 | `{ ok: false, error: 'validation', issues: [] }` |
+
+The body-size limit is checked before any JSON parsing, so an
+oversized payload never reaches the Zod schema, the rate
+limiter, or the delivery adapter. The 16 KB ceiling is
+generous — the form's longest plausible payload (a 4000-char
+message plus the other fields) is well under 4 KB serialized.
+
+The body parse failure path returns `200` with an empty
+`issues` array because the schema re-runs as a safety net
+on the parsed body; a malformed JSON never reaches the schema
+itself, so a separate `issues` list would be misleading. A
+real validation failure (a well-formed JSON object that fails
+the Zod schema) returns `400` with a populated `issues` array
+of `{ path, message }` pairs.
+
+The full HTTP transport mapping is documented in
+`docs/DATA_MODELS.md` §5.6.
+
+### 12.10 Automated tests
+
+The lead-capture pipeline ships with a Vitest foundation that
+covers the pure-function / branch-rich surface end-to-end:
+
+| Test file | Cases | What it covers |
+| --------- | ----- | -------------- |
+| `app/features/leads/schemas/lead.schema.test.ts` | 37 | Every `leadInputSchema` field rule (name 2–120, email 0–254, phone 6–32, message 10–4000, honeypot, locale 2–12, trim, cross-field contact-channel) |
+| `server/services/leads/adapters/disabled.test.ts` | 3 | `disabledAdapter` id, errorCode, no-throw on empty lead |
+| `server/services/leads/adapters/log.test.ts` | 9 | `logAdapter` id, `ok:true`, one `console.info` per lead, exact log line shape, **no PII** in the log line, field-presence fallbacks |
+| `server/services/leads/adapters/webhook.test.ts` | 18 | `webhookAdapter` id, upstream 200 / 401 / 403 / 500 / 502 / 503 / 3xx / network error / AbortError, missing URL / secret / both, exact JSON payload, `content-type: application/json` header, `X-Lead-Signature: sha256=<64-hex>` header (verified by recomputing HMAC SHA-256 of the mock-received body), `redirect: 'manual'`, `AbortSignal` for the 5-second timeout |
+| `server/services/leads/adapters/index.test.ts` | 9 | Registry exports, selection by `NUXT_LEADS_ADAPTER` id, missing / unknown / whitespace ids, default fallback to `disabled` |
+| `server/services/leads/lead.service.test.ts` | 28 | Full pipeline: honeypot silent path (no adapter call), schema validation mapping, rate limit (5-per-window cap, 6th blocked, validation failures and honeypot trips do not consume the budget, request keys are tracked independently), lead stamping (UUID `id`, ISO `receivedAt`, `source: 'contact'`, forwarded fields, locale fallback), delivery mapping (`ok` / `disabled` / `transport` / `auth` / `rate_limited` / `unsupported`), non-object body rejection (string, null, array) |
+
+Run the tests with:
+
+```bash
+pnpm test        # single-shot, CI-friendly (vitest run)
+pnpm test:watch  # interactive watch mode (vitest)
+```
+
+The current implementation ships **104 tests** that pass on
+three consecutive `pnpm test` runs. The configuration lives in
+`vitest.config.ts`; the `#imports` alias resolves to a tiny
+stub at `tests/stubs/imports.ts` so the adapter pipeline can
+be exercised without booting a Nitro server.
+
+What the Vitest suite does **not** cover (intentionally — these
+require a Nitro server):
+
+- The four endpoint transport guards in `server/api/contact.post.ts` (method, content type, body size, JSON parse). The endpoint's response shape and the `LeadSubmitStatus` mapping are documented in §12.9 and `docs/DATA_MODELS.md` §5.6.
+- The `checkRateLimit` window expiry itself. The rate limiter is tested for the 5-per-window cap, the 6th-rejection behavior, and the independence of request keys; the 10-minute window expiry is not directly exercised. Adding it would require `vi.useFakeTimers()` and is deferred.
+- A live end-to-end test against a real upstream. The webhook adapter tests use `vi.spyOn(globalThis, 'fetch')` to mock the upstream; the agency-side signature verification pseudocode in §12.3 is the reference implementation.
+
+A rebrand that wants to extend the test surface (for example to
+exercise the endpoint transport guards or the rate-limit window
+expiry) can add a `*.test.ts` file under the matching directory
+and Vitest will pick it up automatically — no config change
+needed.

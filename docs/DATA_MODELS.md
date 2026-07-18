@@ -249,7 +249,7 @@ The shared Zod schema lives at
 export const leadInputSchema = z.object({
   name: z.string().trim().min(2, 'name_too_short').max(120, 'name_too_long'),
   email: z.string().trim().max(254, 'email_too_long').email('email_invalid').optional().or(z.literal('')),
-  phone: z.string().trim().max(32, 'phone_too_long').regex(/^[+]?[0-9 ()\-]{6,32}$/u, 'phone_invalid').optional().or(z.literal('')),
+  phone: z.string().trim().max(32, 'phone_too_long').regex(/^[+]?[0-9 ()-]{6,32}$/, 'phone_invalid').optional().or(z.literal('')),
   message: z.string().trim().min(10, 'message_too_short').max(4000, 'message_too_long'),
   website: z.string().max(0, 'honeypot').optional().or(z.literal('')),
   locale: z.string().trim().min(2, 'locale_invalid').max(12, 'locale_invalid').optional().or(z.literal('')),
@@ -286,12 +286,24 @@ stack traces.
 ### 5.7 Defenses and privacy
 
 - **Honeypot.** As above. No new dependency.
-- **Body size limit.** 16 KB, checked before JSON parsing.
+- **Endpoint transport guards** (implemented in `server/api/contact.post.ts`):
+  - **Method.** Only `POST` is accepted. Non-`POST` methods are blocked by Nitro's file-based routing (the handler lives in `contact.post.ts`); `assertMethod(event, 'POST')` is a defense-in-depth check inside the handler.
+  - **Content type.** Only `application/json` is accepted; any other `Content-Type` returns 415 with `{ ok: false, error: 'unsupported_media_type' }`. The check is case-insensitive and matches `application/json` even when a charset suffix is present.
+  - **Body size.** The raw body is read as a `Buffer` and the byte length is checked **before** any JSON parsing. A body larger than 16 KB returns 413 with `{ ok: false, error: 'payload_too_large' }`.
+  - **JSON parse.** A malformed JSON body returns 400 with `{ ok: false, error: 'validation', issues: [] }` (empty `issues` array because the schema never runs on a parse failure). A well-formed JSON object that fails the Zod schema returns 400 with a populated `issues` array of `{ path, message }` pairs.
 - **Per-process rate limit.** 5 accepted attempts per 10 minutes
-  per request key (`ip + user-agent`, truncated to 200 chars).
-  In-memory `Map`, opportunistic cleanup. **Not** distributed; a
-  future v1.x task can move it to a Nitro storage driver backed
-  by an external KV.
+  per request key. The request key is `${ip}::${ua.slice(0, 200)}`
+  where `ip` is `getRequestIP(event, { xForwardedFor: true })` and
+  `ua` is the `user-agent` header truncated to 200 chars. The
+  rate-limit map is module-scoped and uses an in-memory `Map` with
+  opportunistic cleanup during every `checkRateLimit` call (no
+  `setInterval`, so the process exits cleanly during local dev).
+  **Not** distributed; a future v1.x task can move it to a Nitro
+  storage driver backed by an external KV. **Validation failures
+  and honeypot trips do not consume the budget** — only
+  submissions that would be delivered count against the window,
+  so a bot that posts invalid bodies is rejected with 400 but
+  does not count against the limit.
 - **Privacy.** The endpoint never logs the body. The rate-limit
   key is the only thing that sees the IP. The stamped lead shape
   carries no IP, no user-agent, no cookies. The `log` adapter
@@ -355,6 +367,18 @@ export interface AgencyModulesConfig {
 
 export type MeasurementUnit = 'metric' | 'imperial'
 
+/**
+ * Lead-capture configuration. The `enabled` flag controls whether
+ * the visible `/contact` form is interactive (`true`) or shows the
+ * historical placeholder behavior (`false`, the default in the
+ * sample agency). The actual delivery adapter (`disabled`, `log`,
+ * `webhook`) is selected at request time by server-only runtime
+ * config (`NUXT_LEADS_ADAPTER`), not by agency branding.
+ */
+export interface AgencyLeadsConfig {
+  enabled: boolean
+}
+
 export interface AgencyConfig {
   id: string
   name: string
@@ -372,6 +396,7 @@ export interface AgencyConfig {
   contact: AgencyContactConfig
   social: AgencySocialConfig
   modules: AgencyModulesConfig
+  leads: AgencyLeadsConfig
 }
 ```
 
