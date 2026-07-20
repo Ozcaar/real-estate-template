@@ -967,7 +967,13 @@ covers the pure-function / branch-rich surface end-to-end:
 | `server/services/leads/adapters/webhook.test.ts` | 18 | `webhookAdapter` id, upstream 200 / 401 / 403 / 500 / 502 / 503 / 3xx / network error / AbortError, missing URL / secret / both, exact JSON payload, `content-type: application/json` header, `X-Lead-Signature: sha256=<64-hex>` header (verified by recomputing HMAC SHA-256 of the mock-received body), `redirect: 'manual'`, `AbortSignal` for the 5-second timeout |
 | `server/services/leads/adapters/email.test.ts` | 35 | `emailAdapter` id, config validation (missing host / port / user / password / from / to, non-integer port, all-missing), successful delivery, plain-text + HTML body content, `replyTo` present when email is set / absent when empty, HTML escaping (`< > & " '`), em-dash placeholder for empty fields, newline → `<br>`, error mapping (`EAUTH` / `EAUTHENTICATION` → `auth`, `ETIMEDOUT` / `EAI_AGAIN` → `transport` retryable:false, `ECONNECTION` → `transport` retryable:true, no-code / non-Error throw → `transport` retryable:true), transporter lifecycle (close after success, close after failure, swallow close errors). **Nodemailer is fully mocked** — no real SMTP connection is ever opened. |
 | `server/services/leads/adapters/index.test.ts` | 10 | Registry exports, selection by `NUXT_LEADS_ADAPTER` id (`disabled` / `log` / `webhook` / `email`), missing / unknown / whitespace ids, default fallback to `disabled` |
-| `server/services/leads/lead.service.test.ts` | 28 | Full pipeline: honeypot silent path (no adapter call), schema validation mapping, rate limit (5-per-window cap, 6th blocked, validation failures and honeypot trips do not consume the budget, request keys are tracked independently, window expiry after 10 min via `vi.useFakeTimers()`), lead stamping (UUID `id`, ISO `receivedAt`, `source: 'contact'`, forwarded fields, locale fallback), delivery mapping (`ok` / `disabled` / `transport` / `auth` / `rate_limited` / `unsupported`), non-object body rejection (string, null, array) |
+| `server/services/leads/lead.service.test.ts` | 33 | Full pipeline: honeypot silent path (no adapter call), schema validation mapping, rate limit (5-per-window cap, 6th blocked, validation failures and honeypot trips do not consume the budget, request keys are tracked independently, window expiry after 10 min via `vi.useFakeTimers()` — 5 cases: window expiry, strict greater-than boundary at exactly 10 min, full 5-slot reset after expiry, opportunistic cleanup of stale entries, partial-window timestamp tracking), lead stamping (UUID `id`, ISO `receivedAt`, `source: 'contact'`, forwarded fields, locale fallback), delivery mapping (`ok` / `disabled` / `transport` / `auth` / `rate_limited` / `unsupported`), non-object body rejection (string, null, array) |
+| `server/api/contact.post.test.ts` | 16 | Endpoint transport guards: valid submission, forwarded body / request key / fallback locale, 415 for missing / wrong Content-Type, 413 for body > 16 KB including the 16 KB + 1 byte boundary, 400 for empty / malformed JSON, 400 for schema validation with mapped issues, 200 silent success for honeypot, 429 for rate-limited, 503 for adapter-disabled, 502 for delivery failure, content-type header on every response |
+| `app/features/properties/services/properties.service.test.ts` | 72 | `isPropertySort` allow-list, `getAll` / `getBySlug` / `getFeatured` / `getRelated` branches, `filter` for every operation, every type, location (case-insensitive, accent-insensitive on `México` / `Querétaro`, slugified haystack), every sort branch, the asc/desc mirror invariant, the stable `id` tiebreak, hidden-property exclusion |
+| `app/core/utils/paginate.test.ts` | 43 | `parsePageParam` (null, undefined, `''`, whitespace, `'0'`, `'-3'`, `'abc'`, `'1.9'`, `'1e2'`, single-digit, exponential, trimmed, scalar non-string, empty array, array-with-undefined-first, multi-value array, decimal-in-array) and `paginate` on empty / single-item / underfilled / exact-fit / oversized lists, the pageSize coercion of `0` / negative / fractional, the request clamping of negative / zero / out-of-range / `NaN` / fractional, the input-immutability guarantee, the `readonly T[]` overload |
+| `app/core/utils/whatsapp-link.test.ts` | 21 | `buildWhatsAppLink` (null, undefined, `''`, whitespace, no-digits, leading `+` strip, spaces, dashes, parentheses, dots, mixed-alphanumeric digit extraction, single / two-digit numbers, E.164 max length, oversized numbers, exact-prefix invariant) |
+| `app/core/utils/postal-address.test.ts` | 18 | `agencyPostalAddress` (legacy / unmigrated, every partial-fields branch, full PostalAddress, `@type` invariant, whitespace-padded values, undefined-field omission, fallback to free-text) |
+| `app/config/agencies/agency.schema.test.ts` | 73 | `measurementUnitSchema`, `agencyStructuredAddressSchema`, `agencyContactConfigSchema`, `agencySocialConfigSchema` (documents the no-`min(1)` contract), `agencyModulesConfigSchema`, `agencyLeadsConfigSchema`, the top-level `agencyConfigSchema` (id / name / logo / favicon / theme / locales / currency / measurement-unit rules), `validateAgencyConfig` (structural + cross-config + format warnings including the documented "default agency" case), `safeParseAgencyConfig` (structural failure, cross-config failure × 3 branches, non-object input × 5 types), `console.warn` isolation |
 
 Run the tests with:
 
@@ -976,21 +982,36 @@ pnpm test        # single-shot, CI-friendly (vitest run)
 pnpm test:watch  # interactive watch mode (vitest)
 ```
 
-The current implementation ships **162 tests** that pass on
-three consecutive `pnpm test` runs. The configuration lives in
-`vitest.config.ts`; the `#imports` alias resolves to a tiny
-stub at `tests/stubs/imports.ts` so the adapter pipeline can
-be exercised without booting a Nitro server.
+The current implementation ships **389 tests across 13 files**
+that pass on three consecutive `pnpm test` runs. The
+configuration lives in `vitest.config.ts`; the `#imports`
+alias resolves to a tiny stub at `tests/stubs/imports.ts` so
+the adapter pipeline can be exercised without booting a Nitro
+server. The endpoint transport guards are exercised with a
+minimal `h3` mock builder at `tests/helpers/h3-event.ts`.
 
 What the Vitest suite does **not** cover (intentionally — these
-require a Nitro server):
+require a Nitro server or a real network):
 
-- The four endpoint transport guards in `server/api/contact.post.ts` (method, content type, body size, JSON parse). The endpoint's response shape and the `LeadSubmitStatus` mapping are documented in §12.9 and `docs/DATA_MODELS.md` §5.6.
-- The `checkRateLimit` window expiry itself. The rate limiter is tested for the 5-per-window cap, the 6th-rejection behavior, and the independence of request keys; the 10-minute window expiry is not directly exercised. Adding it would require `vi.useFakeTimers()` and is deferred.
-- A live end-to-end test against a real upstream. The webhook adapter tests use `vi.spyOn(globalThis, 'fetch')` to mock the upstream; the agency-side signature verification pseudocode in §12.3 is the reference implementation.
+- A live end-to-end test against a real upstream. The
+  webhook adapter tests use `vi.spyOn(globalThis, 'fetch')`
+  to mock the upstream; the agency-side signature
+  verification pseudocode in §12.3 is the reference
+  implementation. The email adapter tests use
+  `vi.mock('nodemailer', ...)` to replace the entire
+  `nodemailer` module; no real SMTP connection is ever
+  opened.
+- A real SMTP integration test. The test surface is the
+  contract (Nodemailer mocked); a live SMTP server would
+  only catch Nodemailer-library issues, which are out of
+  scope.
+- A real webhook end-to-end test. The mock setup is
+  deterministic; a real upstream would only catch
+  configuration issues in the agency's destination.
+- Browser-level Playwright smoke tests. The template has
+  no Playwright runner; smoke tests are a deliberate
+  future task.
 
-A rebrand that wants to extend the test surface (for example to
-exercise the endpoint transport guards or the rate-limit window
-expiry) can add a `*.test.ts` file under the matching directory
-and Vitest will pick it up automatically — no config change
-needed.
+A rebrand that wants to extend the test surface can add a
+`*.test.ts` file under the matching directory and Vitest will
+pick it up automatically — no config change needed.
