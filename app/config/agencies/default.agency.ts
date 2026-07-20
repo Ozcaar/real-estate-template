@@ -63,6 +63,13 @@ export const defaultAgencyConfig: AgencyConfig = {
    * `leads.enabled: true` here AND set `NUXT_LEADS_ADAPTER` plus the
    * matching env vars at deploy time. The adapter is server-only
    * operational configuration and never lives in this file.
+   *
+   * Supported adapter values: `disabled` (default — returns 503 on
+   * every submission), `log` (development — writes one redacted
+   * `console.info` line per lead), `webhook` (production — POSTs
+   * the stamped lead to a configured HTTPS endpoint with HMAC
+   * SHA-256 signature), `email` (production — sends a plain-text +
+   * HTML email through any configured SMTP server via Nodemailer).
    */
   leads: {
     enabled: false,

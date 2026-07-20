@@ -61,8 +61,13 @@ describe('getAdapter', () => {
   })
 
   it('falls back to the disabled adapter when leadsAdapter is an unknown id', async () => {
-    await setAdapterId('email')
+    await setAdapterId('sms')
     expect(getAdapter().id).toBe('disabled')
+  })
+
+  it('returns the email adapter when leadsAdapter is "email"', async () => {
+    await setAdapterId('email')
+    expect(getAdapter().id).toBe('email')
   })
 
   it('trims whitespace from the adapter id', async () => {

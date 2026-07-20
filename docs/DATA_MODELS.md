@@ -168,11 +168,13 @@ export interface Agent {
 
 ## 5. Lead
 
-> **Status: shipped (Task 080 / M26).** `app/features/leads/` owns
-> the public input contract, the shared Zod schema, the form
-> component, and the type definitions. Server-side delivery lives
-> in `server/services/leads/` and is documented in
-> `docs/REBRANDING.md` §12.
+> **Status: shipped (Task 080 / M26) + extended (Task 087 / M5).**
+> `app/features/leads/` owns the public input contract, the shared
+> Zod schema, the form component, and the type definitions.
+> Server-side delivery lives in `server/services/leads/` with
+> four pluggable adapters: `disabled`, `log`, `webhook`, and
+> `email` (SMTP via Nodemailer). Documented in `docs/REBRANDING.md`
+> §12.
 
 ### 5.1 Public input contract
 
@@ -280,7 +282,7 @@ stack traces.
 | 413    | `{ "ok": false, "error": "payload_too_large" }` | Body larger than 16 KB |
 | 415    | `{ "ok": false, "error": "unsupported_media_type" }` | Content-Type is not `application/json` |
 | 429    | `{ "ok": false, "error": "rate_limited" }` | Per-process rate limit exceeded |
-| 502    | `{ "ok": false, "error": "delivery" }` | Adapter returned a non-success result |
+| 502    | `{ "ok": false, "error": "delivery" }` | Adapter returned a non-success result (`auth`, `transport`, or `unsupported` from the `disabled` / `log` / `webhook` / `email` adapter) |
 | 503    | `{ "ok": false, "error": "adapter_disabled" }` | Runtime adapter is `disabled` |
 
 ### 5.7 Defenses and privacy

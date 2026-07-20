@@ -1,6 +1,7 @@
 import { useRuntimeConfig } from '#imports'
 import type { LeadDeliveryAdapter } from '../delivery-adapter'
 import { disabledAdapter } from './disabled'
+import { emailAdapter } from './email'
 import { logAdapter } from './log'
 import { webhookAdapter } from './webhook'
 
@@ -12,8 +13,13 @@ import { webhookAdapter } from './webhook'
  * so a fresh deployment that has not configured a lead destination
  * returns 503 on every submission rather than silently dropping
  * leads. An agency that wants live lead capture sets the env var
- * to `'log'` (development) or `'webhook'` (production) and provides
- * the matching configuration.
+ * to one of:
+ *
+ * - `'log'` (development) — writes a single redacted `console.info` line per lead
+ * - `'webhook'` (production) — POSTs the stamped lead to a configured HTTPS endpoint with HMAC SHA-256 signature
+ * - `'email'` (production) — sends a plain-text + HTML email through any configured SMTP server
+ *
+ * and provides the matching configuration.
  *
  * The registry is the **only** place that needs to change to add a
  * new adapter. The endpoint and the lead service are adapter-agnostic.
@@ -22,6 +28,7 @@ const ADAPTERS: Record<string, LeadDeliveryAdapter> = {
   disabled: disabledAdapter,
   log: logAdapter,
   webhook: webhookAdapter,
+  email: emailAdapter,
 }
 
 /**
@@ -37,4 +44,4 @@ export function getAdapter(): LeadDeliveryAdapter {
   return ADAPTERS[id] ?? disabledAdapter
 }
 
-export { disabledAdapter, logAdapter, webhookAdapter }
+export { disabledAdapter, emailAdapter, logAdapter, webhookAdapter }

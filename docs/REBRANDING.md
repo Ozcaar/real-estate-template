@@ -648,8 +648,15 @@ boot, never sent to the client bundle, and never logged.
 | `NUXT_LEADS_ADAPTER`          | `disabled`    | any submission path                   |
 | `NUXT_LEADS_WEBHOOK_URL`      | `''`          | adapter is `webhook`                  |
 | `NUXT_LEADS_WEBHOOK_SECRET`   | `''`          | adapter is `webhook`                  |
+| `NUXT_LEADS_SMTP_HOST`        | `''`          | adapter is `email`                    |
+| `NUXT_LEADS_SMTP_PORT`        | `''`          | adapter is `email` (positive integer) |
+| `NUXT_LEADS_SMTP_SECURE`      | `''`          | adapter is `email` (optional)         |
+| `NUXT_LEADS_SMTP_USER`        | `''`          | adapter is `email`                    |
+| `NUXT_LEADS_SMTP_PASSWORD`    | `''`          | adapter is `email`                    |
+| `NUXT_LEADS_EMAIL_FROM`       | `''`          | adapter is `email`                    |
+| `NUXT_LEADS_EMAIL_TO`         | `''`          | adapter is `email`                    |
 
-`NUXT_LEADS_ADAPTER` accepts one of three values:
+`NUXT_LEADS_ADAPTER` accepts one of four values:
 
 - `disabled` — the default. The endpoint returns 503 on every
   submission. The form is still wired so a rebrand that flips
@@ -664,6 +671,10 @@ boot, never sent to the client bundle, and never logged.
   no redirect following, and an `X-Lead-Signature` HMAC SHA-256
   header over the exact JSON payload. The agency-side endpoint
   verifies the signature with `NUXT_LEADS_WEBHOOK_SECRET`.
+- `email` — production. The endpoint sends the stamped lead as
+  a plain-text and HTML email through any configured SMTP server
+  via Nodemailer. See §12.3b for the full configuration, error
+  mapping, and security notes.
 
 ### 12.3 Webhook signature
 
@@ -713,6 +724,81 @@ unlikely to help an overloaded upstream and the per-process
 rate limiter at the service layer is the dedicated anti-retry
 mechanism.
 
+### 12.3b Email (SMTP) adapter
+
+The email adapter sends the stamped lead as a plain-text and
+HTML email through any SMTP server (Mailgun, Postmark, Amazon
+SES, Gmail with an app password, a self-hosted Postfix, etc.).
+It is the right choice when the agency wants every lead to land
+in an inbox and does not want to wire a custom webhook endpoint.
+
+**Configuration.** All SMTP credentials and delivery addresses
+are read from server-only runtime config. None of them are ever
+sent to the client bundle, and none of them are part of agency
+branding (rebrands must not require touching a delivery
+destination).
+
+| Env var                       | Required | Default | Purpose |
+| ----------------------------- | -------- | ------- | ------- |
+| `NUXT_LEADS_SMTP_HOST`        | yes      | `''`    | SMTP server hostname |
+| `NUXT_LEADS_SMTP_PORT`        | yes      | `''`    | SMTP server port (e.g. `587`, `465`, `25`) |
+| `NUXT_LEADS_SMTP_SECURE`      | no       | `''`    | Set to the string `"true"` to force TLS. Any other value (including empty) means plaintext SMTP. |
+| `NUXT_LEADS_SMTP_USER`        | yes      | `''`    | SMTP authentication username |
+| `NUXT_LEADS_SMTP_PASSWORD`    | yes      | `''`    | SMTP authentication password |
+| `NUXT_LEADS_EMAIL_FROM`       | yes      | `''`    | `From:` address shown in the email client |
+| `NUXT_LEADS_EMAIL_TO`         | yes      | `''`    | `To:` address (where the lead lands) |
+
+**Validation.** All required values are checked **before** the
+Nodemailer transporter is created. A missing host / port / user
+/ password / from / to (or a non-integer port) returns
+`{ ok: false, errorCode: 'unsupported', retryable: false }` so
+the endpoint surfaces a 502 with a clear agency-side
+configuration error and no SMTP connection is attempted.
+
+**Email body.** Both plain-text and HTML versions are sent. The
+HTML body escapes every user-provided value (name, email, phone,
+message, locale, id, receivedAt) so a malicious submission
+cannot inject markup. The plain-text body is the same content
+with no escaping. The lead's email is set as `replyTo` **only
+when** the lead has a non-empty email — passing `replyTo: ''` to
+Nodemailer would cause it to reject the send.
+
+**Timeouts.** Nodemailer's `socketTimeout`, `connectionTimeout`,
+and `greetingTimeout` are all set to 5 seconds. A timeout becomes
+`{ ok: false, errorCode: 'transport', retryable: false }` because
+retrying immediately is unlikely to help an overloaded SMTP
+server; the per-process rate limiter at the service layer is
+the dedicated anti-retry mechanism.
+
+**SMTP error → delivery result mapping.** Nodemailer exposes
+the failure cause as `error.code`. The adapter maps the code to
+the `LeadDeliveryResult` contract:
+
+| Nodemailer `error.code`     | Adapter result                                  | Endpoint status |
+| -------------------------- | ----------------------------------------------- | --------------- |
+| (success)                  | `{ ok: true }`                                  | 200             |
+| (no code, or non-EAUTH, non-timeout) | `{ ok: false, errorCode: 'transport', retryable: true }`  | 502             |
+| `EAUTH` / `EAUTHENTICATION` | `{ ok: false, errorCode: 'auth', retryable: false }` | 502             |
+| `ETIMEDOUT` / `EAI_AGAIN`  | `{ ok: false, errorCode: 'transport', retryable: false }` | 502             |
+| (missing required config)   | `{ ok: false, errorCode: 'unsupported', retryable: false }` | 502             |
+
+The endpoint's transport mapping (200 / 200 / 400 / 413 / 415 /
+429 / 502 / 503) is unchanged. A `502` is the catch-all for any
+adapter failure; the client never sees the SMTP error code
+directly.
+
+**Privacy.** The adapter never logs the password, the full lead
+body, or the upstream SMTP error body. The only lead field that
+appears in any log line is the lead `id`. SMTP-level errors
+surface as the short `errorCode` and `retryable` flag in the
+result; the client never sees the raw SMTP error message.
+
+**No persistence.** The adapter does not store leads to disk,
+to `useStorage()`, or to any external sink the agency did not
+configure. The SMTP server is the only destination. A
+persistence layer is a deliberate future task and is out of
+scope for the MVP.
+
 ### 12.4 Deployment requirements
 
 The lead-capture pipeline requires a **server-capable** Nitro
@@ -757,7 +843,12 @@ adapter is the only place that sees the stamped lead shape, and
 the stamped shape carries no IP, no user-agent, and no cookies.
 The `log` adapter writes no PII; the `webhook` adapter sends
 the stamped lead to the agency-side endpoint under the
-agency's own retention policy.
+agency's own retention policy; the `email` adapter sends the
+stamped lead to the agency's SMTP server (and only to the
+server — no local copy) under the agency's own retention
+policy. SMTP credentials and the full lead body are never
+logged by the `email` adapter; see §12.3b for the per-adapter
+security notes.
 
 The template makes no claim of GDPR, CCPA, or LFPDPPP
 compliance. A rebrand that requires a privacy policy, a consent
@@ -773,15 +864,22 @@ template's.
 2. To enable live capture, set `leads.enabled: true` in your
    agency config.
 3. Set `NUXT_LEADS_ADAPTER` in the deploy environment
-   (`disabled`, `log`, or `webhook`).
+   (`disabled`, `log`, `webhook`, or `email`).
 4. For `webhook`, set `NUXT_LEADS_WEBHOOK_URL` to a URL you
    control (a Cloudflare Worker, a Make / Zapier / n8n hook,
    or your own server) and set `NUXT_LEADS_WEBHOOK_SECRET` to
    a random 32+ character string. The agency-side endpoint
    must verify the `X-Lead-Signature` header.
-5. Confirm the contact methods column is correct for the
+5. For `email`, set `NUXT_LEADS_SMTP_HOST`, `NUXT_LEADS_SMTP_PORT`,
+   `NUXT_LEADS_SMTP_USER`, `NUXT_LEADS_SMTP_PASSWORD`,
+   `NUXT_LEADS_EMAIL_FROM`, and `NUXT_LEADS_EMAIL_TO` (plus
+   `NUXT_LEADS_SMTP_SECURE` if the server requires TLS). The
+   adapter creates a Nodemailer transporter, sends a plain-text
+   + HTML email, and closes the socket pool. See §12.3b for the
+   full configuration, error mapping, and security notes.
+6. Confirm the contact methods column is correct for the
    agency. It remains the no-JS and failed-delivery fallback.
-6. If you need a privacy policy, consent checkbox, or data
+7. If you need a privacy policy, consent checkbox, or data
    retention schedule, add it on top of the shipped pipeline.
 
 ### 12.8 Troubleshooting
@@ -794,10 +892,14 @@ returns 503 when the adapter is `disabled` and the agency has
 enabled the form.
 
 **The form posts and the endpoint returns 502.** Inspect the
-agency-side webhook endpoint. The endpoint returns 502 when
-the upstream returns non-2xx, times out after 5 seconds, or
-refuses the connection. The agency-side body is logged
-server-side at `warn`; the client never sees it.
+agency-side destination. The endpoint returns 502 when the
+upstream returns non-2xx, times out after 5 seconds, or refuses
+the connection. The upstream body is logged server-side at
+`warn`; the client never sees it. For `email`, inspect the
+SMTP server logs: the adapter maps `EAUTH` / `EAUTHENTICATION`
+to `auth` (not retryable) and `ETIMEDOUT` / `EAI_AGAIN` to
+`transport` (not retryable); every other SMTP error maps to
+`transport` (retryable).
 
 **The form posts and the endpoint returns 429.** A
 per-request-key rate limit of **5 accepted attempts per 10
@@ -863,8 +965,9 @@ covers the pure-function / branch-rich surface end-to-end:
 | `server/services/leads/adapters/disabled.test.ts` | 3 | `disabledAdapter` id, errorCode, no-throw on empty lead |
 | `server/services/leads/adapters/log.test.ts` | 9 | `logAdapter` id, `ok:true`, one `console.info` per lead, exact log line shape, **no PII** in the log line, field-presence fallbacks |
 | `server/services/leads/adapters/webhook.test.ts` | 18 | `webhookAdapter` id, upstream 200 / 401 / 403 / 500 / 502 / 503 / 3xx / network error / AbortError, missing URL / secret / both, exact JSON payload, `content-type: application/json` header, `X-Lead-Signature: sha256=<64-hex>` header (verified by recomputing HMAC SHA-256 of the mock-received body), `redirect: 'manual'`, `AbortSignal` for the 5-second timeout |
-| `server/services/leads/adapters/index.test.ts` | 9 | Registry exports, selection by `NUXT_LEADS_ADAPTER` id, missing / unknown / whitespace ids, default fallback to `disabled` |
-| `server/services/leads/lead.service.test.ts` | 28 | Full pipeline: honeypot silent path (no adapter call), schema validation mapping, rate limit (5-per-window cap, 6th blocked, validation failures and honeypot trips do not consume the budget, request keys are tracked independently), lead stamping (UUID `id`, ISO `receivedAt`, `source: 'contact'`, forwarded fields, locale fallback), delivery mapping (`ok` / `disabled` / `transport` / `auth` / `rate_limited` / `unsupported`), non-object body rejection (string, null, array) |
+| `server/services/leads/adapters/email.test.ts` | 35 | `emailAdapter` id, config validation (missing host / port / user / password / from / to, non-integer port, all-missing), successful delivery, plain-text + HTML body content, `replyTo` present when email is set / absent when empty, HTML escaping (`< > & " '`), em-dash placeholder for empty fields, newline → `<br>`, error mapping (`EAUTH` / `EAUTHENTICATION` → `auth`, `ETIMEDOUT` / `EAI_AGAIN` → `transport` retryable:false, `ECONNECTION` → `transport` retryable:true, no-code / non-Error throw → `transport` retryable:true), transporter lifecycle (close after success, close after failure, swallow close errors). **Nodemailer is fully mocked** — no real SMTP connection is ever opened. |
+| `server/services/leads/adapters/index.test.ts` | 10 | Registry exports, selection by `NUXT_LEADS_ADAPTER` id (`disabled` / `log` / `webhook` / `email`), missing / unknown / whitespace ids, default fallback to `disabled` |
+| `server/services/leads/lead.service.test.ts` | 28 | Full pipeline: honeypot silent path (no adapter call), schema validation mapping, rate limit (5-per-window cap, 6th blocked, validation failures and honeypot trips do not consume the budget, request keys are tracked independently, window expiry after 10 min via `vi.useFakeTimers()`), lead stamping (UUID `id`, ISO `receivedAt`, `source: 'contact'`, forwarded fields, locale fallback), delivery mapping (`ok` / `disabled` / `transport` / `auth` / `rate_limited` / `unsupported`), non-object body rejection (string, null, array) |
 
 Run the tests with:
 
@@ -873,7 +976,7 @@ pnpm test        # single-shot, CI-friendly (vitest run)
 pnpm test:watch  # interactive watch mode (vitest)
 ```
 
-The current implementation ships **104 tests** that pass on
+The current implementation ships **162 tests** that pass on
 three consecutive `pnpm test` runs. The configuration lives in
 `vitest.config.ts`; the `#imports` alias resolves to a tiny
 stub at `tests/stubs/imports.ts` so the adapter pipeline can

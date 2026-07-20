@@ -69,10 +69,10 @@ export default defineNuxtConfig({
   //
   // Server-only runtime config. `leadsAdapter` selects the lead delivery
   // adapter at request time (`'disabled'` by default, `'log'` for dev,
-  // `'webhook'` for production). `leadsWebhookUrl` and `leadsWebhookSecret`
-  // are required when `leadsAdapter === 'webhook'`. They live outside the
-  // `public:` block so they are not exposed to the client bundle; only
-  // server-side code in `server/services/leads/` reads them.
+  // `'webhook'` for production, `'email'` for SMTP delivery). The
+  // adapter-specific credentials live outside the `public:` block so they
+  // are never sent to the client bundle; only server-side code in
+  // `server/services/leads/` reads them.
   runtimeConfig: {
     public: {
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || '',
@@ -80,6 +80,13 @@ export default defineNuxtConfig({
     leadsAdapter: process.env.NUXT_LEADS_ADAPTER || 'disabled',
     leadsWebhookUrl: process.env.NUXT_LEADS_WEBHOOK_URL || '',
     leadsWebhookSecret: process.env.NUXT_LEADS_WEBHOOK_SECRET || '',
+    leadsSmtpHost: process.env.NUXT_LEADS_SMTP_HOST || '',
+    leadsSmtpPort: process.env.NUXT_LEADS_SMTP_PORT || '',
+    leadsSmtpSecure: process.env.NUXT_LEADS_SMTP_SECURE || '',
+    leadsSmtpUser: process.env.NUXT_LEADS_SMTP_USER || '',
+    leadsSmtpPassword: process.env.NUXT_LEADS_SMTP_PASSWORD || '',
+    leadsEmailFrom: process.env.NUXT_LEADS_EMAIL_FROM || '',
+    leadsEmailTo: process.env.NUXT_LEADS_EMAIL_TO || '',
   },
 
   app: {

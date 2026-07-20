@@ -51,7 +51,7 @@ export interface LeadDeliveryResult {
 
 export interface LeadDeliveryAdapter {
   /** Stable identifier. Used by the runtime-config-driven selector. */
-  readonly id: 'disabled' | 'log' | 'webhook'
+  readonly id: 'disabled' | 'log' | 'webhook' | 'email'
   /**
    * Deliver the stamped lead. Returns a result; never throws.
    */
