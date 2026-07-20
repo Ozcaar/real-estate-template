@@ -28,10 +28,12 @@ stub, an `h3` test helper).
 
 The v1.0.0 release (tag `v1.0.0` on `release/v1.0.0` at
 `456284c`) is **not** changed by this release. v1.1.0 is in
-development on `feature/lead-capture-v1.1` at HEAD `4e1e42d`
-("Expand core utility test coverage"). The release branch for
-v1.1.0 will be cut from this commit; the v1.0.0 tag and the
-`release/v1.0.0` branch are not force-pushed or re-tagged.
+development on `feature/lead-capture-v1.1` at HEAD `92aedd8`
+("Prepare v1.1.0 release documentation"). After the final
+release-candidate verification, the `v1.1.0` tag is added to
+this commit; the v1.0.0 tag and the `release/v1.0.0` branch
+are not force-pushed or re-tagged. **No dedicated
+`release/v1.1.0` branch is required.**
 
 The lead-capture work is **configuration-driven, server-only, and
 privacy-respecting**. All credentials live in server-only runtime
@@ -590,17 +592,18 @@ A v1.0.0 deployment that wants live lead capture at v1.1.0:
 
 ## Release artifacts
 
-- **Tag:** `v1.1.0` (to be cut on the release branch at the
-  current `feature/lead-capture-v1.1` HEAD, commit `4e1e42d`).
-- **Release branch:** `release/v1.1.0` (to be cut from
-  `feature/lead-capture-v1.1` after the v1.1.0 final-correction
-  commit).
-- **HEAD at the time of writing:** `4e1e42d` ("Expand core
-  utility test coverage") on `feature/lead-capture-v1.1`.
-- **Working tree at the time of writing:** clean (the M6
-  coverage expansion is committed; the v1.1.0 release notes
-  and any release-blocking fixes are uncommitted in the
-  working tree as part of Task 089).
+- **Tag:** `v1.1.0` (added to the verified current commit
+  on `feature/lead-capture-v1.1`).
+- **Release branch:** **none required.** The `v1.1.0` tag is
+  added directly to the verified `feature/lead-capture-v1.1`
+  commit after the final release-candidate verification. The
+  v1.1.0 release is the same commit as the development HEAD;
+  no dedicated `release/v1.1.0` branch is created.
+- **HEAD at the time of writing:** `92aedd8` ("Prepare
+  v1.1.0 release documentation") on `feature/lead-capture-v1.1`.
+- **Working tree at the time of writing:** clean. The M7
+  release-preparation commit (`92aedd8`) is the last
+  documentation commit; no uncommitted changes are pending.
 - **The `v1.0.0` tag and the `release/v1.0.0` branch are not
   changed by this release.** They are not force-pushed, not
   re-tagged, and not rebased.
