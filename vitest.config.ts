@@ -4,14 +4,21 @@ import { defineConfig } from 'vitest/config'
 /**
  * Vitest configuration.
  *
- * Minimum-necessary setup for the lead-capture test foundation:
+ * Minimum-necessary setup for the lead-capture test foundation plus
+ * the broader pure-function / branch-rich surface in the repo:
  *
  * - **Node environment** for every test. The lead-capture pipeline is
- *   server-side (Zod schema + delivery adapters + lead service). No
- *   DOM or jsdom is required.
+ *   server-side (Zod schema + delivery adapters + lead service), the
+ *   core utilities are pure functions, the property service reads
+ *   static data, and the agency schema runs in plain Node. No DOM or
+ *   jsdom is required.
  * - **Test patterns** cover the pure-function / branch-rich surface:
  *   the lead-capture Zod schema, the three delivery adapters, the
- *   adapter selector, and the lead service.
+ *   adapter selector, the lead service, the `POST /api/contact`
+ *   endpoint, the generic pagination helpers, the WhatsApp link
+ *   builder, the agency `PostalAddress` JSON-LD builder, the property
+ *   service (filter / sort / isPropertySort), and the agency
+ *   configuration schema.
  * - **`#imports` alias** resolves the Nuxt-internal module to a small
  *   stub (see `tests/stubs/imports.ts`). Individual tests then
  *   override `useRuntimeConfig` with `vi.mock('#imports', ...)` to
@@ -31,6 +38,9 @@ export default defineConfig({
     environment: 'node',
     include: [
       'app/features/leads/schemas/**/*.test.ts',
+      'app/features/properties/services/**/*.test.ts',
+      'app/core/utils/**/*.test.ts',
+      'app/config/agencies/**/*.test.ts',
       'server/services/leads/**/*.test.ts',
       'server/api/**/*.test.ts',
     ],
