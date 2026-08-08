@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, release/**, feature/**]
+  pull_request:
+    branches: [main, master, release/**, feature/**]
+
+# Cancel duplicate in-flight runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# A single job is enough: the repo has one runtime target, one browser,
+# and a small test surface. Splitting into multiple jobs would only add
+# cold-start time and checkout / install duplication.
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        # `--frozen-lockfile` is CI-correct: the lockfile is the
+        # source of truth for reproducible installs.
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests (Vitest)
+        run: pnpm test
+
+      - name: Build
+        # The build output is the same artifact the Playwright step
+        # boots via `pnpm preview`. Running it here also surfaces a
+        # "build is broken" failure earlier than the Playwright step.
+        run: pnpm build
+
+      - name: Install Playwright Chromium
+        # `--with-deps` installs the Linux system packages that the
+        # Playwright Chromium build needs. The install is unconditional:
+        # a fresh `ubuntu-latest` runner has no Playwright browser, and
+        # the cache is intentionally not configured (the brief asks for
+        # the simplest reliable install path).
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright smoke tests
+        # `pnpm test:e2e` boots `pnpm preview` via the `webServer`
+        # config in `playwright.config.ts` (which also tears the
+        # server down when the run is done). `CI=1` flips the
+        # `webServer.reuseExistingServer` to `false` and the
+        # `retries` to `1` so flakes get a single retry.
+        run: pnpm test:e2e
+        env:
+          CI: '1'
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
+
+      - name: Upload Playwright test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results
+          retention-days: 7

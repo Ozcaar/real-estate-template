@@ -11,6 +11,8 @@
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
@@ -27,6 +29,7 @@
   },
   "devDependencies": {
     "@nuxt/eslint": "^1",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4",
     "@types/nodemailer": "^8.0.1",
     "eslint": "^9",

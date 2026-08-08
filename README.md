@@ -54,15 +54,41 @@ pnpm install
 ## Scripts
 
 ```bash
-pnpm dev        # dev server on http://localhost:3000
-pnpm build      # production build
-pnpm generate   # static export
-pnpm preview    # preview the production build
-pnpm lint       # eslint .
-pnpm lint:fix   # eslint . --fix
-pnpm test       # vitest run (single-shot, CI-friendly)
-pnpm test:watch # vitest (interactive watch mode)
+pnpm dev              # dev server on http://localhost:3000
+pnpm build            # production build
+pnpm generate         # static export
+pnpm preview          # preview the production build
+pnpm lint             # eslint .
+pnpm lint:fix         # eslint . --fix
+pnpm test             # vitest run (single-shot, CI-friendly)
+pnpm test:watch       # vitest (interactive watch mode)
+pnpm test:e2e         # playwright test (Chromium smoke tests; requires `pnpm build` first)
+pnpm test:e2e:install # playwright install --with-deps chromium (one-time setup)
 ```
+
+## Testing
+
+The template ships two automated test surfaces.
+
+* **`pnpm test`** — Vitest unit-test suite (389 tests across 13 files).
+  Covers the lead-capture Zod schema, all four delivery adapters,
+  the adapter selector, the lead service pipeline (including the
+  rate-limit window expiry), the `POST /api/contact` endpoint
+  transport guards, the property service (filter / sort /
+  `isPropertySort`), the `paginate` / `parsePageParam` utilities,
+  the `buildWhatsAppLink` helper, the `agencyPostalAddress`
+  JSON-LD builder, and the agency configuration schema. The
+  primary automated test surface; the contract tests live here.
+* **`pnpm test:e2e`** — Playwright Chromium smoke tests (13 cases).
+  Boot the production build via `pnpm preview` and assert that the
+  public routes render, do not emit uncaught browser errors, and
+  that the default disabled lead form is in its documented
+  disabled state. One-time setup: `pnpm test:e2e:install`.
+
+A single-platform GitHub Actions CI workflow (`.github/workflows/ci.yml`)
+runs `pnpm lint`, `pnpm test`, `pnpm build`, and `pnpm test:e2e` on every
+push and pull request to the default branches. No OS matrix, no browser
+matrix, no real SMTP / webhook testing.
 
 ## Deployment modes
 
