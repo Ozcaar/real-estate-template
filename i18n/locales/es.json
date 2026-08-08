@@ -390,6 +390,28 @@
       "description": "Habla con nuestro equipo sobre precios de preventa, planos, disponibilidad y próximos lanzamientos.",
       "primary": "Contáctanos",
       "secondary": "Ver propiedades"
+    },
+    "detail": {
+      "notFoundTitle": "Desarrollo no encontrado",
+      "notFoundMessage": "El desarrollo que buscas no existe o ya no está disponible.",
+      "description": "Acerca de este desarrollo",
+      "details": "Detalles del proyecto",
+      "viewListing": "Ver propiedades disponibles",
+      "similar": {
+        "title": "Otros desarrollos que pueden interesarte",
+        "empty": "No hay otros desarrollos para sugerir en este momento"
+      },
+      "features": {
+        "status": "Estatus",
+        "units": "Unidades totales",
+        "bedrooms": "Recámaras",
+        "area": "Superficie",
+        "delivery": "Entrega estimada"
+      },
+      "contact": {
+        "title": "¿Te interesa {name}?",
+        "description": "Habla con nuestro equipo para obtener planos, disponibilidad actual y precios de preventa."
+      }
     }
   }
 }

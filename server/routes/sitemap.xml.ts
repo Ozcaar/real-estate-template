@@ -1,6 +1,7 @@
 import { useRuntimeConfig } from '#imports'
 import { siteConfig } from '~/config/site.config'
 import { propertiesService } from '~/features/properties/services/properties.service'
+import { developmentsService } from '~/features/developments/services/developments.service'
 
 /**
  * Dynamic `/sitemap.xml` endpoint.
@@ -11,10 +12,11 @@ import { propertiesService } from '~/features/properties/services/properties.ser
  * sourced from `propertiesService.getAll()` so `status: 'hidden'` records
  * are excluded automatically — do not duplicate that filter here.
  *
- * Per-development URLs are intentionally omitted: the `Development.slug`
- * field is reserved for a future `/developments/[slug]` detail page, and
- * emitting those URLs today would point crawlers to 404s. When that route
- * ships, add the per-slug loop here.
+ * Development detail URLs are sourced from
+ * `developmentsService.getAll()`. The development model does not carry
+ * a `status: 'hidden'` field, so the service returns the full catalog;
+ * if a future task adds a visibility flag, the service is the place to
+ * filter it out (the sitemap will pick up the change automatically).
  *
  * The output is a minimal `urlset` (no `<lastmod>`, `<changefreq>` or
  * `<priority>`) because the data models do not carry a last-modified
@@ -49,7 +51,12 @@ export default defineEventHandler((event) => {
       urls.push(`/properties/${property.slug}`)
     }
   }
-  if (modules.developments) urls.push('/developments')
+  if (modules.developments) {
+    urls.push('/developments')
+    for (const development of developmentsService.getAll()) {
+      urls.push(`/developments/${development.slug}`)
+    }
+  }
 
   const escape = (value: string): string =>
     value

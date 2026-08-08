@@ -390,6 +390,28 @@
       "description": "Talk to our team about pre-sale pricing, floor plans, availability and upcoming launches.",
       "primary": "Contact us",
       "secondary": "View properties"
+    },
+    "detail": {
+      "notFoundTitle": "Development not found",
+      "notFoundMessage": "The development you are looking for does not exist or is no longer available.",
+      "description": "About this development",
+      "details": "Project details",
+      "viewListing": "View available properties",
+      "similar": {
+        "title": "Other developments you may like",
+        "empty": "No other developments to suggest right now"
+      },
+      "features": {
+        "status": "Status",
+        "units": "Total units",
+        "bedrooms": "Bedrooms",
+        "area": "Unit size",
+        "delivery": "Expected delivery"
+      },
+      "contact": {
+        "title": "Interested in {name}?",
+        "description": "Get in touch with our team for floor plans, current availability and pre-sale pricing."
+      }
     }
   }
 }

@@ -5,13 +5,29 @@ import type { Development, DevelopmentStatus } from '../types/development.types'
 /**
  * Development card. Presentational only: it receives a typed
  * `Development` and never fetches data. Every optional field is guarded by
- * a `v-if` so a partial record renders gracefully. The card deliberately
- * does not link to a detail page (none exists yet) — the only action is
- * the "Learn more" CTA that routes to `/contact`.
+ * a `v-if` so a partial record renders gracefully.
+ *
+ * The card now deep-links to `/developments/[slug]`: the title is a
+ * `NuxtLink` to the development's own page, and a primary "View details"
+ * CTA duplicates that target for users who scan the card visually. The
+ * secondary "Contact" CTA still routes to `/contact` for users who
+ * would rather skip the detail page. Both targets are exposed via the
+ * existing `BaseButton` `to` prop pattern.
+ *
+ * The `headingLevel` prop accepts 2 or 3 (default 3, matching the
+ * behavior the M10 audit relied on for the home-page "Featured
+ * developments" section). Callers that wrap the grid in a section
+ * title (the home page) keep the default; a listing that lacks a
+ * section wrapper can pass `:heading-level="2"` to maintain a valid
+ * h1 → h2 heading hierarchy.
  */
-const props = defineProps<{
-  development: Development
-}>()
+const props = withDefaults(
+  defineProps<{
+    development: Development
+    headingLevel?: 2 | 3
+  }>(),
+  { headingLevel: 3 },
+)
 
 const { t } = useI18n()
 const site = useSiteConfig()
@@ -80,8 +96,13 @@ const hasPrice = computed(() => typeof props.development.priceFrom === 'number')
         </BaseBadge>
       </div>
 
-      <BaseHeading :level="3" size="md" class="mt-3">
-        {{ development.name }}
+      <BaseHeading :level="headingLevel" size="md" class="mt-3">
+        <NuxtLink
+          :to="`/developments/${development.slug}`"
+          class="hover:text-[var(--color-primary)]"
+        >
+          {{ development.name }}
+        </NuxtLink>
       </BaseHeading>
 
       <p class="mt-2 text-sm text-[var(--color-muted)]">
@@ -145,7 +166,14 @@ const hasPrice = computed(() => typeof props.development.priceFrom === 'number')
         </li>
       </ul>
 
-      <div class="mt-auto pt-4">
+      <div class="mt-auto flex flex-col gap-2 pt-4">
+        <BaseButton
+          :to="`/developments/${development.slug}`"
+          size="md"
+          block
+        >
+          {{ t('common.viewDetails') }}
+        </BaseButton>
         <BaseButton to="/contact" size="md" block variant="outline">
           {{ t('common.contact') }}
         </BaseButton>
