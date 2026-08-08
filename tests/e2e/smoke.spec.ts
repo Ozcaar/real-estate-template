@@ -298,3 +298,70 @@ test.describe('Smoke — navigation between key public routes', () => {
     expect(errors, 'header navigation should not emit uncaught pageerrors').toEqual([])
   })
 })
+
+test.describe('A11y — skip link, heading hierarchy, and form semantics', () => {
+  test('the skip link is the first focusable element on every public route', async ({ page }) => {
+    for (const route of PUBLIC_ROUTES) {
+      await page.goto(route.path, { waitUntil: 'load' })
+      // Clear any previously-focused element so Tab starts from <body>.
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+      await page.keyboard.press('Tab')
+      const focused = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null
+        return {
+          tag: el?.tagName ?? null,
+          text: (el?.textContent || '').trim(),
+          href: el?.getAttribute('href') ?? null,
+        }
+      })
+      expect(focused.tag, `${route.path}: first Tab stop should be an <a>`).toBe('A')
+      expect(focused.text, `${route.path}: first Tab stop should be the skip link`).toBe('Skip to content')
+      expect(focused.href, `${route.path}: skip link should target #main-content`).toBe('#main-content')
+    }
+  })
+
+  test('every public route has exactly one <h1> under <main>', async ({ page }) => {
+    for (const route of PUBLIC_ROUTES) {
+      await page.goto(route.path, { waitUntil: 'load' })
+      const h1InMain = await page.locator('main h1').count()
+      const h1Total = await page.locator('h1').count()
+      expect(h1InMain, `${route.path}: should have exactly one <h1> inside <main>`).toBe(1)
+      expect(h1Total, `${route.path}: should have exactly one <h1> total`).toBe(1)
+    }
+  })
+
+  test('the heading hierarchy on /properties does not skip levels', async ({ page }) => {
+    // Regression coverage for the M22 audit fix: the listing page
+    // used to render `<h1>` followed by `<h3>` (the property cards),
+    // which skips `<h2>`. The `PropertyCard` now accepts a
+    // `headingLevel` prop and the listing page passes `2`.
+    await page.goto('/properties', { waitUntil: 'load' })
+    const levels = await page.locator('main h1, main h2, main h3, main h4, main h5, main h6')
+      .evaluateAll((els) => els.map(el => parseInt(el.tagName.substring(1))))
+    expect(levels.length, 'listing should have at least one heading').toBeGreaterThan(0)
+    // The first heading is the <h1> page title. Every subsequent
+    // heading must be at most one level deeper than the previous one
+    // — a level skip is a WCAG 2.4.6 violation.
+    let previous = levels[0]
+    for (let i = 1; i < levels.length; i++) {
+      const current = levels[i]
+      const diff = current - previous
+      expect(
+        diff,
+        `heading at index ${i} (level ${current}) skips from previous (level ${previous})`,
+      ).toBeLessThanOrEqual(1)
+      previous = current
+    }
+  })
+
+  test('the contact form fields have explicit <label for=...> associations', async ({ page }) => {
+    await page.goto('/contact', { waitUntil: 'load' })
+    for (const field of ['name', 'email', 'phone', 'message']) {
+      const input = page.locator(`[name="${field}"]`)
+      const id = await input.getAttribute('id')
+      expect(id, `${field} input should have an id`).toBeTruthy()
+      const labelCount = await page.locator(`label[for="${id}"]`).count()
+      expect(labelCount, `${field} input should be referenced by a <label for=...>`).toBe(1)
+    }
+  })
+})

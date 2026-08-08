@@ -11,10 +11,21 @@ import {
  * Image-first, theme-aware property card. Presentational only: it receives a
  * typed `property` and never fetches data. Visual hierarchy follows
  * `docs/DESIGN.md`: image → price → title → location → key features → details.
+ *
+ * The `headingLevel` prop lets the caller pick the semantic level of the
+ * card title. The default (`3`) preserves the home-page behavior where
+ * the cards sit under an `<h2>` section title (e.g. "Featured properties").
+ * The `/properties` listing page passes `2` because it has no section
+ * wrapper — the cards are direct children of the `<h1>` page title and
+ * skipping straight to `<h3>` would break the heading hierarchy.
  */
-const props = defineProps<{
-  property: Property
-}>()
+const props = withDefaults(
+  defineProps<{
+    property: Property
+    headingLevel?: 2 | 3
+  }>(),
+  { headingLevel: 3 },
+)
 
 const { t } = useI18n()
 const site = useSiteConfig()
@@ -79,7 +90,7 @@ const showStatus = computed(() => props.property.status !== 'available')
         </CurrencyText>
       </p>
 
-      <BaseHeading :level="3" size="md" class="mt-2">
+      <BaseHeading :level="headingLevel" size="md" class="mt-2">
         <NuxtLink
           :to="detailLink"
           class="after:absolute after:inset-0 after:content-[''] hover:text-[var(--color-primary)]"

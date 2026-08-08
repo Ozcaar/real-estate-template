@@ -15,10 +15,19 @@ withDefaults(
     properties: Property[]
     emptyMessage?: string
     clearFiltersHref?: string
+    /**
+     * Heading level passed down to every {@link PropertyCard}. Defaults
+     * to `3` for the home-page "Featured properties" section (which
+     * wraps the grid in an `<h2>` section title). The `/properties`
+     * listing page passes `2` because the cards are direct children
+     * of the `<h1>` page title and the listing has no h2 wrapper.
+     */
+    headingLevel?: 2 | 3
   }>(),
   {
     emptyMessage: undefined,
     clearFiltersHref: undefined,
+    headingLevel: 3,
   },
 )
 </script>
@@ -32,6 +41,7 @@ withDefaults(
       v-for="property in properties"
       :key="property.id"
       :property="property"
+      :heading-level="headingLevel"
     />
   </div>
   <div

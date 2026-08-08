@@ -13,6 +13,7 @@ const emit = defineEmits<{
 }>()
 
 const closeBtnRef = ref<HTMLButtonElement | null>(null)
+const dialogRef = ref<HTMLElement | null>(null)
 
 /**
  * Shared state consumed by the root layout to mark the entire background as
@@ -27,9 +28,58 @@ const mobileMenuOpen = useState<boolean>('mobile-menu-open', () => false)
 /** Element that had focus before the drawer opened (usually the hamburger). */
 const previouslyFocused = ref<HTMLElement | null>(null)
 
-// Close on Escape for keyboard accessibility.
+/** Selector for focusable elements inside the dialog. Used by the focus trap. */
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'area[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function getFocusableInDialog(): HTMLElement[] {
+  const root = dialogRef.value
+  if (!root) return []
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    .filter(el => !el.hasAttribute('disabled') && el.tabIndex !== -1)
+}
+
+// Close on Escape for keyboard accessibility, and trap Tab focus
+// inside the dialog while it is open.
 useEventListener('keydown', (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && props.open) emit('close')
+  if (!props.open) return
+  if (event.key === 'Escape') {
+    emit('close')
+    return
+  }
+  if (event.key !== 'Tab') return
+  // The background layout is `inert`, so the only focusable
+  // elements in the document are inside the dialog (which is
+  // teleported to `<body>`). Trap Tab so the user can never
+  // tab past the last focusable element and out of the page
+  // (the inert layout gives the browser no other element to
+  // land on, so focus would otherwise leave the document).
+  const focusables = getFocusableInDialog()
+  if (focusables.length === 0) {
+    event.preventDefault()
+    return
+  }
+  const first = focusables[0]
+  const last = focusables[focusables.length - 1]
+  const active = document.activeElement
+  if (event.shiftKey) {
+    if (active === first || !dialogRef.value?.contains(active)) {
+      event.preventDefault()
+      last.focus()
+    }
+  } else {
+    if (active === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
 })
 
 // Lock background scroll while the drawer is open.
@@ -85,6 +135,7 @@ onBeforeUnmount(() => {
     >
       <div
         v-if="open"
+        ref="dialogRef"
         class="fixed inset-0 z-50 lg:hidden"
         role="dialog"
         aria-modal="true"

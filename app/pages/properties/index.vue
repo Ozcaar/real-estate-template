@@ -463,7 +463,12 @@ const emptyMessage = computed(
     </div>
 
     <div class="mt-10">
-      <PropertyGrid :properties="properties" :empty-message="emptyMessage" :clear-filters-href="route.path" />
+      <PropertyGrid
+        :properties="properties"
+        :empty-message="emptyMessage"
+        :clear-filters-href="route.path"
+        :heading-level="2"
+      />
     </div>
 
     <BasePagination
