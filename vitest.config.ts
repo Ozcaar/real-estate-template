@@ -17,8 +17,9 @@ import { defineConfig } from 'vitest/config'
  *   adapter selector, the lead service, the `POST /api/contact`
  *   endpoint, the generic pagination helpers, the WhatsApp link
  *   builder, the agency `PostalAddress` JSON-LD builder, the property
- *   service (filter / sort / isPropertySort), and the agency
- *   configuration schema.
+ *   service (filter / sort / isPropertySort), the agency
+ *   configuration schema, and the data-source adapter foundation
+ *   (contract + static adapter).
  * - **`#imports` alias** resolves the Nuxt-internal module to a small
  *   stub (see `tests/stubs/imports.ts`). Individual tests then
  *   override `useRuntimeConfig` with `vi.mock('#imports', ...)` to
@@ -28,10 +29,12 @@ import { defineConfig } from 'vitest/config'
  * - **No browser, no coverage thresholds, no reporters.** The task
  *   scope is "small, maintainable Vitest foundation" only.
  */
+const importsStub = fileURLToPath(new URL('./tests/stubs/imports.ts', import.meta.url))
+
 export default defineConfig({
   resolve: {
     alias: {
-      '#imports': fileURLToPath(new URL('./tests/stubs/imports.ts', import.meta.url)),
+      '#imports': importsStub,
     },
   },
   test: {
@@ -42,6 +45,7 @@ export default defineConfig({
       'app/features/developments/services/**/*.test.ts',
       'app/features/agents/services/**/*.test.ts',
       'app/core/utils/**/*.test.ts',
+      'app/core/data-source/**/*.test.ts',
       'app/config/agencies/**/*.test.ts',
       'server/services/leads/**/*.test.ts',
       'server/api/**/*.test.ts',

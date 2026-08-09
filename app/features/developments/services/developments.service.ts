@@ -1,5 +1,11 @@
 import type { Development } from '../types/development.types'
 import { sampleDevelopments } from '../data/developments'
+import {
+  DEFAULT_DATA_SOURCE,
+  selectDataSource,
+  type DataSourceAdapter,
+} from '../../../core/data-source/data-source'
+import { createStaticDataSource } from '../../../core/data-source/adapters/static-adapter'
 
 /**
  * Developments business logic.
@@ -15,11 +21,48 @@ import { sampleDevelopments } from '../data/developments'
  * full catalog as-is. If a future task adds a visibility flag, the
  * same `filter(property => property.status !== 'hidden')` pattern used
  * by `propertiesService` is the place to wire it in.
+ *
+ * **Data source.** The service consumes the bundled sample
+ * catalog through the data-source adapter boundary (see
+ * `app/core/data-source/`). A future release can swap the
+ * source for an HTTP API or a headless CMS by registering a
+ * new adapter and switching {@link DEFAULT_DATA_SOURCE} (or
+ * supplying a per-feature `DataSourceConfig`) without changing
+ * the service signatures pages and components depend on. The
+ * static adapter ships without a Zod schema for `Development`
+ * because no development schema exists yet; the data file is
+ * the source of truth. When a development schema is added in a
+ * future pass, it is passed to `createStaticDataSource` as the
+ * `schema` option exactly the way the property service does.
  */
+
+/**
+ * The developments data-source adapter. The selector throws
+ * `DataSourceNotImplementedError` if the default kind ever
+ * changes to a kind without a registered adapter.
+ */
+const developmentsAdapter: DataSourceAdapter<Development> = selectDataSource(
+  DEFAULT_DATA_SOURCE,
+  {
+    static: createStaticDataSource<Development>({
+      data: sampleDevelopments,
+      source: 'app/features/developments/data/developments.ts',
+    }),
+  },
+)
+
+/**
+ * The cached, full list of developments. The service's
+ * `getAll()` returns this list as-is (no hidden filtering
+ * because the `Development` model has no `status: 'hidden'`
+ * field), matching the pre-adapter behaviour exactly.
+ */
+const allDevelopments: readonly Development[] = developmentsAdapter.getAll()
+
 export const developmentsService = {
   /** Every development in the catalog, in insertion order. */
   getAll(): Development[] {
-    return sampleDevelopments
+    return allDevelopments
   },
 
   /**
@@ -28,7 +71,7 @@ export const developmentsService = {
    * via `createError({ statusCode: 404, ... })`).
    */
   getBySlug(slug: string): Development | undefined {
-    return sampleDevelopments.find(development => development.slug === slug)
+    return allDevelopments.find(development => development.slug === slug)
   },
 
   /**
@@ -37,7 +80,7 @@ export const developmentsService = {
    * records that pre-date the field are never selected.
    */
   getFeatured(limit?: number): Development[] {
-    const featured = sampleDevelopments.filter(development => development.featured)
+    const featured = allDevelopments.filter(development => development.featured)
     return typeof limit === 'number' ? featured.slice(0, limit) : featured
   },
 

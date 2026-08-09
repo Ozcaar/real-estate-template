@@ -1,5 +1,12 @@
 import type { Property } from '../types/property.types'
+import { propertyListSchema } from '../schemas/property.schema'
 import { sampleProperties } from '../data/properties'
+import {
+  DEFAULT_DATA_SOURCE,
+  selectDataSource,
+  type DataSourceAdapter,
+} from '../../../core/data-source/data-source'
+import { createStaticDataSource } from '../../../core/data-source/adapters/static-adapter'
 
 /**
  * Typed filter shape consumed by {@link propertiesService.filter}. All fields
@@ -67,15 +74,60 @@ function normalizeText(value: string | undefined | null): string {
 /**
  * Properties business logic.
  *
- * For the MVP this reads from local static data. Because every consumer goes
- * through this service, the data source can later be swapped for an `api/`
- * layer (e.g. `$fetch('/api/properties')`) without changing components. Methods
- * are synchronous over static data, which keeps SSR rendering deterministic.
+ * For the MVP this reads from local static data through the
+ * data-source adapter boundary. The service consumes the
+ * {@link DataSourceAdapter} contract — never the raw data
+ * file directly — so the source can be swapped for an `api`
+ * or `cms` adapter in a future release without changing the
+ * service signatures pages and components depend on. Methods
+ * are synchronous over static data, which keeps SSR rendering
+ * deterministic.
+ *
+ * **Boundary.** The static adapter is constructed once at
+ * module load with the {@link propertyListSchema} as the
+ * runtime validation tool. A future async adapter would
+ * fetch and parse on demand through the same contract; the
+ * service's `getAll()` / `getBySlug()` / `filter()` /
+ * `getFeatured()` / `getRelated()` signatures stay the
+ * same.
+ *
+ * The default data-source kind is `static` (see
+ * {@link DEFAULT_DATA_SOURCE}). A rebrand that wants a real
+ * API or CMS registers a new adapter and switches
+ * `DEFAULT_DATA_SOURCE` (or supplies a per-feature
+ * `DataSourceConfig`) — `selectDataSource` throws
+ * `DataSourceNotImplementedError` rather than silently
+ * falling back to the bundled data.
  */
+
+/**
+ * The properties data-source adapter. The selector throws
+ * `DataSourceNotImplementedError` if the default kind ever
+ * changes to a kind without a registered adapter.
+ */
+const propertiesAdapter: DataSourceAdapter<Property> = selectDataSource(
+  DEFAULT_DATA_SOURCE,
+  {
+    static: createStaticDataSource<Property>({
+      data: sampleProperties,
+      schema: propertyListSchema,
+      source: 'app/features/properties/data/properties.ts',
+    }),
+  },
+)
+
+/**
+ * The cached, validated, full list of properties (including
+ * hidden ones). The service's `getAll()` filters out hidden
+ * records at call time so the contract matches the
+ * pre-adapter behaviour exactly.
+ */
+const allProperties: readonly Property[] = propertiesAdapter.getAll()
+
 export const propertiesService = {
   /** All visible properties (excludes hidden ones). */
   getAll(): Property[] {
-    return sampleProperties.filter(property => property.status !== 'hidden')
+    return allProperties.filter(property => property.status !== 'hidden')
   },
 
   /**
@@ -84,7 +136,7 @@ export const propertiesService = {
    * proper 404 (e.g. via `createError({ statusCode: 404, ... })`).
    */
   getBySlug(slug: string): Property | undefined {
-    return sampleProperties.find(
+    return allProperties.find(
       property => property.slug === slug && property.status !== 'hidden',
     )
   },
