@@ -13,6 +13,7 @@ export const sampleAgents: Agent[] = [
   {
     id: 'agent-001',
     name: 'María González',
+    slug: 'maria-gonzalez',
     role: 'Senior Advisor',
     bio: 'Over a decade helping families and investors find the right home in the metropolitan area. Specialist in residential sales.',
     image: '/images/agents/agent-01.svg',
@@ -24,6 +25,7 @@ export const sampleAgents: Agent[] = [
   {
     id: 'agent-002',
     name: 'James Carter',
+    slug: 'james-carter',
     role: 'Commercial Specialist',
     bio: 'Focused on commercial properties, retail spaces and office leasing. Background in real estate finance.',
     image: '/images/agents/agent-02.svg',
@@ -35,6 +37,7 @@ export const sampleAgents: Agent[] = [
   {
     id: 'agent-003',
     name: 'Lucía Fernández',
+    slug: 'lucia-fernandez',
     role: 'Rentals Lead',
     bio: 'Coordinates the rentals portfolio and supports tenants and landlords from listing to move-in.',
     image: '/images/agents/agent-03.svg',
@@ -44,6 +47,7 @@ export const sampleAgents: Agent[] = [
   {
     id: 'agent-004',
     name: 'Daniel Ramírez',
+    slug: 'daniel-ramirez',
     role: 'Land & Developments',
     bio: 'Advises clients on land acquisitions, residential developments and long-term investment opportunities.',
     image: '/images/agents/agent-04.svg',

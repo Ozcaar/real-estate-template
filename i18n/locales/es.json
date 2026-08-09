@@ -355,6 +355,19 @@
       "title": "¿No estás seguro de a quién contactar?",
       "description": "Envíanos un mensaje y te conectaremos con el asesor adecuado según tus necesidades.",
       "primary": "Contáctanos"
+    },
+    "detail": {
+      "notFoundTitle": "Asesor no encontrado",
+      "notFoundMessage": "El asesor que buscas no existe o ya no forma parte del equipo.",
+      "about": "Acerca de {name}",
+      "specialtiesLabel": "Especialidades",
+      "contact": {
+        "title": "Contacta a {name}",
+        "description": "Comunícate directamente por el canal que prefieras o contacta a la agencia y nosotros encauzaremos la conversación.",
+        "call": "Llamar",
+        "email": "Correo",
+        "whatsapp": "WhatsApp"
+      }
     }
   },
   "developments": {

@@ -8,6 +8,14 @@ import { buildWhatsAppLink } from '~/core/utils/whatsapp-link'
  * fetches data. The contact links (phone, email, WhatsApp) are only
  * rendered when the corresponding field is present on the agent, so a
  * partial record renders gracefully.
+ *
+ * The card deep-links to `/agents/[slug]`: the heading is a
+ * `NuxtLink` wrapping the agent's name, and a primary "View profile"
+ * CTA duplicates that target for users who scan the card visually. The
+ * contact links (phone, email, WhatsApp) keep their existing
+ * `tel:` / `mailto:` / `https://wa.me/` semantics and are NOT
+ * wrapped in `<NuxtLink>` (they are external / protocol links, not
+ * internal navigation).
  */
 const props = defineProps<{
   agent: Agent
@@ -32,7 +40,12 @@ const whatsappLink = computed(() => buildWhatsAppLink(props.agent.whatsapp))
 
     <div class="flex flex-1 flex-col p-5">
       <BaseHeading :level="3" size="md">
-        {{ agent.name }}
+        <NuxtLink
+          :to="`/agents/${agent.slug}`"
+          class="hover:text-[var(--color-primary)]"
+        >
+          {{ agent.name }}
+        </NuxtLink>
       </BaseHeading>
       <p class="mt-1 text-sm font-medium text-[var(--color-primary)]">
         {{ agent.role }}
@@ -94,6 +107,16 @@ const whatsappLink = computed(() => buildWhatsAppLink(props.agent.whatsapp))
           </a>
         </li>
       </ul>
+
+      <div class="mt-auto pt-4">
+        <BaseButton
+          :to="`/agents/${agent.slug}`"
+          size="md"
+          block
+        >
+          {{ t('common.viewDetails') }}
+        </BaseButton>
+      </div>
     </div>
   </BaseCard>
 </template>

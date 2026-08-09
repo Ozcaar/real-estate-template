@@ -40,6 +40,7 @@ export default defineConfig({
       'app/features/leads/schemas/**/*.test.ts',
       'app/features/properties/services/**/*.test.ts',
       'app/features/developments/services/**/*.test.ts',
+      'app/features/agents/services/**/*.test.ts',
       'app/core/utils/**/*.test.ts',
       'app/config/agencies/**/*.test.ts',
       'server/services/leads/**/*.test.ts',

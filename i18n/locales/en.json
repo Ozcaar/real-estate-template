@@ -355,6 +355,19 @@
       "title": "Not sure who to contact?",
       "description": "Send us a message and we will connect you with the right advisor for your needs.",
       "primary": "Contact us"
+    },
+    "detail": {
+      "notFoundTitle": "Advisor not found",
+      "notFoundMessage": "The advisor you are looking for does not exist or is no longer part of the team.",
+      "about": "About {name}",
+      "specialtiesLabel": "Specialties",
+      "contact": {
+        "title": "Get in touch with {name}",
+        "description": "Reach out directly using the channel that suits you best, or contact the agency and we will route the conversation.",
+        "call": "Call",
+        "email": "Email",
+        "whatsapp": "WhatsApp"
+      }
     }
   },
   "developments": {

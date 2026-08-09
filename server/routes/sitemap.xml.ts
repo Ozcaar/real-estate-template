@@ -2,6 +2,7 @@ import { useRuntimeConfig } from '#imports'
 import { siteConfig } from '~/config/site.config'
 import { propertiesService } from '~/features/properties/services/properties.service'
 import { developmentsService } from '~/features/developments/services/developments.service'
+import { agentsService } from '~/features/agents/services/agents.service'
 
 /**
  * Dynamic `/sitemap.xml` endpoint.
@@ -16,7 +17,12 @@ import { developmentsService } from '~/features/developments/services/developmen
  * `developmentsService.getAll()`. The development model does not carry
  * a `status: 'hidden'` field, so the service returns the full catalog;
  * if a future task adds a visibility flag, the service is the place to
- * filter it out (the sitemap will pick up the change automatically).
+ * filter it out (the sitemap will pick up the change automatically.
+ *
+ * Agent detail URLs are sourced from `agentsService.getAll()`. The
+ * agent model does not carry a visibility flag either; the service
+ * returns the full catalog and the sitemap loop emits one entry per
+ * agent's stable slug.
  *
  * The output is a minimal `urlset` (no `<lastmod>`, `<changefreq>` or
  * `<priority>`) because the data models do not carry a last-modified
@@ -44,7 +50,12 @@ export default defineEventHandler((event) => {
   const urls: string[] = ['/', '/about']
 
   if (modules.contact) urls.push('/contact')
-  if (modules.agents) urls.push('/agents')
+  if (modules.agents) {
+    urls.push('/agents')
+    for (const agent of agentsService.getAll()) {
+      urls.push(`/agents/${agent.slug}`)
+    }
+  }
   if (modules.properties) {
     urls.push('/properties')
     for (const property of propertiesService.getAll()) {
