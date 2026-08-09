@@ -79,7 +79,13 @@
         "first": "This is the first image",
         "last": "This is the last image",
         "slideLabel": "Image {n} of {t}",
-        "counter": "Image {n} of {total}"
+        "counter": "Image {n} of {total}",
+        "lightbox": {
+          "openImage": "Open image {n} of {total} in fullscreen",
+          "close": "Close fullscreen gallery",
+          "dialogLabel": "Fullscreen image gallery for {title}",
+          "imageAlt": "Image {n} of {total}: {title}"
+        }
       },
       "similar": {
         "title": "Similar properties",

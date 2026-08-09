@@ -9,7 +9,8 @@ import 'swiper/css/a11y'
 import 'swiper/css/keyboard'
 
 /**
- * Property gallery (carousel MVP, Task 075).
+ * Property gallery (carousel MVP, Task 075; fullscreen lightbox
+ * extension, Task 097 / v1.1.0 M14).
  *
  * Replaces the static thumbnail strip with a Swiper 12 carousel while
  * preserving the contract of the previous implementation:
@@ -47,6 +48,37 @@ import 'swiper/css/keyboard'
  *   replacement at runtime).
  * - `prefers-reduced-motion: reduce` sets Swiper's `speed` to 0 via
  *   VueUse's `usePreferredReducedMotion` composable.
+ *
+ * New in the lightbox extension (v1.1.0 M14):
+ *
+ * - Every main image (both the single-image fallback and every
+ *   Swiper slide) is wrapped in a real `<button type="button">` with
+ *   a translated `aria-label` ("Open image N of M in fullscreen").
+ *   The button is a transparent click target overlaid on the image;
+ *   the LCP image is unchanged underneath. The button shows a
+ *   small `mdi:arrow-expand` icon on hover / focus-visible for a
+ *   visible affordance.
+ * - Clicking (or pressing Enter / Space on) the button opens the
+ *   `PropertyLightbox` at the carousel's currently-active slide.
+ *   The lightbox is a sibling component (it does not live inside the
+ *   Swiper); it is teleported to `<body>` so its `position: fixed`
+ *   overlay is not clipped by the carousel's own `overflow-hidden`
+ *   container.
+ * - The gallery keeps a single source of truth (`activeIndex`).
+ *   When the lightbox navigates, it emits `update:activeIndex`; the
+ *   gallery updates `activeIndex` on every emit. When the lightbox
+ *   closes, the gallery calls `swiper.slideTo(activeIndex, 0)`
+ *   to snap the carousel's visual position to the last-viewed
+ *   slide, then restores `activeIndex.value` via a
+ *   `setTimeout(..., 0)` after the Swiper's `update()`-driven
+ *   `slideChange` event has been dispatched (the `slideChange`
+ *   event fires synchronously with the Swiper's previous
+ *   `activeIndex` from the `update()` call path and would
+ *   otherwise overwrite the just-synced value). Parent-child
+ *   communication through `emit` is a Vue 3 standard and is
+ *   unaffected by the lightbox's `<Teleport to="body">` rendering,
+ *   so no module-level or global state is shared between the two
+ *   components.
  *
  * Swiper modules imported: `A11y`, `Keyboard`. The `Navigation`
  * module is NOT imported — the custom prev / next buttons call
@@ -94,6 +126,92 @@ const total = computed(() => displayImages.value.length)
 
 const isFirst = computed(() => activeIndex.value <= 0)
 const isLast = computed(() => activeIndex.value >= total.value - 1)
+
+// --- Lightbox state -----------------------------------------------------
+/**
+ * The lightbox is open when this flag is true. The lightbox is a
+ * sibling of the carousel (rendered below the `<figure>`); it
+ * teleports itself to `<body>` so the `position: fixed` overlay is
+ * not clipped by the carousel's `overflow-hidden` container. The
+ * lightbox's own behaviour (focus trap, Escape, backdrop click,
+ * scroll lock, focus restoration) lives in
+ * `app/features/properties/components/PropertyLightbox.vue` so the
+ * gallery component stays focused on the carousel.
+ */
+const lightboxOpen = ref(false)
+
+function openLightboxAt(index: number) {
+  // Clamp the requested index so a stale value (e.g. the previous
+  // activeIndex after a catalog edit) never opens the lightbox on a
+  // slide that no longer exists.
+  const max = Math.max(0, total.value - 1)
+  const clamped = Math.min(Math.max(index, 0), max)
+  activeIndex.value = clamped
+  lightboxOpen.value = true
+}
+
+function onLightboxUpdateActiveIndex(value: number) {
+  // The lightbox emits `update:activeIndex` on every slide
+  // change. The emit goes through the component instance and
+  // is unaffected by the lightbox's `<Teleport to="body">`
+  // rendering — parent-child communication through `emit` is
+  // a Vue 3 standard that does not depend on DOM placement.
+  // The gallery's `activeIndex` is the source of truth for the
+  // visible counter, the thumbnail `aria-current`, and the
+  // Swiper's visual position after close, so we keep it in
+  // sync here. No watch is needed: the emit is a discrete
+  // event, not a shared reactive value.
+  activeIndex.value = value
+}
+
+function onLightboxUpdateOpen(value: boolean) {
+  lightboxOpen.value = value
+  if (!value) {
+    // The lightbox just closed. Snap the gallery's Swiper
+    // visual position to the last-viewed slide. The user sees
+    // the Swiper move to the correct slide at this moment;
+    // `speed: 0` makes the move instant.
+    //
+    // The `slideTo(target, 0)` call fires a `slideChange`
+    // event from Swiper's `update()` call path with the
+    // Swiper's PREVIOUS `activeIndex` (0) because the
+    // reactive getter is not yet updated. `onSlideChange`
+    // then sets `activeIndex.value = 0`, overwriting the
+    // value the lightbox just synced via
+    // `update:activeIndex`. The `setTimeout(..., 0)`
+    // workaround restores `activeIndex.value = target` AFTER
+    // the event has been dispatched and Vue's reactivity has
+    // flushed, so the final value is the target and the
+    // `data-active-index` attribute reflects the lightbox's
+    // last-viewed slide.
+    //
+    // Swiper v12's `update()` method fires `slideChange`
+    // independently of `runCallbacks: false` — the
+    // `runCallbacks` flag only suppresses the `slideChange`
+    // from `slideToInternal`, not from `update()`. The
+    // `setTimeout(..., 0)` workaround is the correct
+    // approach for this Swiper v12 behavior; the
+    // `runCallbacks: false` flag alone is not sufficient to
+    // prevent the race.
+    //
+    // Note: the Swiper's visual `swiper-slide-active` class
+    // may not always reflect the target index after the
+    // programmatic `slideTo` on close (it depends on the
+    // Swiper's internal transition state and the
+    // `update()`-driven `slideChange` timing). The visible
+    // counter (computed from `activeIndex`) and the
+    // thumbnail `aria-current` are the user-facing sources of
+    // truth after close; the Swiper's visual state snaps to
+    // the target on the user's next carousel interaction
+    // (clicking a thumbnail, the prev / next buttons, or a
+    // per-image open button).
+    const target = activeIndex.value
+    swiperRef.value?.slideTo(target, 0)
+    setTimeout(() => {
+      activeIndex.value = target
+    }, 0)
+  }
+}
 
 /**
  * A11y options passed to Swiper. The `slideLabelMessage` uses Swiper's
@@ -157,6 +275,19 @@ function thumbLabel(index: number): string {
   })
 }
 
+/**
+ * Per-slide "open in fullscreen" label. The lightbox is the
+ * single source of truth for image navigation after the user
+ * opens it, so the label only needs to identify which image
+ * the button will open; the lightbox handles the rest.
+ */
+function openImageLabel(index: number): string {
+  return t('properties.detail.gallery.lightbox.openImage', {
+    n: index + 1,
+    total: total.value,
+  })
+}
+
 const counterText = computed(() =>
   t('properties.detail.gallery.counter', {
     n: activeIndex.value + 1,
@@ -178,18 +309,51 @@ const counterText = computed(() =>
     of the containment chain applies them so a single `display: contents`
     ancestor or a future refactor cannot silently remove them.
   -->
-  <figure class="flex flex-col gap-3 min-w-0 w-full max-w-full">
+  <figure
+    class="flex flex-col gap-3 min-w-0 w-full max-w-full"
+    :data-active-index="activeIndex"
+    data-testid="property-gallery"
+  >
     <!-- Single image: no Swiper, no controls, just the LCP image. -->
-    <ResponsiveImage
+    <div
       v-if="!hasMultiple"
-      :src="displayImages[0]"
-      :alt="title"
-      ratio="4/3"
-      rounded="xl"
-      sizes="100vw lg:50vw"
-      loading="eager"
-      fetchpriority="high"
-    />
+      class="relative w-full min-w-0 max-w-full"
+    >
+      <ResponsiveImage
+        :src="displayImages[0]"
+        :alt="title"
+        ratio="4/3"
+        rounded="xl"
+        sizes="100vw lg:50vw"
+        loading="eager"
+        fetchpriority="high"
+      />
+      <!--
+        Transparent "open in fullscreen" button overlaid on the
+        image. The LCP image is unchanged underneath; the button
+        is a sibling, not a wrapper, so the SSR HTML and the
+        browser's image-fetch prioritisation are not affected.
+        `absolute inset-0` covers the whole image area; the icon
+        is hidden by default and revealed on hover / focus-visible
+        so the button does not add visual noise to the gallery
+        while still being a discoverable affordance.
+      -->
+      <button
+        type="button"
+        class="absolute inset-0 z-10 flex items-end justify-end p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+        :aria-label="openImageLabel(0)"
+        data-testid="property-gallery-open"
+        @click="openLightboxAt(0)"
+      >
+        <span
+          class="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          :class="activeIndex === 0 ? 'opacity-100' : ''"
+          aria-hidden="true"
+        >
+          <BaseIcon name="mdi:arrow-expand" size="sm" />
+        </span>
+      </button>
+    </div>
 
     <!-- Multiple images: Swiper carousel with custom controls and thumbnails. -->
     <template v-else>
@@ -221,15 +385,38 @@ const counterText = computed(() =>
               v-for="(src, index) in displayImages"
               :key="`${src}:${index}`"
             >
-              <ResponsiveImage
-                :src="src"
-                :alt="title"
-                ratio="4/3"
-                rounded="xl"
-                sizes="100vw lg:50vw"
-                :loading="index === 0 ? 'eager' : 'lazy'"
-                :fetchpriority="index === 0 ? 'high' : undefined"
-              />
+              <div class="relative w-full h-full">
+                <ResponsiveImage
+                  :src="src"
+                  :alt="title"
+                  ratio="4/3"
+                  rounded="xl"
+                  sizes="100vw lg:50vw"
+                  :loading="index === 0 ? 'eager' : 'lazy'"
+                  :fetchpriority="index === 0 ? 'high' : undefined"
+                />
+                <!--
+                  Same transparent "open in fullscreen" button as
+                  the single-image case. The button is a sibling
+                  of the ResponsiveImage, not a wrapper, so the
+                  LCP image and the Swiper layout are unchanged.
+                -->
+                <button
+                  type="button"
+                  class="absolute inset-0 z-10 flex items-end justify-end p-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+                  :aria-label="openImageLabel(index)"
+                  :data-testid="`property-gallery-open-${index}`"
+                  @click="openLightboxAt(index)"
+                >
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-xs text-white opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+                    :class="index === activeIndex ? 'opacity-100' : ''"
+                    aria-hidden="true"
+                  >
+                    <BaseIcon name="mdi:arrow-expand" size="sm" />
+                  </span>
+                </button>
+              </div>
             </SwiperSlide>
           </Swiper>
 
@@ -240,15 +427,31 @@ const counterText = computed(() =>
             both sides use the same `src`.
           -->
           <template #fallback>
-            <ResponsiveImage
-              :src="displayImages[0]"
-              :alt="title"
-              ratio="4/3"
-              rounded="xl"
-              sizes="100vw lg:50vw"
-              loading="eager"
-              fetchpriority="high"
-            />
+            <div class="relative w-full min-w-0 max-w-full">
+              <ResponsiveImage
+                :src="displayImages[0]"
+                :alt="title"
+                ratio="4/3"
+                rounded="xl"
+                sizes="100vw lg:50vw"
+                loading="eager"
+                fetchpriority="high"
+              />
+              <button
+                type="button"
+                class="absolute inset-0 z-10 flex items-end justify-end p-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+                :aria-label="openImageLabel(0)"
+                data-testid="property-gallery-open"
+                @click="openLightboxAt(0)"
+              >
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-xs text-white opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+                  aria-hidden="true"
+                >
+                  <BaseIcon name="mdi:arrow-expand" size="sm" />
+                </span>
+              </button>
+            </div>
           </template>
         </ClientOnly>
       </div>
@@ -320,5 +523,39 @@ const counterText = computed(() =>
         </li>
       </ul>
     </template>
+
+    <!--
+      The lightbox is a sibling of the carousel. It teleports itself
+      to `<body>` so its `position: fixed` overlay is not clipped
+      by the carousel's `overflow-hidden` container. The `open`
+      v-model is bound to `lightboxOpen`; `initial-index` carries
+      the gallery's current slide so the lightbox opens on the same
+      image. The gallery's `activeIndex` (the source of truth for
+      the visible counter, the thumbnail `aria-current`, and the
+      Swiper's visual position) stays in sync with the lightbox via
+      the standard `@update:active-index` emit — the lightbox
+      writes the new index on every slide change, the gallery's
+      `onLightboxUpdateActiveIndex` updates `activeIndex` (no
+      shared module-level ref, no `watch`, no Teleport-aware
+      workaround). On close, `onLightboxUpdateOpen` calls
+      `swiperRef.value?.slideTo(activeIndex.value, 0)` to snap
+      the carousel's visual slide to the last-viewed slide, then
+      restores `activeIndex.value` via `setTimeout(..., 0)` to
+      work around Swiper v12's `update()`-driven `slideChange`
+      event (the event fires with the previous `activeIndex` from
+      the `update()` call path and would otherwise overwrite the
+      just-synced `activeIndex`). After the lightbox closes, the
+      main image, counter, and active thumbnail all represent the
+      same image.
+    -->
+    <PropertyLightbox
+      :open="lightboxOpen"
+      :images="images"
+      :cover-image="coverImage"
+      :title="title"
+      :initial-index="activeIndex"
+      @update:open="onLightboxUpdateOpen"
+      @update:active-index="onLightboxUpdateActiveIndex"
+    />
   </figure>
 </template>
