@@ -19,7 +19,15 @@
     "mobileNavigation": "Mobile navigation",
     "selectLanguage": "Select language",
     "skipToContent": "Skip to content",
-    "breadcrumb": "Breadcrumb"
+    "breadcrumb": "Breadcrumb",
+    "themeToggle": {
+      "switchToLight": "Switch to light mode",
+      "switchToDark": "Switch to dark mode",
+      "switchToSystem": "Switch to system mode",
+      "lightModeAriaLabel": "Color mode is light. Switch to dark mode.",
+      "darkModeAriaLabel": "Color mode is dark. Switch to system mode.",
+      "systemModeAriaLabel": "Color mode follows your device. Switch to light mode."
+    }
   },
   "properties": {
     "title": "Properties",

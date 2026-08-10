@@ -8,13 +8,15 @@
  * `core/utils/theme-to-css-vars.ts`). This file only consumes those tokens via
  * `var(--token, fallback)` so the app still renders sensibly if a token is
  * ever missing.
+ *
+ * **Color-scheme.** The `<html data-color-mode="...">` attribute is set
+ * by the anti-FOUC inline script in `nuxt.config.ts` and by
+ * `plugins/color-mode.ts`. The theme serializer also emits a
+ * `color-scheme: light|dark` declaration inside each mode selector so
+ * browser form controls and scrollbars match the active palette.
  */
 
 @layer base {
-  :root {
-    color-scheme: light;
-  }
-
   html {
     scroll-behavior: smooth;
   }

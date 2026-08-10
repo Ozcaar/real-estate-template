@@ -23,6 +23,7 @@ const mobileOpen = ref(false)
       <AppNavbar :items="navItems" class="hidden lg:block" />
 
       <div class="flex items-center gap-2">
+        <AppThemeToggle />
         <AppLanguageSwitcher />
         <BaseButton to="/contact" size="sm" class="hidden sm:inline-flex">
           {{ $t('nav.contact') }}

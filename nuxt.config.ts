@@ -98,6 +98,21 @@ export default defineNuxtConfig({
       ],
       // The favicon is injected at runtime from agency config (see
       // `plugins/theme.ts`) so it can be rebranded without touching this file.
+      //
+      // The `color-mode-init` inline script runs before Vue hydrates and
+      // sets `<html data-color-mode="...">` so the first paint already
+      // reflects the user's choice. The cookie is read by the documented
+      // `core/utils/color-mode.ts` helpers (kept tiny so the script stays
+      // small and is safe to inline). The fallback is `'system'`; the
+      // matchMedia query resolves `'system'` to `'light'` or `'dark'`
+      // based on the OS preference. The script is intentionally NOT
+      // async / defer — it must execute before the first paint.
+      script: [
+        {
+          innerHTML: `(function(){try{var m=document.cookie.match(/(?:^|; )color-mode=([^;]+)/);var p=m?decodeURIComponent(m[1]):'system';if(p!=='light'&&p!=='dark'&&p!=='system')p='system';var d=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var r=p==='dark'||(p==='system'&&d===true)?'dark':'light';document.documentElement.setAttribute('data-color-mode',r);}catch(e){document.documentElement.setAttribute('data-color-mode','light');}})();`,
+          tagPosition: 'head',
+        },
+      ],
     },
   },
 

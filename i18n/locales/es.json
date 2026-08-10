@@ -19,7 +19,15 @@
     "mobileNavigation": "Navegación móvil",
     "selectLanguage": "Seleccionar idioma",
     "skipToContent": "Saltar al contenido",
-    "breadcrumb": "Migas de pan"
+    "breadcrumb": "Migas de pan",
+    "themeToggle": {
+      "switchToLight": "Cambiar a modo claro",
+      "switchToDark": "Cambiar a modo oscuro",
+      "switchToSystem": "Seguir el modo del sistema",
+      "lightModeAriaLabel": "El modo de color es claro. Cambiar a modo oscuro.",
+      "darkModeAriaLabel": "El modo de color es oscuro. Cambiar a modo del sistema.",
+      "systemModeAriaLabel": "El modo de color sigue tu dispositivo. Cambiar a modo claro."
+    }
   },
   "properties": {
     "title": "Propiedades",
