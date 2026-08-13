@@ -53,6 +53,8 @@ export default defineConfig({
       'app/composables/**/*.test.ts',
       'server/services/leads/**/*.test.ts',
       'server/api/**/*.test.ts',
+      'server/utils/**/*.test.ts',
+      'server/routes/**/*.test.ts',
     ],
     // Each test file is its own module so the rate-limit map and the
     // adapter registry do not leak between test files.

@@ -27,8 +27,22 @@ const slug = computed(() => {
   return Array.isArray(raw) ? raw[0] : raw
 })
 
+/**
+ * Property data source. Loaded through Nuxt's `useAsyncData` so
+ * SSR awaits the adapter's `loadAll()` before rendering the
+ * markup. The `properties:detail` key is unique to this page; a
+ * future per-property widget that wants its own key should prefix
+ * the slug.
+ */
+const { data: allProperties } = await useAsyncData(
+  'properties:detail',
+  () => propertiesService.loadAll(),
+)
+
 const property = computed(() =>
-  slug.value ? propertiesService.getBySlug(slug.value) : undefined,
+  allProperties.value && slug.value
+    ? propertiesService.getBySlug(allProperties.value, slug.value)
+    : undefined,
 )
 
 if (!property.value) {
@@ -47,7 +61,11 @@ const areaUnit = computed(() =>
   (p.sizeUnit ?? site.value.agency.measurementUnit) === 'imperial' ? 'ft²' : 'm²',
 )
 
-const related = computed(() => propertiesService.getRelated(p, 3))
+const related = computed(() =>
+  allProperties.value
+    ? propertiesService.getRelated(allProperties.value, p, 3)
+    : [],
+)
 
 const featureRows = computed(() => [
   { key: 'bedrooms', value: p.bedrooms, icon: 'mdi:bed-outline', show: Boolean(p.bedrooms) },

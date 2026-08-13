@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import {
   DEFAULT_DATA_SOURCE,
+  DataSourceHttpError,
+  DataSourceInvalidPayloadError,
+  DataSourceMissingConfigError,
   DataSourceNotImplementedError,
+  DataSourceTimeoutError,
   isDataSourceKind,
   selectDataSource,
   type DataSourceAdapter,
@@ -15,14 +19,17 @@ import {
  *
  * Scope: the small public surface every feature service depends
  * on — the kind set, the default config, the selector, the
- * not-implemented error, and the type guard. The contract is
- * the single most important piece of the adapter foundation:
- * if it is wrong, every feature is wrong. The tests pin down
- * the documented behaviour so a future change cannot regress
- * the "fail clearly rather than silently fall back" promise.
+ * not-implemented error, the type guard, the new
+ * missing-config / http / timeout / invalid-payload errors, and
+ * the async `loadAll()` contract. The contract is the single
+ * most important piece of the adapter foundation: if it is
+ * wrong, every feature is wrong. The tests pin down the
+ * documented behaviour so a future change cannot regress the
+ * "fail clearly rather than silently fall back" promise.
  *
  * Out of scope: the static adapter itself (covered in
- * `adapters/static-adapter.test.ts`) and the per-feature
+ * `adapters/static-adapter.test.ts`), the api adapter (covered
+ * in `adapters/api-adapter.test.ts`), and the per-feature
  * service integrations (covered in each feature's existing
  * `*.service.test.ts`).
  */
@@ -32,6 +39,7 @@ const SUPPORTED_KINDS: readonly DataSourceKind[] = ['static', 'api', 'cms']
 function makeAdapter(id: DataSourceKind): DataSourceAdapter<{ id: string }> {
   return {
     id,
+    loadAll: () => Promise.resolve([{ id: `${id}-1` }, { id: `${id}-2` }]),
     getAll: () => [{ id: `${id}-1` }, { id: `${id}-2` }],
   }
 }
@@ -233,6 +241,49 @@ describe('selectDataSource — not-implemented error', () => {
     }
   })
 
+  it('the error\'s supportedKinds reflects the registry\'s actual kinds (not the full contract set)', () => {
+    // The selector computes supportedKinds from its own
+    // registry — a registry with only 'static' produces a
+    // message that lists only 'static'. This is the
+    // difference between the selector (runtime registry)
+    // and a feature loader with a hard-coded shipped set.
+    try {
+      selectDataSource({ kind: 'api' }, { static: makeAdapter('static') })
+      throw new Error('expected selectDataSource to throw')
+    }
+    catch (error) {
+      const wrapped = error as DataSourceNotImplementedError
+      expect(wrapped.supportedKinds).toEqual(['static'])
+      expect(wrapped.message).toContain('"static"')
+      // The message does NOT contain '"api"' or '"cms"' in
+      // the "Supported kinds" line — the registry does not
+      // ship them.
+      const supportedLine = wrapped.message.match(/Supported kinds: (.+)\./)?.[1] ?? ''
+      expect(supportedLine).toBe('"static"')
+    }
+  })
+
+  it('the error\'s supportedKinds lists every registry entry', () => {
+    // A registry with all three kinds produces a message
+    // listing all three. The selector must surface the
+    // full set when the registry is fully populated.
+    try {
+      selectDataSource(
+        { kind: 'graphql' as DataSourceKind },
+        {
+          static: makeAdapter('static'),
+          api: makeAdapter('api'),
+          cms: makeAdapter('cms'),
+        },
+      )
+      throw new Error('expected selectDataSource to throw')
+    }
+    catch (error) {
+      const wrapped = error as DataSourceNotImplementedError
+      expect(wrapped.supportedKinds.sort()).toEqual(['api', 'cms', 'static'])
+    }
+  })
+
   it('never falls back to "static" when the configured kind is "api"', () => {
     // This is the single most important promise of the
     // contract: a rebrand that asks for 'api' but does not
@@ -309,6 +360,42 @@ describe('DataSourceNotImplementedError', () => {
     expect(error.message).toContain('app/core/data-source/adapters/')
   })
 
+  it('the default "Supported kinds" line lists every contract kind', () => {
+    // The default constructor (no supportedKinds) lists the
+    // full contract kind set so the message is meaningful
+    // even when the caller does not know the runtime subset.
+    const error = new DataSourceNotImplementedError('graphql')
+    expect(error.message).toContain('"static"')
+    expect(error.message).toContain('"api"')
+    expect(error.message).toContain('"cms"')
+  })
+
+  it('the supportedKinds option overrides the default "Supported kinds" line', () => {
+    // The feature loaders (e.g. the property loader at
+    // `server/utils/properties.ts`) ship only `'static'` +
+    // `'api'`. They pass the actual subset so the error
+    // message reflects runtime reality, not the full
+    // contract set.
+    const error = new DataSourceNotImplementedError('graphql', ['static', 'api'])
+    expect(error.supportedKinds).toEqual(['static', 'api'])
+    expect(error.message).toContain('"static"')
+    expect(error.message).toContain('"api"')
+    // `'cms'` is intentionally absent from the message
+    // because the loader does not ship a CMS adapter.
+    expect(error.message).not.toContain('"cms"')
+  })
+
+  it('the supportedKinds option supports a single-element subset', () => {
+    const error = new DataSourceNotImplementedError('api', ['static'])
+    expect(error.supportedKinds).toEqual(['static'])
+    expect(error.message).toContain('"static"')
+  })
+
+  it('exposes the supportedKinds as a readonly property on the instance', () => {
+    const error = new DataSourceNotImplementedError('api', ['static', 'api'])
+    expect(error.supportedKinds).toEqual(['static', 'api'])
+  })
+
   it('is catchable as a generic Error', () => {
     try {
       throw new DataSourceNotImplementedError('api')
@@ -316,6 +403,216 @@ describe('DataSourceNotImplementedError', () => {
     catch (e) {
       expect(e).toBeInstanceOf(Error)
     }
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * DataSourceMissingConfigError — api / cms misconfiguration
+ * ------------------------------------------------------------------ */
+
+describe('DataSourceMissingConfigError', () => {
+  it('exposes the configured kind and the missing field name', () => {
+    const error = new DataSourceMissingConfigError('api', 'NUXT_PROPERTIES_API_URL')
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toBeInstanceOf(DataSourceMissingConfigError)
+    expect(error.name).toBe('DataSourceMissingConfigError')
+    expect(error.kind).toBe('api')
+    expect(error.field).toBe('NUXT_PROPERTIES_API_URL')
+  })
+
+  it('the message names the kind, the missing field, and the env var', () => {
+    const error = new DataSourceMissingConfigError('api', 'NUXT_PROPERTIES_API_URL')
+    expect(error.message).toContain('api')
+    expect(error.message).toContain('NUXT_PROPERTIES_API_URL')
+    expect(error.message).toContain('missing')
+  })
+
+  it('can be constructed for the "cms" kind with a different field', () => {
+    const error = new DataSourceMissingConfigError('cms', 'NUXT_CMS_PROJECT_ID')
+    expect(error.kind).toBe('cms')
+    expect(error.field).toBe('NUXT_CMS_PROJECT_ID')
+    expect(error.message).toContain('NUXT_CMS_PROJECT_ID')
+  })
+
+  it('is catchable as a generic Error', () => {
+    try {
+      throw new DataSourceMissingConfigError('api', 'endpoint')
+    }
+    catch (e) {
+      expect(e).toBeInstanceOf(Error)
+    }
+  })
+
+  it('is distinct from DataSourceNotImplementedError (different cause)', () => {
+    // A missing-config failure is a rebrand misconfiguration
+    // (the adapter exists; the env var is empty). A
+    // not-implemented failure is a contract gap (the
+    // adapter does not exist). The two errors must remain
+    // distinct so an operator can fix the right problem.
+    const a = new DataSourceMissingConfigError('api', 'endpoint')
+    const b = new DataSourceNotImplementedError('api')
+    expect(a).not.toBeInstanceOf(DataSourceNotImplementedError)
+    expect(b).not.toBeInstanceOf(DataSourceMissingConfigError)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * DataSourceHttpError — non-2xx response
+ * ------------------------------------------------------------------ */
+
+describe('DataSourceHttpError', () => {
+  it('exposes the status code and the endpoint URL', () => {
+    const error = new DataSourceHttpError(503, 'https://example.test/properties')
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toBeInstanceOf(DataSourceHttpError)
+    expect(error.name).toBe('DataSourceHttpError')
+    expect(error.status).toBe(503)
+    expect(error.endpoint).toBe('https://example.test/properties')
+  })
+
+  it('the message names the status code and the endpoint', () => {
+    const error = new DataSourceHttpError(500, 'https://example.test/properties')
+    expect(error.message).toContain('500')
+    expect(error.message).toContain('https://example.test/properties')
+  })
+
+  it('preserves the status code for every documented 2xx / 4xx / 5xx class', () => {
+    const cases = [200, 400, 401, 403, 404, 429, 500, 502, 503]
+    for (const status of cases) {
+      const error = new DataSourceHttpError(status, 'https://example.test/properties')
+      expect(error.status).toBe(status)
+    }
+  })
+
+  it('is catchable as a generic Error', () => {
+    try {
+      throw new DataSourceHttpError(404, 'https://example.test/properties')
+    }
+    catch (e) {
+      expect(e).toBeInstanceOf(Error)
+    }
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * DataSourceTimeoutError — request aborted
+ * ------------------------------------------------------------------ */
+
+describe('DataSourceTimeoutError', () => {
+  it('exposes the endpoint URL and the timeout in milliseconds', () => {
+    const error = new DataSourceTimeoutError('https://example.test/properties', 5_000)
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toBeInstanceOf(DataSourceTimeoutError)
+    expect(error.name).toBe('DataSourceTimeoutError')
+    expect(error.endpoint).toBe('https://example.test/properties')
+    expect(error.timeoutMs).toBe(5_000)
+  })
+
+  it('the message names the endpoint and the timeout in milliseconds', () => {
+    const error = new DataSourceTimeoutError('https://example.test/properties', 10_000)
+    expect(error.message).toContain('https://example.test/properties')
+    expect(error.message).toContain('10000')
+    expect(error.message).toContain('timed out')
+  })
+
+  it('is catchable as a generic Error', () => {
+    try {
+      throw new DataSourceTimeoutError('https://example.test/properties', 5_000)
+    }
+    catch (e) {
+      expect(e).toBeInstanceOf(Error)
+    }
+  })
+
+  it('is distinct from DataSourceHttpError (transport / application failure)', () => {
+    // A timeout is a transport failure (the request never
+    // got a response). An http failure is an application
+    // response with a 4xx / 5xx status. The two errors must
+    // remain distinct so an operator can distinguish a slow
+    // upstream from a misconfigured one.
+    const a = new DataSourceTimeoutError('https://example.test/properties', 5_000)
+    const b = new DataSourceHttpError(504, 'https://example.test/properties')
+    expect(a).not.toBeInstanceOf(DataSourceHttpError)
+    expect(b).not.toBeInstanceOf(DataSourceTimeoutError)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * DataSourceInvalidPayloadError — schema mismatch
+ * ------------------------------------------------------------------ */
+
+describe('DataSourceInvalidPayloadError', () => {
+  it('exposes the endpoint URL and the underlying cause', () => {
+    const cause = new Error('Required at path: id')
+    const error = new DataSourceInvalidPayloadError('https://example.test/properties', cause)
+    expect(error).toBeInstanceOf(Error)
+    expect(error).toBeInstanceOf(DataSourceInvalidPayloadError)
+    expect(error.name).toBe('DataSourceInvalidPayloadError')
+    expect(error.endpoint).toBe('https://example.test/properties')
+    expect(error.cause).toBe(cause)
+  })
+
+  it('the message names the endpoint and the underlying detail', () => {
+    const cause = new Error('Required at path: id')
+    const error = new DataSourceInvalidPayloadError('https://example.test/properties', cause)
+    expect(error.message).toContain('https://example.test/properties')
+    expect(error.message).toContain('Required at path: id')
+  })
+
+  it('accepts a non-Error cause (e.g. a ZodError)', () => {
+    // The constructor accepts `unknown` for `cause` so a
+    // ZodError (which is the typical cause from the api
+    // adapter's `safeParse` call) can be passed through
+    // without an explicit wrap.
+    const cause = { issues: [{ path: ['id'], message: 'Required' }] }
+    const error = new DataSourceInvalidPayloadError('https://example.test/properties', cause)
+    expect(error.cause).toBe(cause)
+    expect(error.message).toContain('https://example.test/properties')
+  })
+
+  it('is catchable as a generic Error', () => {
+    try {
+      throw new DataSourceInvalidPayloadError('https://example.test/properties', new Error('x'))
+    }
+    catch (e) {
+      expect(e).toBeInstanceOf(Error)
+    }
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * DataSourceAdapter — async contract (loadAll)
+ * ------------------------------------------------------------------ */
+
+describe('DataSourceAdapter — async contract', () => {
+  it('loadAll() returns a Promise', () => {
+    const adapter = makeAdapter('static')
+    const result = adapter.loadAll()
+    expect(result).toBeInstanceOf(Promise)
+  })
+
+  it('loadAll() resolves to the same data the adapter represents', async () => {
+    const adapter = makeAdapter('static')
+    const data = await adapter.loadAll()
+    expect(data).toEqual([{ id: 'static-1' }, { id: 'static-2' }])
+  })
+
+  it('loadAll() is awaitable end-to-end with every supported kind', async () => {
+    // The contract is the same for every kind — the static
+    // adapter resolves immediately, the api / cms adapters
+    // do their work asynchronously. The selector returns
+    // whichever adapter was registered; `loadAll()` always
+    // returns a Promise that resolves to the data.
+    const staticAdapter = makeAdapter('static')
+    const apiAdapter = makeAdapter('api')
+    const cmsAdapter = makeAdapter('cms')
+
+    const s = await selectDataSource({ kind: 'static' }, { static: staticAdapter }).loadAll()
+    const a = await selectDataSource({ kind: 'api' }, { static: staticAdapter, api: apiAdapter }).loadAll()
+    const c = await selectDataSource({ kind: 'cms' }, { static: staticAdapter, cms: cmsAdapter }).loadAll()
+    expect(s).toEqual([{ id: 'static-1' }, { id: 'static-2' }])
+    expect(a).toEqual([{ id: 'api-1' }, { id: 'api-2' }])
+    expect(c).toEqual([{ id: 'cms-1' }, { id: 'cms-2' }])
   })
 })
 
@@ -341,6 +638,15 @@ describe('Default + select — end-to-end shape used by feature services', () =>
     const staticAdapter = makeAdapter('static')
     expect(() => selectDataSource({ kind: 'api' }, { static: staticAdapter }))
       .toThrow(DataSourceNotImplementedError)
+  })
+
+  it('a feature registry with static + api entries resolves both kinds', () => {
+    const staticAdapter = makeAdapter('static')
+    const apiAdapter = makeAdapter('api')
+    expect(selectDataSource({ kind: 'static' }, { static: staticAdapter, api: apiAdapter }))
+      .toBe(staticAdapter)
+    expect(selectDataSource({ kind: 'api' }, { static: staticAdapter, api: apiAdapter }))
+      .toBe(apiAdapter)
   })
 })
 

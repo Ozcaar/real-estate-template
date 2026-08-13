@@ -18,11 +18,32 @@ const site = useSiteConfig()
 
 const modules = computed(() => site.value.agency.modules)
 
-// Static MVP data, resolved through the feature service so the source can be
-// swapped for an API later without touching this page. The featured showcase
-// is intentionally small (3 items) so it stays a single, scannable row on
-// `xl` screens and aligns with the 3-column grid used by `PropertyGrid`.
-const featuredProperties = propertiesService.getFeatured(3)
+/**
+ * Property data source. Loaded through Nuxt's `useAsyncData` so SSR
+ * awaits the adapter's `loadAll()` before rendering the markup.
+ * `loadAll()` resolves to the bundled sample data when the configured
+ * `NUXT_PROPERTIES_DATA_SOURCE` is `'static'` (the default) and to
+ * the API response when the kind is `'api'` — the rest of the page
+ * is source-agnostic. The `home:featured-properties` key is unique
+ * to this page so the payload never collides with the listing /
+ * detail pages' own loads.
+ */
+const { data: allProperties } = await useAsyncData(
+  'home:featured-properties',
+  () => propertiesService.loadAll(),
+)
+
+/**
+ * Featured showcase. Three items — small enough to stay a single,
+ * scannable row on `xl` screens and aligned with the 3-column
+ * `PropertyGrid`. Reads from the loaded data so the showcase is
+ * empty until `loadAll()` resolves; on the default static build
+ * the resolve is on the next microtask so the SSR HTML already
+ * carries the full markup.
+ */
+const featuredProperties = computed(() =>
+  allProperties.value ? propertiesService.getFeatured(allProperties.value, 3) : [],
+)
 const categories = PROPERTY_TYPE_OPTIONS
 
 // --- SEO ----------------------------------------------------------------

@@ -5,9 +5,9 @@ import { createStaticDataSource, type StaticDataSourceOptions } from './static-a
 /**
  * Tests for the static data-source adapter.
  *
- * The static adapter is the only data-source implementation
- * shipped with the v1.x template. It wraps a bundled
- * TypeScript array and exposes it through the
+ * The static adapter is the only always-on data-source
+ * implementation shipped with the v1.x template. It wraps a
+ * bundled TypeScript array and exposes it through the
  * `DataSourceAdapter` contract. The contract-level tests
  * (selector, error class, type guard) live in
  * `../data-source.test.ts`; this file pins down the
@@ -17,9 +17,12 @@ import { createStaticDataSource, type StaticDataSourceOptions } from './static-a
  * Coverage:
  *
  *  - `id` is the literal `'static'`.
- *  - `getAll()` returns the supplied data, in order.
- *  - `getAll()` returns the same reference on every call
- *    (the adapter memoizes).
+ *  - `loadAll()` returns a `Promise<readonly T[]>` that
+ *    resolves immediately with the bundled data.
+ *  - `getAll()` returns the supplied data, in order, as a
+ *    synchronous accessor.
+ *  - `getAll()` and `loadAll()` return the same reference on
+ *    repeated calls (the adapter memoizes).
  *  - With a Zod schema, the adapter validates at construction
  *    and a bad record throws a `ZodError` synchronously.
  *  - Without a schema, the adapter returns the data
@@ -32,6 +35,9 @@ import { createStaticDataSource, type StaticDataSourceOptions } from './static-a
  *  - Mutating the original array after construction does not
  *    change the adapter's view (the adapter takes a snapshot
  *    via the validation memo).
+ *  - The async contract is satisfied end-to-end: a page can
+ *    `await adapter.loadAll()` from a `<script setup>` and
+ *    get the same array as `getAll()` returns.
  */
 
 interface TestRecord {
@@ -91,8 +97,8 @@ describe('createStaticDataSource — getAll (no schema)', () => {
 
   it('returns the data as-is when no schema is supplied (no validation)', () => {
     // The data is intentionally not a `TestRecord[]` to
-    // prove the adapter does not validate when no schema
-    // is supplied. The caller is responsible for shape.
+    // prove the adapter does not validate when no schema is
+    // supplied. The caller is responsible for shape.
     const looseData = [{ id: 1 }, { id: 2 }] as unknown as readonly TestRecord[]
     const adapter = createStaticDataSource<TestRecord>({ data: looseData })
     expect(adapter.getAll()).toBe(looseData)
@@ -154,6 +160,77 @@ describe('createStaticDataSource — getAll (with a Zod schema)', () => {
       schema: testListSchema,
     })
     expect(adapter.getAll()).toBe(adapter.getAll())
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * loadAll — async contract
+ * ------------------------------------------------------------------ */
+
+describe('createStaticDataSource — loadAll (async contract)', () => {
+  it('returns a Promise', () => {
+    const adapter = createStaticDataSource<TestRecord>({ data: sampleData })
+    expect(adapter.loadAll()).toBeInstanceOf(Promise)
+  })
+
+  it('resolves to the supplied data, in order', async () => {
+    const adapter = createStaticDataSource<TestRecord>({ data: sampleData })
+    const data = await adapter.loadAll()
+    expect(data).toEqual([
+      { id: '1', name: 'Alpha' },
+      { id: '2', name: 'Beta' },
+      { id: '3', name: 'Gamma' },
+    ])
+  })
+
+  it('resolves to the same reference on every call (memoized)', async () => {
+    const adapter = createStaticDataSource<TestRecord>({ data: sampleData })
+    const first = await adapter.loadAll()
+    const second = await adapter.loadAll()
+    expect(second).toBe(first)
+  })
+
+  it('loadAll() and getAll() return the same array reference', async () => {
+    // The async and sync accessors must agree on the
+    // underlying array so a page can `await
+    // adapter.loadAll()` once and then call `getAll()`
+    // synchronously from a reactive computed without
+    // triggering a second parse.
+    const adapter = createStaticDataSource<TestRecord>({ data: sampleData })
+    const fromLoad = await adapter.loadAll()
+    const fromGet = adapter.getAll()
+    expect(fromGet).toBe(fromLoad)
+  })
+
+  it('loadAll() resolves to an empty array when the data is empty', async () => {
+    const adapter = createStaticDataSource<TestRecord>({ data: [] })
+    const data = await adapter.loadAll()
+    expect(data).toEqual([])
+  })
+
+  it('loadAll() resolves to the validated list when a schema is supplied', async () => {
+    const adapter = createStaticDataSource<TestRecord>({
+      data: sampleData,
+      schema: testListSchema,
+    })
+    const data = await adapter.loadAll()
+    expect(data).toEqual([
+      { id: '1', name: 'Alpha' },
+      { id: '2', name: 'Beta' },
+      { id: '3', name: 'Gamma' },
+    ])
+  })
+
+  it('loadAll() is consumable through await in a script-setup page', async () => {
+    // Simulates the Nuxt `useAsyncData('key', () => adapter.loadAll())`
+    // pattern at the contract level: `await adapter.loadAll()` must
+    // return a value usable by the service layer immediately.
+    const adapter = createStaticDataSource<TestRecord>({ data: sampleData })
+    const data = await adapter.loadAll()
+    // The service-layer pattern: derive a filtered list from the
+    // resolved value without any further I/O.
+    const ids = data.map(record => record.id)
+    expect(ids).toEqual(['1', '2', '3'])
   })
 })
 
@@ -244,6 +321,19 @@ describe('createStaticDataSource — independence from the original array', () =
     const adapter = createStaticDataSource<TestRecord>({ data })
     const first = adapter.getAll()
     expect(first).toBe(data)
+  })
+
+  it('loadAll() with a schema also returns the validated snapshot (independent of later mutations)', async () => {
+    const data: TestRecord[] = [{ id: '1', name: 'Alpha' }]
+    const adapter = createStaticDataSource<TestRecord>({
+      data,
+      schema: testListSchema,
+    })
+    const before = await adapter.loadAll()
+    data.push({ id: '2', name: 'Beta' })
+    const after = await adapter.loadAll()
+    expect(before).toEqual([{ id: '1', name: 'Alpha' }])
+    expect(after).toEqual([{ id: '1', name: 'Alpha' }])
   })
 })
 

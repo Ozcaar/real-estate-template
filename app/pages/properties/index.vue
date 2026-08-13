@@ -53,6 +53,17 @@ const DEFAULT_SORT: PropertySort = 'featured'
 /** Number of properties per page. Standard for a 3-col property grid. */
 const PAGE_SIZE = 12
 
+/**
+ * Property data source. Loaded through Nuxt's `useAsyncData` so SSR
+ * awaits the adapter's `loadAll()` before rendering the markup. The
+ * `properties:listing` key is unique to this page; a future
+ * per-page filter chip that wants its own key should prefix it.
+ */
+const { data: allProperties } = await useAsyncData(
+  'properties:listing',
+  () => propertiesService.loadAll(),
+)
+
 const filters = computed(() => ({
   operation: pickQueryValue(route.query.operation),
   type: pickQueryValue(route.query.type),
@@ -61,7 +72,18 @@ const filters = computed(() => ({
 
 const formSort = ref<PropertySort>(DEFAULT_SORT)
 
-const totalVisible = computed(() => propertiesService.getAll().length)
+/**
+ * Visible (non-hidden) catalog, computed from the loaded data. Used
+ * as the input to every service helper on this page so the service
+ * stays pure and source-agnostic. Empty until `loadAll()` resolves;
+ * on the default static build the resolve is on the next microtask
+ * so the SSR HTML already carries the full markup.
+ */
+const visibleProperties = computed(() =>
+  allProperties.value ? propertiesService.getAll(allProperties.value) : [],
+)
+
+const totalVisible = computed(() => visibleProperties.value.length)
 
 /**
  * Full filtered + sorted list, BEFORE pagination. `filteredCount` is
@@ -70,7 +92,11 @@ const totalVisible = computed(() => propertiesService.getAll().length)
  * page. `propertiesService.filter()` is unchanged; pagination is a
  * page-layer concern.
  */
-const filtered = computed(() => propertiesService.filter(filters.value, formSort.value))
+const filtered = computed(() =>
+  allProperties.value
+    ? propertiesService.filter(allProperties.value, filters.value, formSort.value)
+    : [],
+)
 const filteredCount = computed(() => filtered.value.length)
 
 /**

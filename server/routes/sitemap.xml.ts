@@ -1,8 +1,10 @@
+import { defineEventHandler, setResponseHeader, setResponseStatus } from 'h3'
 import { useRuntimeConfig } from '#imports'
 import { siteConfig } from '~/config/site.config'
-import { propertiesService } from '~/features/properties/services/properties.service'
+import { loadPropertiesServer } from '../utils/properties'
 import { developmentsService } from '~/features/developments/services/developments.service'
 import { agentsService } from '~/features/agents/services/agents.service'
+import type { Property } from '~/features/properties/types/property.types'
 
 /**
  * Dynamic `/sitemap.xml` endpoint.
@@ -10,8 +12,31 @@ import { agentsService } from '~/features/agents/services/agents.service'
  * Lists every public route the agency exposes, gated by `agency.modules.*`
  * (a disabled module removes its entries from the sitemap, mirroring how the
  * header, footer and home sections disappear). Property detail URLs are
- * sourced from `propertiesService.getAll()` so `status: 'hidden'` records
- * are excluded automatically — do not duplicate that filter here.
+ * sourced from the server-only property loader
+ * (`server/utils/properties.ts`) so `status: 'hidden'` records are excluded
+ * automatically — do not duplicate that filter here.
+ *
+ * **Why the loader, not the service.** This route is a Nitro
+ * server route, not a Nuxt app page. It must not import app
+ * composables or code that depends on `useState` (the property
+ * service uses `$fetch` to call the same-origin Nitro endpoint
+ * at `/api/properties`, which is a loopback on the server and
+ * would be wasted ceremony here). The server-only loader is
+ * the documented public surface for non-page server
+ * consumers; it owns the static / api source selection, reads
+ * the `NUXT_PROPERTIES_*` env vars, and returns the validated
+ * list directly without the HTTP round-trip.
+ *
+ * **Async data source.** The loader delegates to the
+ * configured adapter (static by default; api when
+ * `NUXT_PROPERTIES_DATA_SOURCE=api` + `NUXT_PROPERTIES_API_URL`
+ * are set). The api adapter fetches and validates the
+ * response; the static adapter returns the bundled data. The
+ * sitemap iterates over the resolved data via a local
+ * `visibleProperties` filter so `status: 'hidden'` records
+ * are excluded — the loader returns the full list (hidden
+ * records included, for the api path) and the visibility
+ * filter is the sitemap's contract with the data.
  *
  * Development detail URLs are sourced from
  * `developmentsService.getAll()`. The development model does not carry
@@ -35,7 +60,7 @@ import { agentsService } from '~/features/agents/services/agents.service'
  * the route returns HTTP 503 with a plain-text hint so a misconfigured
  * deployment is obvious in crawlers' logs.
  */
-export default defineEventHandler((event) => {
+export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const siteUrl = String(config.public.siteUrl || '').replace(/\/+$/, '')
 
@@ -58,7 +83,11 @@ export default defineEventHandler((event) => {
   }
   if (modules.properties) {
     urls.push('/properties')
-    for (const property of propertiesService.getAll()) {
+    const properties = await loadPropertiesServer()
+    const visibleProperties = properties.filter(
+      (property: Property) => property.status !== 'hidden',
+    )
+    for (const property of visibleProperties) {
       urls.push(`/properties/${property.slug}`)
     }
   }

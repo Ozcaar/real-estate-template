@@ -15,6 +15,14 @@ import type { DataSourceAdapter, DataSourceSchema } from '../data-source'
  * folder, register it in the service's adapter registry, done.
  * The contract file never needs to change.
  *
+ * **Async contract.** The static adapter satisfies the
+ * async-first `DataSourceAdapter<T>` interface. `loadAll()`
+ * returns a `Promise<readonly T[]>` that resolves
+ * immediately with the bundled, validated data. The static
+ * adapter is the canonical example of an adapter whose
+ * `getAll()` accessor works synchronously without awaiting
+ * `loadAll()` — the data is pre-loaded at construction time.
+ *
  * **Validation boundary.** When a `schema` is supplied, the
  * adapter calls `schema.parse(data)` at construction time and
  * memoizes the validated list. A bad record prevents the
@@ -25,9 +33,10 @@ import type { DataSourceAdapter, DataSourceSchema } from '../data-source'
  * truth and is responsible for any shape guarantees).
  *
  * **No network.** The static adapter never reaches out. It is
- * a synchronous in-memory wrapper. A future `api` / `cms`
- * adapter would do its fetching here without changing the
- * service signature.
+ * a synchronous in-memory wrapper wrapped in a `Promise.resolve`
+ * for contract conformance. A future `api` / `cms`
+ * adapter would do its fetching in `loadAll()` without changing
+ * the service signature.
  */
 
 /**
@@ -66,10 +75,13 @@ export interface StaticDataSourceOptions<T> {
  * Construct a static data-source adapter.
  *
  * The construction runs the optional Zod parse synchronously
- * and caches the validated list. `getAll()` then returns the
- * same array reference on every call — the static adapter
- * has no async work to do, and a cached reference is the
- * cheapest possible implementation.
+ * and caches the validated list. `loadAll()` returns a
+ * `Promise<readonly T[]>` that resolves immediately with the
+ * same array reference — the static adapter has no async
+ * work to do, and a memoized `Promise.resolve()` is the
+ * cheapest possible async implementation. `getAll()` returns
+ * the same array reference on every call (a synchronous
+ * accessor for the pre-loaded data).
  */
 export function createStaticDataSource<T>(
   options: StaticDataSourceOptions<T>,
@@ -78,8 +90,26 @@ export function createStaticDataSource<T>(
     ? options.schema.parse(options.data)
     : options.data
   const source = options.source ?? 'static'
+  let resolved = false
   return {
     id: 'static',
+    /**
+     * Returns the bundled, validated list. Resolves on the
+     * first call and returns the same reference on every
+     * subsequent call — the static adapter has nothing to
+     * fetch.
+     */
+    loadAll(): Promise<readonly T[]> {
+      if (!resolved) {
+        resolved = true
+      }
+      return Promise.resolve(validated)
+    },
+    /**
+     * Synchronous accessor for the cached, validated list.
+     * The static adapter's data is pre-loaded at construction
+     * time so this is a free read.
+     */
     getAll(): readonly T[] {
       return validated
     },

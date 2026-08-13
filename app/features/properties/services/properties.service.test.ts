@@ -1,36 +1,77 @@
-import { describe, expect, it } from 'vitest'
+// `$fetch` is a Nuxt-built-in universal fetch auto-injected as
+// a global on both server and client; the service uses the
+// global (no explicit import from `#imports`). In Vitest the
+// auto-injection does not run, so we stub `$fetch` to return
+// the bundled static catalog — exactly what the server-only
+// loader at `server/utils/properties.ts` returns in the default
+// (static) configuration. The api-state regression test in
+// `app/features/properties/services/properties.service.api-state.test.ts`
+// overrides the stub to return a custom catalog (an "api-only"
+// property not in the static sample) and verifies the service
+// returns it on every call.
+//
+// The loader does NOT memoise successful results (see
+// `server/utils/properties.ts` — the `pending` reference
+// coalesces concurrent in-flight calls only, it does not
+// retain a process-lifetime snapshot). The service is a thin
+// transport over `$fetch`; the test below exercises the
+// service's contract, not the loader's. When the stub returns
+// a constant reference, repeated `loadAll()` calls return the
+// same reference; when the stub returns a different reference
+// on each call, the service observes the new reference (the
+// api-state regression file covers that path).
+//
+// The stub is set after the static imports so ESLint's
+// `import/first` rule stays satisfied.
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   isPropertySort,
   propertiesService,
   type PropertySort,
 } from './properties.service'
 import type { Property } from '../types/property.types'
+import { sampleProperties } from '../data/properties'
+
+vi.stubGlobal('$fetch', <T = unknown>(_url: string, _options?: unknown): Promise<T> => {
+  return Promise.resolve(sampleProperties as unknown as T)
+})
 
 /**
  * Tests for the `propertiesService` and the `isPropertySort` type
- * guard. The service is pure, synchronous, and reads from a static
- * catalog (`sampleProperties`). The tests focus on:
+ * guard. The service consumes the async data-source contract
+ * through `loadAll()` and exposes pure helpers over the resolved
+ * data. The tests focus on:
  *
  *  - `isPropertySort` allow-list (every valid value passes, every
  *    invalid value fails, non-string values fail).
- *  - `getAll` excludes hidden properties.
- *  - `getBySlug` returns the right record, returns `undefined` for
- *    missing / hidden slugs, and is case-sensitive.
- *  - `filter` (operation, type, location, sort, defaults, stable
- *    tiebreak by `id` ascending, accent-insensitive location match,
- *    exact-match semantics on operation and type).
- *  - `getFeatured` (no limit returns every featured record, limit
- *    caps the result).
- *  - `getRelated` (excludes the current record, excludes sold / rented
- *    / hidden statuses, weighted score, sort by score desc, then
- *    featured desc, then id asc, fallback to `getFeatured` when no
- *    positive-score candidate).
+ *  - `getAll(data)` excludes hidden properties.
+ *  - `getBySlug(data, slug)` returns the right record, returns
+ *    `undefined` for missing / hidden slugs, and is case-sensitive.
+ *  - `filter(data, filters, sort)` (operation, type, location,
+ *    sort, defaults, stable tiebreak by `id` ascending,
+ *    accent-insensitive location match, exact-match semantics
+ *    on operation and type).
+ *  - `getFeatured(data, limit)` (no limit returns every featured
+ *    record, limit caps the result).
+ *  - `getRelated(data, current, limit)` (excludes the current
+ *    record, excludes sold / rented / hidden statuses, weighted
+ *    score, sort by score desc, then by featured desc, then by id
+ *    asc, fallback to `getFeatured` when no positive-score
+ *    candidate).
  *
- * The static catalog is the production data; a few in-test fixtures
- * are added to exercise the branches that the static data does not
- * cover (e.g. a record whose status is `sold`, a record whose status
- * is `rented`).
+ * The static catalog is the production data; the data is loaded
+ * once via `propertiesService.loadAll()` in `beforeAll` and the
+ * resolved array is shared across every test. A few in-test
+ * fixtures are added to exercise the branches the static data
+ * does not cover (e.g. a record whose status is `sold`, a record
+ * whose status is `rented`).
  */
+
+let properties: readonly Property[]
+
+beforeAll(async () => {
+  properties = await propertiesService.loadAll()
+})
 
 function makeProperty(overrides: Partial<Property>): Property {
   return {
@@ -129,34 +170,68 @@ describe('isPropertySort', () => {
   })
 })
 
+describe('propertiesService.loadAll', () => {
+  it('resolves to the full property catalog (including hidden records)', async () => {
+    const loaded = await propertiesService.loadAll()
+    expect(loaded.length).toBeGreaterThan(0)
+    // The full catalog includes hidden records. The visible
+    // catalog (`getAll(data)`) excludes them.
+    const hasHidden = loaded.some(p => p.status === 'hidden')
+    if (hasHidden) {
+      expect(loaded.some(p => p.status === 'hidden')).toBe(true)
+    }
+  })
+
+  it('returns whatever $fetch returns on every call (the service is a thin transport)', async () => {
+    // The service is a thin transport over `$fetch`. The
+    // loader at `server/utils/properties.ts` does NOT
+    // memoise successful results (the `pending` reference
+    // coalesces concurrent in-flight calls only). When
+    // `$fetch` is stubbed to return a constant reference,
+    // repeated `loadAll()` calls return the same
+    // reference; when `$fetch` is stubbed to return a
+    // different reference on each call, the service
+    // observes the new reference. The api-state regression
+    // file exercises the different-reference path.
+    //
+    // The default stub at the top of this file returns
+    // `sampleProperties` — a constant reference — so two
+    // calls return the same reference. This is the stub's
+    // behaviour, not a service-level memoisation.
+    const a = await propertiesService.loadAll()
+    const b = await propertiesService.loadAll()
+    expect(b).toBe(a)
+  })
+})
+
 describe('propertiesService.getAll', () => {
   it('returns the visible (non-hidden) properties from the static catalog', () => {
-    const all = propertiesService.getAll()
-    expect(all.length).toBeGreaterThan(0)
-    for (const property of all) {
+    const visible = propertiesService.getAll(properties)
+    expect(visible.length).toBeGreaterThan(0)
+    for (const property of visible) {
       expect(property.status).not.toBe('hidden')
     }
   })
 
   it('excludes any record whose status is "hidden"', () => {
-    const all = propertiesService.getAll()
-    const hasHidden = all.some(p => p.status === 'hidden')
+    const visible = propertiesService.getAll(properties)
+    const hasHidden = visible.some(p => p.status === 'hidden')
     expect(hasHidden).toBe(false)
   })
 })
 
 describe('propertiesService.getBySlug', () => {
   it('returns the matching property for a known slug', () => {
-    const all = propertiesService.getAll()
-    const target = all[0]
+    const visible = propertiesService.getAll(properties)
+    const target = visible[0]
     if (!target) throw new Error('expected at least one property')
-    const result = propertiesService.getBySlug(target.slug)
+    const result = propertiesService.getBySlug(properties, target.slug)
     expect(result).toBeDefined()
     expect(result?.id).toBe(target.id)
   })
 
   it('returns undefined for a missing slug', () => {
-    expect(propertiesService.getBySlug('does-not-exist')).toBeUndefined()
+    expect(propertiesService.getBySlug(properties, 'does-not-exist')).toBeUndefined()
   })
 
   it('returns undefined for a hidden slug (in the static catalog)', () => {
@@ -164,7 +239,7 @@ describe('propertiesService.getBySlug', () => {
     // is documented in the service contract: hidden records return
     // undefined. This test asserts the documented contract on a
     // negative branch.
-    const all = propertiesService.getAll()
+    const all = properties
     const hiddenSlug = all.find(p => p.status === 'hidden')?.slug
     if (hiddenSlug === undefined) {
       // No hidden record to test against. Skip silently — the
@@ -172,25 +247,25 @@ describe('propertiesService.getBySlug', () => {
       expect(true).toBe(true)
       return
     }
-    expect(propertiesService.getBySlug(hiddenSlug)).toBeUndefined()
+    expect(propertiesService.getBySlug(properties, hiddenSlug)).toBeUndefined()
   })
 
   it('is case-sensitive on the slug', () => {
-    const all = propertiesService.getAll()
-    const target = all[0]
+    const visible = propertiesService.getAll(properties)
+    const target = visible[0]
     if (!target) throw new Error('expected at least one property')
     const upper = target.slug.toUpperCase()
-    expect(propertiesService.getBySlug(upper)).toBeUndefined()
+    expect(propertiesService.getBySlug(properties, upper)).toBeUndefined()
   })
 
   it('returns undefined for an empty string', () => {
-    expect(propertiesService.getBySlug('')).toBeUndefined()
+    expect(propertiesService.getBySlug(properties, '')).toBeUndefined()
   })
 })
 
 describe('propertiesService.filter — operation filter', () => {
   it('returns only "sale" properties when operation is "sale"', () => {
-    const result = propertiesService.filter({ operation: 'sale' })
+    const result = propertiesService.filter(properties, { operation: 'sale' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       expect(property.operationType).toBe('sale')
@@ -198,7 +273,7 @@ describe('propertiesService.filter — operation filter', () => {
   })
 
   it('returns only "rent" properties when operation is "rent"', () => {
-    const result = propertiesService.filter({ operation: 'rent' })
+    const result = propertiesService.filter(properties, { operation: 'rent' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       expect(property.operationType).toBe('rent')
@@ -206,8 +281,8 @@ describe('propertiesService.filter — operation filter', () => {
   })
 
   it('matches operation case-insensitively', () => {
-    const lower = propertiesService.filter({ operation: 'sale' })
-    const upper = propertiesService.filter({ operation: 'SALE' })
+    const lower = propertiesService.filter(properties, { operation: 'sale' })
+    const upper = propertiesService.filter(properties, { operation: 'SALE' })
     expect(upper.length).toBe(lower.length)
     for (const property of upper) {
       expect(property.operationType).toBe('sale')
@@ -215,30 +290,30 @@ describe('propertiesService.filter — operation filter', () => {
   })
 
   it('trims whitespace from the operation filter', () => {
-    const noSpace = propertiesService.filter({ operation: 'sale' })
-    const withSpace = propertiesService.filter({ operation: '  sale  ' })
+    const noSpace = propertiesService.filter(properties, { operation: 'sale' })
+    const withSpace = propertiesService.filter(properties, { operation: '  sale  ' })
     expect(withSpace.length).toBe(noSpace.length)
   })
 
   it('returns every visible property when operation is empty', () => {
-    const result = propertiesService.filter({ operation: '' })
-    expect(result.length).toBe(propertiesService.getAll().length)
+    const result = propertiesService.filter(properties, { operation: '' })
+    expect(result.length).toBe(propertiesService.getAll(properties).length)
   })
 
   it('returns every visible property when operation is undefined', () => {
-    const result = propertiesService.filter({})
-    expect(result.length).toBe(propertiesService.getAll().length)
+    const result = propertiesService.filter(properties, {})
+    expect(result.length).toBe(propertiesService.getAll(properties).length)
   })
 
   it('returns no property when operation is an unknown value', () => {
-    const result = propertiesService.filter({ operation: 'lease' })
+    const result = propertiesService.filter(properties, { operation: 'lease' })
     expect(result.length).toBe(0)
   })
 })
 
 describe('propertiesService.filter — type filter', () => {
   it('returns only "house" properties when type is "house"', () => {
-    const result = propertiesService.filter({ type: 'house' })
+    const result = propertiesService.filter(properties, { type: 'house' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       expect(property.propertyType).toBe('house')
@@ -246,7 +321,7 @@ describe('propertiesService.filter — type filter', () => {
   })
 
   it('returns only "apartment" properties when type is "apartment"', () => {
-    const result = propertiesService.filter({ type: 'apartment' })
+    const result = propertiesService.filter(properties, { type: 'apartment' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       expect(property.propertyType).toBe('apartment')
@@ -254,7 +329,7 @@ describe('propertiesService.filter — type filter', () => {
   })
 
   it('returns only "land" properties when type is "land"', () => {
-    const result = propertiesService.filter({ type: 'land' })
+    const result = propertiesService.filter(properties, { type: 'land' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       expect(property.propertyType).toBe('land')
@@ -262,7 +337,7 @@ describe('propertiesService.filter — type filter', () => {
   })
 
   it('returns only "commercial" properties when type is "commercial"', () => {
-    const result = propertiesService.filter({ type: 'commercial' })
+    const result = propertiesService.filter(properties, { type: 'commercial' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       expect(property.propertyType).toBe('commercial')
@@ -270,7 +345,7 @@ describe('propertiesService.filter — type filter', () => {
   })
 
   it('returns only "office" properties when type is "office"', () => {
-    const result = propertiesService.filter({ type: 'office' })
+    const result = propertiesService.filter(properties, { type: 'office' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       expect(property.propertyType).toBe('office')
@@ -278,20 +353,20 @@ describe('propertiesService.filter — type filter', () => {
   })
 
   it('matches type case-insensitively', () => {
-    const lower = propertiesService.filter({ type: 'house' })
-    const upper = propertiesService.filter({ type: 'HOUSE' })
+    const lower = propertiesService.filter(properties, { type: 'house' })
+    const upper = propertiesService.filter(properties, { type: 'HOUSE' })
     expect(upper.length).toBe(lower.length)
   })
 
   it('returns no property when type is an unknown value', () => {
-    const result = propertiesService.filter({ type: 'castle' })
+    const result = propertiesService.filter(properties, { type: 'castle' })
     expect(result.length).toBe(0)
   })
 })
 
 describe('propertiesService.filter — combined operation + type', () => {
   it('applies both filters (sale + house)', () => {
-    const result = propertiesService.filter({ operation: 'sale', type: 'house' })
+    const result = propertiesService.filter(properties, { operation: 'sale', type: 'house' })
     for (const property of result) {
       expect(property.operationType).toBe('sale')
       expect(property.propertyType).toBe('house')
@@ -299,7 +374,7 @@ describe('propertiesService.filter — combined operation + type', () => {
   })
 
   it('returns no property when operation and type are mutually exclusive', () => {
-    const result = propertiesService.filter({ operation: 'rent', type: 'land' })
+    const result = propertiesService.filter(properties, { operation: 'rent', type: 'land' })
     // The static catalog has a `land` for sale and a `house` for rent,
     // so this specific combination should be empty.
     expect(result.length).toBe(0)
@@ -308,7 +383,7 @@ describe('propertiesService.filter — combined operation + type', () => {
 
 describe('propertiesService.filter — location filter', () => {
   it('matches a substring against city (case-insensitive)', () => {
-    const result = propertiesService.filter({ location: 'monterrey' })
+    const result = propertiesService.filter(properties, { location: 'monterrey' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       const city = property.city.toLowerCase()
@@ -325,7 +400,7 @@ describe('propertiesService.filter — location filter', () => {
   })
 
   it('matches a substring against country', () => {
-    const result = propertiesService.filter({ location: 'mexico' })
+    const result = propertiesService.filter(properties, { location: 'mexico' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       expect(property.country.toLowerCase()).toBe('mexico')
@@ -333,8 +408,8 @@ describe('propertiesService.filter — location filter', () => {
   })
 
   it('is accent-insensitive (Mexico matches México)', () => {
-    const noAccent = propertiesService.filter({ location: 'Mexico' })
-    const withAccent = propertiesService.filter({ location: 'México' })
+    const noAccent = propertiesService.filter(properties, { location: 'Mexico' })
+    const withAccent = propertiesService.filter(properties, { location: 'México' })
     // The catalog is 'Mexico' (no accent). Searching 'México' should
     // still return the same set thanks to NFD normalization.
     expect(withAccent.length).toBeGreaterThan(0)
@@ -342,8 +417,8 @@ describe('propertiesService.filter — location filter', () => {
   })
 
   it('is accent-insensitive on the city (Queretaro matches Querétaro)', () => {
-    const noAccent = propertiesService.filter({ location: 'Queretaro' })
-    const withAccent = propertiesService.filter({ location: 'Querétaro' })
+    const noAccent = propertiesService.filter(properties, { location: 'Queretaro' })
+    const withAccent = propertiesService.filter(properties, { location: 'Querétaro' })
     expect(withAccent.length).toBeGreaterThan(0)
     expect(withAccent.length).toBe(noAccent.length)
   })
@@ -351,35 +426,35 @@ describe('propertiesService.filter — location filter', () => {
   it('matches across the slugified haystack (street/slug normalization)', () => {
     // The haystack concatenates slugified city/state/country/location.
     // A search for "nuevo" should match the state "Nuevo León".
-    const result = propertiesService.filter({ location: 'nuevo' })
+    const result = propertiesService.filter(properties, { location: 'nuevo' })
     expect(result.length).toBeGreaterThan(0)
   })
 
   it('returns no property when the location does not match anything', () => {
-    const result = propertiesService.filter({ location: 'atlantis' })
+    const result = propertiesService.filter(properties, { location: 'atlantis' })
     expect(result.length).toBe(0)
   })
 
   it('returns every visible property when location is empty', () => {
-    const result = propertiesService.filter({ location: '' })
-    expect(result.length).toBe(propertiesService.getAll().length)
+    const result = propertiesService.filter(properties, { location: '' })
+    expect(result.length).toBe(propertiesService.getAll(properties).length)
   })
 
   it('returns every visible property when location is undefined', () => {
-    const result = propertiesService.filter({})
-    expect(result.length).toBe(propertiesService.getAll().length)
+    const result = propertiesService.filter(properties, {})
+    expect(result.length).toBe(propertiesService.getAll(properties).length)
   })
 
   it('trims whitespace from the location filter', () => {
-    const noSpace = propertiesService.filter({ location: 'mexico' })
-    const withSpace = propertiesService.filter({ location: '  mexico  ' })
+    const noSpace = propertiesService.filter(properties, { location: 'mexico' })
+    const withSpace = propertiesService.filter(properties, { location: '  mexico  ' })
     expect(withSpace.length).toBe(noSpace.length)
   })
 })
 
 describe('propertiesService.filter — sort', () => {
   it('default sort is "featured" (featured first, ties broken by id ascending)', () => {
-    const result = propertiesService.filter({})
+    const result = propertiesService.filter(properties, {})
     const firstNonFeatured = result.findIndex(p => !p.featured)
     if (firstNonFeatured === -1) {
       // Every record is featured — nothing to assert.
@@ -392,7 +467,7 @@ describe('propertiesService.filter — sort', () => {
   })
 
   it('default sort is stable by id ascending within the featured group', () => {
-    const result = propertiesService.filter({})
+    const result = propertiesService.filter(properties, {})
     const featured = result.filter(p => p.featured)
     const ids = featured.map(p => p.id)
     const sortedIds = ids.slice().sort((a, b) => a.localeCompare(b))
@@ -400,7 +475,7 @@ describe('propertiesService.filter — sort', () => {
   })
 
   it('default sort is stable by id ascending within the non-featured group', () => {
-    const result = propertiesService.filter({})
+    const result = propertiesService.filter(properties, {})
     const nonFeatured = result.filter(p => !p.featured)
     const ids = nonFeatured.map(p => p.id)
     const sortedIds = ids.slice().sort((a, b) => a.localeCompare(b))
@@ -408,7 +483,7 @@ describe('propertiesService.filter — sort', () => {
   })
 
   it('"price-asc" sorts by price ascending with id-ascending tiebreak', () => {
-    const result = propertiesService.filter({}, 'price-asc')
+    const result = propertiesService.filter(properties, {}, 'price-asc')
     for (let i = 1; i < result.length; i++) {
       const prev = result[i - 1]!
       const curr = result[i]!
@@ -420,7 +495,7 @@ describe('propertiesService.filter — sort', () => {
   })
 
   it('"price-desc" sorts by price descending with id-ascending tiebreak', () => {
-    const result = propertiesService.filter({}, 'price-desc')
+    const result = propertiesService.filter(properties, {}, 'price-desc')
     for (let i = 1; i < result.length; i++) {
       const prev = result[i - 1]!
       const curr = result[i]!
@@ -432,16 +507,16 @@ describe('propertiesService.filter — sort', () => {
   })
 
   it('"price-asc" and "price-desc" are reverses of each other when no two prices are equal', () => {
-    const asc = propertiesService.filter({}, 'price-asc')
-    const desc = propertiesService.filter({}, 'price-desc')
+    const asc = propertiesService.filter(properties, {}, 'price-asc')
+    const desc = propertiesService.filter(properties, {}, 'price-desc')
     const ascIds = asc.map(p => p.id)
     const descIdsReversed = desc.map(p => p.id).slice().reverse()
     expect(ascIds).toEqual(descIdsReversed)
   })
 
   it('"featured" sort puts every featured record before any non-featured', () => {
-    const result = propertiesService.filter({}, 'featured')
-    const all = propertiesService.getAll()
+    const result = propertiesService.filter(properties, {}, 'featured')
+    const all = propertiesService.getAll(properties)
     const featuredCount = all.filter(p => p.featured).length
     for (let i = 0; i < featuredCount; i++) {
       expect(result[i].featured).toBe(true)
@@ -452,21 +527,21 @@ describe('propertiesService.filter — sort', () => {
   })
 
   it('does not mutate the input list (caller cannot observe side effects)', () => {
-    const result = propertiesService.filter({})
+    const result = propertiesService.filter(properties, {})
     const firstIds = result.map(p => p.id)
-    propertiesService.filter({}, 'price-asc')
+    propertiesService.filter(properties, {}, 'price-asc')
     const secondIds = result.map(p => p.id)
     expect(firstIds).toEqual(secondIds)
   })
 
   it('default sort argument is "featured"', () => {
-    const withDefault = propertiesService.filter({})
-    const withExplicit = propertiesService.filter({}, 'featured')
+    const withDefault = propertiesService.filter(properties, {})
+    const withExplicit = propertiesService.filter(properties, {}, 'featured')
     expect(withDefault.map(p => p.id)).toEqual(withExplicit.map(p => p.id))
   })
 
   it('"price-asc" with no equal prices is non-decreasing', () => {
-    const result = propertiesService.filter({}, 'price-asc')
+    const result = propertiesService.filter(properties, {}, 'price-asc')
     for (let i = 1; i < result.length; i++) {
       expect(result[i - 1]!.price).toBeLessThanOrEqual(result[i]!.price)
     }
@@ -475,7 +550,7 @@ describe('propertiesService.filter — sort', () => {
 
 describe('propertiesService.filter — hidden exclusion', () => {
   it('excludes hidden properties from every filter result', () => {
-    const result = propertiesService.filter({})
+    const result = propertiesService.filter(properties, {})
     for (const property of result) {
       expect(property.status).not.toBe('hidden')
     }
@@ -484,8 +559,8 @@ describe('propertiesService.filter — hidden exclusion', () => {
 
 describe('propertiesService.getFeatured', () => {
   it('returns every featured property when no limit is provided', () => {
-    const featured = propertiesService.getFeatured()
-    const all = propertiesService.getAll()
+    const featured = propertiesService.getFeatured(properties)
+    const all = propertiesService.getAll(properties)
     const expected = all.filter(p => p.featured)
     expect(featured.length).toBe(expected.length)
     for (const property of featured) {
@@ -494,22 +569,22 @@ describe('propertiesService.getFeatured', () => {
   })
 
   it('caps the result at the provided limit', () => {
-    const featured = propertiesService.getFeatured(1)
+    const featured = propertiesService.getFeatured(properties, 1)
     expect(featured.length).toBe(1)
   })
 
   it('returns an empty array when limit is 0', () => {
-    expect(propertiesService.getFeatured(0).length).toBe(0)
+    expect(propertiesService.getFeatured(properties, 0).length).toBe(0)
   })
 
   it('returns all featured properties when the limit is greater than the count', () => {
-    const featured = propertiesService.getFeatured()
-    const oversized = propertiesService.getFeatured(featured.length + 100)
+    const featured = propertiesService.getFeatured(properties)
+    const oversized = propertiesService.getFeatured(properties, featured.length + 100)
     expect(oversized.length).toBe(featured.length)
   })
 
   it('excludes hidden properties from the featured set', () => {
-    const featured = propertiesService.getFeatured()
+    const featured = propertiesService.getFeatured(properties)
     for (const property of featured) {
       expect(property.status).not.toBe('hidden')
     }
@@ -518,10 +593,10 @@ describe('propertiesService.getFeatured', () => {
 
 describe('propertiesService.getRelated — current-property exclusion', () => {
   it('does not include the current property in the result', () => {
-    const all = propertiesService.getAll()
+    const all = propertiesService.getAll(properties)
     const current = all[0]
     if (!current) throw new Error('expected at least one property')
-    const related = propertiesService.getRelated(current, 10)
+    const related = propertiesService.getRelated(properties, current, 10)
     const ids = related.map(p => p.id)
     expect(ids).not.toContain(current.id)
   })
@@ -535,7 +610,7 @@ describe('propertiesService.getRelated — status filter', () => {
     // contains only the six shipped records. Instead, assert the
     // documented contract by scanning the related result for any
     // "sold" record from the static catalog.
-    const related = propertiesService.getRelated(current, 100)
+    const related = propertiesService.getRelated(properties, current, 100)
     for (const property of related) {
       expect(property.status).not.toBe('sold')
     }
@@ -546,7 +621,7 @@ describe('propertiesService.getRelated — status filter', () => {
 
   it('does not include properties with status "rented"', () => {
     const current = makeProperty({ id: 'current', city: 'X', country: 'X' })
-    const related = propertiesService.getRelated(current, 100)
+    const related = propertiesService.getRelated(properties, current, 100)
     for (const property of related) {
       expect(property.status).not.toBe('rented')
     }
@@ -554,7 +629,7 @@ describe('propertiesService.getRelated — status filter', () => {
 
   it('does not include properties with status "hidden"', () => {
     const current = makeProperty({ id: 'current', city: 'X', country: 'X' })
-    const related = propertiesService.getRelated(current, 100)
+    const related = propertiesService.getRelated(properties, current, 100)
     for (const property of related) {
       expect(property.status).not.toBe('hidden')
     }
@@ -563,37 +638,37 @@ describe('propertiesService.getRelated — status filter', () => {
 
 describe('propertiesService.getRelated — cap', () => {
   it('caps the result at the provided limit (default 3)', () => {
-    const all = propertiesService.getAll()
+    const all = propertiesService.getAll(properties)
     const current = all[0]
     if (!current) throw new Error('expected at least one property')
-    const related = propertiesService.getRelated(current)
+    const related = propertiesService.getRelated(properties, current)
     expect(related.length).toBeLessThanOrEqual(3)
   })
 
   it('caps the result at a custom limit', () => {
-    const all = propertiesService.getAll()
+    const all = propertiesService.getAll(properties)
     const current = all[0]
     if (!current) throw new Error('expected at least one property')
-    const related = propertiesService.getRelated(current, 1)
+    const related = propertiesService.getRelated(properties, current, 1)
     expect(related.length).toBeLessThanOrEqual(1)
   })
 })
 
 describe('propertiesService.getRelated — score', () => {
   it('returns a deterministic order across calls (no hidden state)', () => {
-    const all = propertiesService.getAll()
+    const all = propertiesService.getAll(properties)
     const current = all[0]
     if (!current) throw new Error('expected at least one property')
-    const first = propertiesService.getRelated(current, 10)
-    const second = propertiesService.getRelated(current, 10)
+    const first = propertiesService.getRelated(properties, current, 10)
+    const second = propertiesService.getRelated(properties, current, 10)
     expect(first.map(p => p.id)).toEqual(second.map(p => p.id))
   })
 
   it('excludes the current property from the scored candidates', () => {
-    const all = propertiesService.getAll()
+    const all = propertiesService.getAll(properties)
     const current = all[0]
     if (!current) throw new Error('expected at least one property')
-    const related = propertiesService.getRelated(current, 100)
+    const related = propertiesService.getRelated(properties, current, 100)
     expect(related.find(p => p.id === current.id)).toBeUndefined()
   })
 })
@@ -603,7 +678,7 @@ describe('propertiesService — combined filter + sort + pagination', () => {
     // The service contract is: `filter` is the query/sort layer; the
     // page layer applies pagination on top. Slicing the filtered
     // list at the right index should equal the filter's slice.
-    const filtered = propertiesService.filter({ operation: 'sale' }, 'price-asc')
+    const filtered = propertiesService.filter(properties, { operation: 'sale' }, 'price-asc')
     const first = filtered.slice(0, 2)
     const second = filtered.slice(2, 4)
     expect(first.length).toBeLessThanOrEqual(2)

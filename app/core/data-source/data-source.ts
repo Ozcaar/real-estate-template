@@ -18,13 +18,20 @@ import type { z } from 'zod'
  * is the public boundary; the adapter is the implementation
  * boundary.
  *
- * **Why a small contract.** The contract does not try to model
- * every async / CMS / API concern. It only captures what the
- * static adapter needs to expose and what a future async adapter
- * would still need to expose (`getAll()`). When the time comes to
- * add a network adapter, the small surface area means a new
- * `ApiDataSource` can be written in one file and the registry
- * updated — no service changes.
+ * **Async-first contract.** Every adapter — static, api, cms —
+ * exposes `loadAll(): Promise<readonly T[]>` as the primary
+ * surface. The static adapter resolves immediately with the
+ * bundled data; the api / cms adapters fetch and parse on
+ * demand. Pages consume the loader through Nuxt's
+ * `useAsyncData('key', () => service.loadAll())` so SSR awaits
+ * the load before rendering. A second, synchronous accessor
+ * (`getAll()`) is retained for adapter implementations whose
+ * data is pre-loaded at construction time (the static
+ * adapter); remote adapters expose `getAll()` as the cached
+ * result of their first `loadAll()` call. The service layer
+ * treats `loadAll()` as the only contract entry point and
+ * ignores `getAll()` — the data argument passed to the
+ * service methods is the resolved `loadAll()` value.
  *
  * @see docs/ARCHITECTURE.md for the feature-first architecture
  * @see docs/DATA_MODELS.md for the domain models each adapter validates
@@ -37,14 +44,16 @@ import type { z } from 'zod'
  *   `app/features/<feature>/data/<feature>.ts`. Default for the
  *   v1.x template. Zero network at request time; data travels
  *   with the build.
- * - `'api'` — external HTTP API. Not implemented in v1.x; the
- *   adapter contract is the only thing that exists today.
- *   Selecting `'api'` without a registered adapter throws
- *   {@link DataSourceNotImplementedError} so a misconfigured
- *   rebrand is a hard error, not a silent fallback to the
- *   bundled data.
- * - `'cms'` — headless CMS. Same status as `'api'`: contract
- *   only, no implementation shipped.
+ * - `'api'` — external HTTP API. The `createApiDataSource`
+ *   factory at `app/core/data-source/adapters/api-adapter.ts`
+ *   is the implementation. The same `DataSourceAdapter<T>`
+ *   contract applies; selecting `'api'` without a registered
+ *   adapter throws {@link DataSourceMissingConfigError} so a
+ *   misconfigured rebrand is a hard error, not a silent
+ *   fallback to the bundled data.
+ * - `'cms'` — headless CMS. Same status as `'api'`: the
+ *   contract exists today, the implementation is a future
+ *   task (no CMS adapter ships in v1.x).
  *
  * The kind set is the source of truth for the data-source
  * configuration. Adding a new kind (e.g. `'graphql'`, `'s3'`) is
@@ -81,10 +90,11 @@ export const DEFAULT_DATA_SOURCE: DataSourceConfig = Object.freeze({
  * A data-source adapter.
  *
  * Implementations are constructed once per feature at module
- * load and reused. The service layer reads `getAll()` on every
- * call (the result is memoized inside the adapter for the
- * static implementation; a future async implementation would
- * fetch and parse on demand).
+ * load and reused. The service layer calls `loadAll()` on every
+ * page (or every request, on the server) and passes the
+ * resolved array to the pure service methods. The adapter is
+ * memoized per-instance so a single SSR request produces a
+ * single fetch.
  *
  * The adapter is intentionally read-only and does not know
  * about filtering, sorting, or pagination. The service layer
@@ -100,9 +110,34 @@ export interface DataSourceAdapter<T> {
    */
   readonly id: DataSourceKind
   /**
-   * Return the full list, already validated against the
-   * boundary schema supplied at construction time. The
-   * implementation is free to memoize.
+   * Async loader. Returns the full list, already validated
+   * against the boundary schema supplied at construction time.
+   *
+   * For the static adapter, the promise resolves immediately
+   * with the bundled data. For remote adapters (api, cms),
+   * the promise resolves after the fetch + Zod parse; the
+   * first call performs the work and subsequent calls return
+   * the same memoized array.
+   *
+   * Pages consume this through Nuxt's
+   * `useAsyncData('key', () => service.loadAll())` so SSR
+   * awaits the load before rendering.
+   */
+  loadAll(): Promise<readonly T[]>
+  /**
+   * Synchronous accessor. Returns the cached, validated list
+   * without performing the load. Implementations that load
+   * asynchronously (api, cms) MUST populate this with the
+   * resolved value of `loadAll()` and return the same array
+   * reference; calling `getAll()` before `loadAll()` has
+   * resolved throws. The static adapter exposes the array it
+   * parsed at construction time.
+   *
+   * The service layer does NOT use this accessor — it works
+   * exclusively with the value `loadAll()` resolves to. The
+   * accessor is exposed for diagnostic purposes and for the
+   * rare synchronous consumer that has pre-loaded the data
+   * (a Vitest fixture, an `await`-aware server route).
    */
   getAll(): readonly T[]
 }
@@ -128,18 +163,126 @@ export type DataSourceAdapterRegistry<T> = Partial<Record<DataSourceKind, DataSo
  * accidentally asks for a future source fails loudly at
  * module load — the misconfiguration cannot be hidden by
  * shipping the wrong content.
+ *
+ * The optional `supportedKinds` argument overrides the
+ * default "Supported kinds" line in the message. Callers
+ * that know the actual subset they ship (e.g. a feature
+ * loader that only has `'static'` + `'api'` adapters)
+ * can pass the list so the message reflects the runtime
+ * reality, not the full contract kind set. The selector
+ * (the typical caller) computes the list from its own
+ * registry; the loader passes its hard-coded list.
  */
 export class DataSourceNotImplementedError extends Error {
   readonly kind: DataSourceKind
-  constructor(kind: DataSourceKind) {
+  readonly supportedKinds: readonly DataSourceKind[]
+  constructor(
+    kind: DataSourceKind,
+    supportedKinds: readonly DataSourceKind[] = ['static', 'api', 'cms'] as const,
+  ) {
     super(
       `[data-source] kind "${kind}" is not implemented. `
       + `Register a "${kind}" adapter under app/core/data-source/adapters/ `
       + `and add it to the adapter registry. `
-      + `Supported kinds: "static".`,
+      + `Supported kinds: ${supportedKinds.map(k => `"${k}"`).join(', ')}.`,
     )
     this.name = 'DataSourceNotImplementedError'
     this.kind = kind
+    this.supportedKinds = supportedKinds
+  }
+}
+
+/**
+ * Thrown when a remote source is selected but the required
+ * transport configuration is missing.
+ *
+ * Today this is raised by the lazy adapter-selection logic in
+ * the feature service when the kind is `'api'` but the
+ * endpoint env var (`NUXT_PROPERTIES_API_URL` for properties)
+ * is empty. The error names the env var so a misconfigured
+ * deployment can be fixed without reading source code.
+ */
+export class DataSourceMissingConfigError extends Error {
+  readonly kind: DataSourceKind
+  readonly field: string
+  constructor(kind: DataSourceKind, field: string) {
+    super(
+      `[data-source:${kind}] required configuration "${field}" is missing. `
+      + `Set the env var that supplies this value (or unset "${kind}" as the configured kind) `
+      + `and restart the server.`,
+    )
+    this.name = 'DataSourceMissingConfigError'
+    this.kind = kind
+    this.field = field
+  }
+}
+
+/**
+ * Thrown when a remote source returns a non-2xx response.
+ *
+ * The error carries the HTTP status code and the endpoint
+ * URL so an operator can correlate the failure with their
+ * upstream logs. The response body is intentionally NOT
+ * included — a 5xx page can contain stack traces or other
+ * sensitive details that should not be logged at warn level
+ * without filtering.
+ */
+export class DataSourceHttpError extends Error {
+  readonly status: number
+  readonly endpoint: string
+  constructor(status: number, endpoint: string) {
+    super(`[data-source:api] HTTP ${status} fetching "${endpoint}".`)
+    this.name = 'DataSourceHttpError'
+    this.status = status
+    this.endpoint = endpoint
+  }
+}
+
+/**
+ * Thrown when a remote source request exceeds the configured
+ * timeout.
+ *
+ * The error carries the timeout (in milliseconds) and the
+ * endpoint URL so an operator can correlate the failure
+ * with their upstream latency. The original `AbortError`
+ * is intentionally NOT chained on the public error — the
+ * `DataSourceTimeoutError` is the documented contract; the
+ * upstream error is implementation detail.
+ */
+export class DataSourceTimeoutError extends Error {
+  readonly endpoint: string
+  readonly timeoutMs: number
+  constructor(endpoint: string, timeoutMs: number) {
+    super(`[data-source:api] request to "${endpoint}" timed out after ${timeoutMs}ms.`)
+    this.name = 'DataSourceTimeoutError'
+    this.endpoint = endpoint
+    this.timeoutMs = timeoutMs
+  }
+}
+
+/**
+ * Thrown when a remote source returns a 2xx response that
+ * fails Zod validation against the boundary schema.
+ *
+ * The error carries the underlying Zod issue as `cause` so a
+ * developer inspecting the error in the server logs sees the
+ * exact field that failed. The remote response is treated as
+ * the source of truth and a malformed payload is a hard
+ * error — the misconfigured upstream cannot be hidden by
+ * shipping the bundled static data.
+ */
+export class DataSourceInvalidPayloadError extends Error {
+  readonly endpoint: string
+  readonly cause: unknown
+  constructor(endpoint: string, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    super(
+      `[data-source:api] response from "${endpoint}" failed validation: ${detail}. `
+      + `The API endpoint must return the same shape as the bundled static data.`,
+    )
+    this.name = 'DataSourceInvalidPayloadError'
+    this.endpoint = endpoint
+    this.cause = cause
   }
 }
 
@@ -199,7 +342,13 @@ export function selectDataSource<T>(
 ): DataSourceAdapter<T> {
   const adapter = registry[config.kind]
   if (!adapter) {
-    throw new DataSourceNotImplementedError(config.kind)
+    // The supported kinds are the kinds the registry
+    // actually carries — not the full contract set. A
+    // rebrand that registers only a `'static'` adapter
+    // sees a message like "Supported kinds: 'static'."
+    // and knows exactly what's missing.
+    const supportedKinds = Object.keys(registry) as DataSourceKind[]
+    throw new DataSourceNotImplementedError(config.kind, supportedKinds)
   }
   return adapter
 }
