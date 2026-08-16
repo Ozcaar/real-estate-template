@@ -70,6 +70,8 @@
       "amenities": "Amenidades",
       "contactTitle": "¿Te interesa esta propiedad?",
       "contactDescription": "Habla con nuestro equipo para obtener más información, agendar una visita o iniciar el proceso de compra o renta.",
+      "inquiryTitle": "Solicitar información de esta propiedad",
+      "inquiryDescription": "Completa el formulario y nuestro equipo se pondrá en contacto contigo con más información sobre {title}.",
       "notFoundTitle": "Propiedad no encontrada",
       "notFoundMessage": "La propiedad que buscas no existe o ya no está disponible.",
       "featuresLabels": {
@@ -262,9 +264,9 @@
       "messagePlaceholder": "¿En qué podemos ayudarte?",
       "submit": "Enviar mensaje",
       "placeholderNotice": "El envío del formulario aún no está habilitado en esta plantilla. Por favor usa uno de los métodos de contacto de la izquierda mientras se completa la integración.",
-      "honeypotLabel": "Deja este campo vacío",
-      "success": "Gracias — tu mensaje está en camino. Referencia: {id}.",
-      "error": "No pudimos enviar tu mensaje en este momento. Por favor usa uno de los métodos de contacto de la izquierda mientras resolvemos el problema.",
+        "honeypotLabel": "Deja este campo vacío",
+        "success": "Gracias — tu mensaje está en camino. Referencia: {id}.",
+        "error": "No pudimos enviar tu mensaje en este momento. Por favor inténtalo de nuevo o usa uno de los métodos de contacto de esta página mientras resolvemos el problema.",
       "errors": {
         "name_too_short": "Por favor ingresa tu nombre completo.",
         "name_too_long": "El nombre es demasiado largo.",
@@ -276,7 +278,10 @@
         "message_too_long": "El mensaje es demasiado largo.",
         "contact_channel_required": "Por favor proporciona un correo electrónico o un número de teléfono.",
         "locale_invalid": "La configuración regional no es válida.",
-        "honeypot": "Spam detectado."
+        "honeypot": "Spam detectado.",
+        "property_slug_required": "La referencia de la propiedad no es válida.",
+        "property_slug_too_long": "La referencia de la propiedad es demasiado larga.",
+        "property_slug_invalid": "La referencia de la propiedad no es válida."
       }
     }
   },

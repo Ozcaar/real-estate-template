@@ -67,6 +67,16 @@ const related = computed(() =>
     : [],
 )
 
+/**
+ * Lead capture for the property-detail page. The form reuses the
+ * documented `LeadForm` component and is gated on `agency.leads.enabled`
+ * (the same flag that drives the `/contact` form). When the agency has
+ * opted in, the form posts to `POST /api/contact` with the property
+ * slug attached; the server stamps the delivered lead with a verified
+ * `PropertyReference` derived from the property catalog lookup.
+ */
+const leadsEnabled = computed(() => site.value.agency.leads.enabled)
+
 const featureRows = computed(() => [
   { key: 'bedrooms', value: p.bedrooms, icon: 'mdi:bed-outline', show: Boolean(p.bedrooms) },
   { key: 'bathrooms', value: p.bathrooms, icon: 'mdi:shower', show: Boolean(p.bathrooms) },
@@ -361,6 +371,25 @@ useJsonLd(relatedJsonLd)
           </BaseCard>
         </aside>
       </div>
+
+      <section
+        aria-labelledby="inquiry-heading"
+        class="mt-12 border-t border-[var(--color-border)] pt-12"
+      >
+        <BaseHeading id="inquiry-heading" :level="2" size="xl" class="mb-2">
+          {{ t('properties.detail.inquiryTitle') }}
+        </BaseHeading>
+        <p class="mb-6 text-sm text-[var(--color-muted)]">
+          {{ t('properties.detail.inquiryDescription', { title: p.title }) }}
+        </p>
+        <BaseCard padding="lg" radius="lg" shadow="sm">
+          <LeadForm
+            :enabled="leadsEnabled"
+            :locale="String(locale)"
+            :property-slug="p.slug"
+          />
+        </BaseCard>
+      </section>
 
       <section
         v-if="related.length"

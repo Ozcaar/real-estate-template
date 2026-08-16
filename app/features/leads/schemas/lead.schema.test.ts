@@ -259,3 +259,175 @@ describe('leadInputRefined — full happy path', () => {
     expect(result.success).toBe(true)
   })
 })
+
+/**
+ * Property inquiry schema branch — `property.slug`.
+ *
+ * The `/properties/[slug]` inquiry form sends a
+ * `property: { slug }` block alongside the user-typed fields.
+ * The slug is the ONLY client-supplied property field — title,
+ * price, location, and any other metadata are NEVER trusted as
+ * authoritative and are always server-derived from the catalog
+ * lookup. The schema validates the slug's format (URL-safe
+ * lowercase + digits + dashes, 1–120 characters) so a malformed
+ * slug is rejected at the boundary.
+ *
+ * `property` is optional; the contact form omits it entirely. A
+ * present `property` block must carry a valid `slug`; title /
+ * price / any other field are stripped by the schema (the parsed
+ * type only exposes `slug`, not a record).
+ */
+describe('leadInputSchema — property.slug (property inquiry branch)', () => {
+  it('accepts a well-formed slug', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: 'modern-hillside-villa' },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.property).toEqual({ slug: 'modern-hillside-villa' })
+    }
+  })
+
+  it('accepts a single-character slug', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: 'a' },
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts a 120-character slug', () => {
+    const slug = 'a'.repeat(120)
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug },
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('trims surrounding whitespace from the slug', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: '  modern-hillside-villa  ' },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.property?.slug).toBe('modern-hillside-villa')
+    }
+  })
+
+  it('accepts a payload without a property block (general contact form)', () => {
+    const result = leadInputSchema.safeParse(validBase)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.property).toBeUndefined()
+    }
+  })
+
+  it('rejects a 121-character slug with property_slug_too_long', () => {
+    const slug = 'a'.repeat(121)
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug },
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const slugIssue = result.error.issues.find(
+        i => i.path[0] === 'property' && i.path[1] === 'slug',
+      )
+      expect(slugIssue?.message).toBe('property_slug_too_long')
+    }
+  })
+
+  it('rejects an empty slug with property_slug_required', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: '' },
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const slugIssue = result.error.issues.find(
+        i => i.path[0] === 'property' && i.path[1] === 'slug',
+      )
+      expect(slugIssue?.message).toBe('property_slug_required')
+    }
+  })
+
+  it('rejects a whitespace-only slug (trim yields empty)', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: '   ' },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a slug with uppercase characters', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: 'Modern-Hillside-Villa' },
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      const slugIssue = result.error.issues.find(
+        i => i.path[0] === 'property' && i.path[1] === 'slug',
+      )
+      expect(slugIssue?.message).toBe('property_slug_invalid')
+    }
+  })
+
+  it('rejects a slug with underscores (only lowercase, digits, and dashes allowed)', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: 'modern_hillside_villa' },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a slug with spaces', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: 'modern hillside villa' },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a slug with path-traversal characters', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: '../../etc/passwd' },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a slug with HTML / script characters', () => {
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: { slug: '<script>alert(1)</script>' },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('strips client-supplied title / price / location (only slug is preserved)', () => {
+    // Client tries to forge a "different" title and price in the
+    // property block. The schema accepts the block but only
+    // preserves `slug`; the parsed type exposes only `slug`, so
+    // title / price / location cannot reach the service.
+    const result = leadInputSchema.safeParse({
+      ...validBase,
+      property: {
+        slug: 'modern-hillside-villa',
+        title: 'FORGED TITLE',
+        price: 1,
+        location: 'FORGED LOCATION',
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.property).toEqual({ slug: 'modern-hillside-villa' })
+      expect(result.data.property).not.toHaveProperty('title')
+      expect(result.data.property).not.toHaveProperty('price')
+      expect(result.data.property).not.toHaveProperty('location')
+    }
+  })
+})

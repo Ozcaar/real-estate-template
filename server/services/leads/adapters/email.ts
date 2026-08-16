@@ -132,11 +132,34 @@ function escapeDisplay(value: string | undefined | null): string {
   return escapeHtml(value)
 }
 
-/** Render the lead as a plain-text email body. No escaping is needed. */
+/** Render the lead as a plain-text email body. No escaping is needed.
+ *
+ *  The shape is driven by the lead's `source`:
+ *
+ *  - `source: 'contact'` — a general contact form submission.
+ *    The subject line uses the lead's name; the body is the
+ *    standard 8-row block (Name, Email, Phone, Message, Locale,
+ *    Source, ID, Received).
+ *  - `source: 'property_inquiry'` — a property-scoped inquiry.
+ *    The subject line prepends "Property inquiry:" to the lead's
+ *    name; the body adds a "Property" block at the top with the
+ *    server-verified slug, title, and relative URL (server-derived
+ *    catalog metadata — never client-supplied) followed by the
+ *    standard 8-row block.
+ */
 function renderText(lead: LeadDeliveryInput['lead']): string {
   const lines: string[] = []
-  lines.push('New lead from the contact form')
+  const isPropertyInquiry = lead.source === 'property_inquiry'
+  lines.push(isPropertyInquiry
+    ? 'New property inquiry'
+    : 'New lead from the contact form')
   lines.push('')
+  if (isPropertyInquiry && lead.property) {
+    lines.push(`Property: ${lead.property.title}`)
+    lines.push(`Property URL: ${lead.property.url}`)
+    lines.push(`Property slug: ${lead.property.slug}`)
+    lines.push('')
+  }
   lines.push(`Name: ${lead.name || '—'}`)
   lines.push(`Email: ${lead.email || '—'}`)
   lines.push(`Phone: ${lead.phone || '—'}`)
@@ -152,18 +175,37 @@ function renderText(lead: LeadDeliveryInput['lead']): string {
 }
 
 /** Render the lead as an HTML email body. Every user-provided value
- *  is HTML-escaped. */
+ *  is HTML-escaped. The property title, slug, and URL are also
+ *  escaped (the title and slug are user-editable fields in the
+ *  catalog; the URL is server-built from the slug and is safe but
+ *  escaped defensively). */
 function renderHtml(lead: LeadDeliveryInput['lead']): string {
   const row = (label: string, value: string): string => {
     const safeValue = escapeDisplay(value)
     return `      <tr><th style="text-align:left;padding:4px 8px">${escapeHtml(label)}</th><td style="padding:4px 8px">${safeValue}</td></tr>`
   }
   const message = escapeDisplay(lead.message).replace(/\n/g, '<br>')
+  const isPropertyInquiry = lead.source === 'property_inquiry'
+
+  const heading = isPropertyInquiry
+    ? 'New property inquiry'
+    : 'New lead from the contact form'
+
+  const propertyBlock = (isPropertyInquiry && lead.property)
+    ? [
+        '    <tr><th colspan="2" style="text-align:left;padding:8px 8px 4px;border-bottom:1px solid #ddd">Property</th></tr>',
+        row('Title', lead.property.title),
+        row('URL', lead.property.url),
+        row('Slug', lead.property.slug),
+        '    <tr><th colspan="2" style="padding:8px 8px 4px;border-bottom:1px solid #ddd"></th></tr>',
+      ].join('\n')
+    : ''
 
   return [
     '<div style="font-family:system-ui,sans-serif;max-width:560px">',
-    '  <h2 style="font-size:18px;margin:0 0 12px">New lead from the contact form</h2>',
+    `  <h2 style="font-size:18px;margin:0 0 12px">${escapeHtml(heading)}</h2>`,
     '  <table style="border-collapse:collapse;width:100%">',
+    propertyBlock,
     row('Name', lead.name),
     row('Email', lead.email),
     row('Phone', lead.phone),
@@ -212,7 +254,19 @@ export const emailAdapter: LeadDeliveryAdapter = {
     }
 
     const { lead } = input
-    const subject = `New lead: ${lead.name || 'Contact form submission'}`
+    // The subject line is the first thing the agency sees in
+    // their inbox. A property inquiry uses a "Property inquiry:"
+    // prefix so it sorts visibly above the general contact-form
+    // noise; the property title is included when the verified
+    // reference is available (Task 101B: source is preserved
+    // independently of the catalog lookup, so a soft-failure
+    // inquiry still signals "Property inquiry" in the subject
+    // even when `lead.property` is undefined).
+    const subject = lead.source === 'property_inquiry'
+      ? lead.property
+        ? `Property inquiry: ${lead.property.title} — ${lead.name || 'Inquiry'}`
+        : `Property inquiry — ${lead.name || 'Inquiry'}`
+      : `New lead: ${lead.name || 'Contact form submission'}`
     const text = renderText(lead)
     const html = renderHtml(lead)
 

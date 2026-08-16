@@ -9,6 +9,9 @@ import {
   setResponseStatus,
 } from 'h3'
 import { leadService, type LeadSubmitStatus } from '../services/leads/lead.service'
+import { propertiesService } from '../../app/features/properties/services/properties.service'
+import { loadPropertiesServer } from '../utils/properties'
+import type { PropertyReference } from '../../app/features/leads/types/lead.types'
 
 /**
  * `POST /api/contact` — lead capture endpoint.
@@ -29,9 +32,47 @@ import { leadService, type LeadSubmitStatus } from '../services/leads/lead.servi
  * length is checked **before** parsing. A body larger than 16 KB
  * returns 413. The limit is generous — the form's longest
  * plausible payload is a 4000-char message plus 254-char email,
- * 32-char phone, 120-char name, 120-char locale, and a few
- * brackets — well under 4 KB serialized. 16 KB leaves room for
- * legitimate clients without inviting oversized payloads.
+ * 32-char phone, 120-char name, 120-char locale, a property
+ * slug of up to 120 chars, and a few brackets — well under 4 KB
+ * serialized. 16 KB leaves room for legitimate clients without
+ * inviting oversized payloads.
+ *
+ * **Property inquiry context (Task 101B).** When the validated
+ * body carries an optional `property: { slug }` block (sent by
+ * the `/properties/[slug]` inquiry form), the endpoint:
+ *
+ *  1. Reads the slug from the body (the ONLY client-supplied
+ *     property field — title, price, location, and any other
+ *     metadata are NEVER trusted as authoritative).
+ *  2. Looks up the canonical property record server-side via
+ *     the server-only property loader + `propertiesService.getBySlug`.
+ *  3. Builds a verified `PropertyReference` (`slug`, `title`,
+ *     `url`) and passes it to the service as `propertyContext`.
+ *
+ * **The source `property_inquiry` is preserved independently
+ * of whether the lookup succeeded:**
+ *
+ *  - **Successful lookup.** The lead is stamped with
+ *    `source: 'property_inquiry'` AND `lead.property =
+ *    PropertyReference`.
+ *  - **Property not found** (slug not in catalog). The lead is
+ *    stamped with `source: 'property_inquiry'` and NO `property`
+ *    field — the agency sees the inquiry source but no catalog
+ *    metadata. The form submission is still accepted so a
+ *    stale page does not 404 the user.
+ *  - **Transient loader failure** (api endpoint unreachable,
+ *    DNS error, timeout). Same as above: the lead is stamped
+ *    with `source: 'property_inquiry'` and NO `property`
+ *    field. The contact form does NOT take down — the loader
+ *    is wrapped in `try/catch` and the lead is delivered
+ *    without property context.
+ *
+ * The service derives `isPropertyInquiry` from the **validated
+ * body's `property` block**, NOT from `propertyContext`. The
+ * schema's `z.object(...)` strips unknown keys (including a
+ * client-supplied `source`), so a forged source value cannot
+ * reach `lead.source`. The server is the sole authority for the
+ * source value stamped on the lead.
  *
  * **Response shape.** The endpoint always returns a JSON body
  * matching one of the documented shapes. Provider details, webhook
@@ -68,6 +109,46 @@ function buildRequestKey(event: Parameters<typeof defineEventHandler>[0] extends
   const ip = getRequestIP(event, { xForwardedFor: true }) ?? 'unknown'
   const ua = (getHeader(event, 'user-agent') ?? '').slice(0, 200)
   return `${ip}::${ua}`
+}
+
+/**
+ * Look up a property by slug and build the server-derived
+ * `PropertyReference`. The reference carries only what the
+ * delivery adapters need: the canonical slug (for agency-side
+ * filtering), the server-verified title (so the email subject
+ * and webhook payload reflect the listing the user actually
+ * saw), and the canonical URL path (so the agency can click
+ * through to the listing from their inbox).
+ *
+ * Returns `undefined` when the slug is empty, when the catalog
+ * lookup throws, or when the slug does not match any catalog
+ * record. The endpoint accepts the form submission in every
+ * case. The lead is still stamped with `source: 'property_inquiry'`
+ * because the **source is derived from the body's `property.slug`
+ * in the service**, not from this function's return value —
+ * the soft-failure cases preserve the inquiry source so the
+ * agency can filter "this was a property inquiry" from "this
+ * was a general contact submission".
+ */
+async function buildPropertyContext(slug: string | undefined): Promise<PropertyReference | undefined> {
+  if (!slug) return undefined
+  try {
+    const properties = await loadPropertiesServer()
+    const property = propertiesService.getBySlug(properties, slug)
+    if (!property) return undefined
+    return {
+      slug: property.slug,
+      title: property.title,
+      url: `/properties/${property.slug}`,
+    }
+  }
+  catch {
+    // A misconfigured api endpoint or transient upstream failure
+    // must NOT take down the contact form. The lead is delivered
+    // without property context; the agency's webhook / email
+    // payload simply lacks the `property` field.
+    return undefined
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -113,8 +194,26 @@ export default defineEventHandler(async (event) => {
     ?.trim()
     .slice(0, 12) || 'en'
 
+  // Extract the property slug before delegating to the service.
+  // The shape is intentionally untyped here so a malformed body
+  // is handled by the schema in the service, not by a separate
+  // pre-check. The slug is the only field the endpoint reads from
+  // the raw body; everything else is validated by the service.
+  const propertySlug = (() => {
+    if (body && typeof body === 'object') {
+      const property = (body as Record<string, unknown>).property
+      if (property && typeof property === 'object') {
+        const slug = (property as Record<string, unknown>).slug
+        if (typeof slug === 'string') return slug
+      }
+    }
+    return undefined
+  })()
+
+  const propertyContext = await buildPropertyContext(propertySlug)
+
   const result: LeadSubmitStatus = await leadService.submit(
-    { body },
+    { body, propertyContext },
     { requestKey, fallbackLocale },
   )
 

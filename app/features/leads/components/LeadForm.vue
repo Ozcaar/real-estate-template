@@ -5,7 +5,8 @@ import { leadInputRefined } from '../schemas/lead.schema'
 import type { LeadInput } from '../types/lead.types'
 
 /**
- * Lead capture form for the public `/contact` page.
+ * Lead capture form for the public `/contact` page and the
+ * `/properties/[slug]` inquiry section.
  *
  * **Enabled vs disabled.** The form is **driven by the agency's
  * `leads.enabled` flag**, not by the runtime adapter configuration.
@@ -15,6 +16,16 @@ import type { LeadInput } from '../types/lead.types'
  * real lead capture ships the same UI as v1.0. When
  * `leads.enabled === true`, the form is fully interactive and posts
  * to `POST /api/contact`.
+ *
+ * **Property inquiry mode.** When the `propertySlug` prop is
+ * provided, the form posts the slug in the body's `property` field.
+ * The server looks up the canonical property record and stamps the
+ * delivered lead with a verified `PropertyReference`. The form
+ * itself only sends the slug — title, price, location, and any
+ * other property metadata are NEVER trusted as authoritative. The
+ * success / error messages and the field schema are identical to
+ * the contact form; the only difference is the `property` block in
+ * the request body.
  *
  * **State machine.** Five states, mutually exclusive at the form
  * level: `idle`, `submitting`, `validation`, `success`, `error`. The
@@ -38,6 +49,14 @@ interface Props {
   enabled: boolean
   /** Active locale code, used to pre-fill the optional `locale` field. */
   locale: string
+  /**
+   * Optional property slug. When present, the form posts a
+   * `property: { slug }` block alongside the user-typed fields so
+   * the server can look up the canonical property record and
+   * stamp the delivered lead with a verified `PropertyReference`.
+   * When absent, the form posts the standard contact payload.
+   */
+  propertySlug?: string
 }
 
 const props = defineProps<Props>()
@@ -126,6 +145,21 @@ async function onSubmit() {
   status.value = 'submitting'
 
   try {
+    // Build the request body. The user-typed fields come from the
+    // form ref; the optional `property` block is added only when
+    // `propertySlug` is set. The form never carries a `property`
+    // ref (it is not user-editable) — it is constructed here from
+    // the prop so the schema validates the slug format at the
+    // boundary. The server's trust model is unchanged: it trusts
+    // the slug, looks up the property record server-side, and
+    // stamps a server-derived `PropertyReference` on the delivered
+    // lead. Title, price, and any other property metadata are NEVER
+    // accepted from the client.
+    const body: LeadInput & { property?: { slug: string } } = { ...form.value }
+    if (props.propertySlug) {
+      body.property = { slug: props.propertySlug }
+    }
+
     const response = await $fetch<{ ok: true, id: string } | {
       ok: false,
       error: 'validation' | 'payload_too_large' | 'unsupported_media_type' | 'rate_limited' | 'delivery' | 'adapter_disabled',
@@ -133,7 +167,7 @@ async function onSubmit() {
     }>('/api/contact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form.value),
+      body: JSON.stringify(body),
     })
 
     if (response.ok) {

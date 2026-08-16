@@ -27,6 +27,13 @@ import type { LeadInput } from '../types/lead.types'
  *   defensive server can rely on `schema.safeParse` even before
  *   reaching the bot-detection code path.
  * - `locale` — optional BCP-47-shaped string, 2–12 characters.
+ * - `property.slug` — optional, URL-safe slug (lowercase letters,
+ *   digits, and dashes only, 1–120 characters). When present, the
+ *   server looks up the canonical property record and stamps the
+ *   delivered lead with a verified `PropertyReference`. The slug is
+ *   the **only** client-supplied property field — title, price,
+ *   location, and any other metadata are NEVER trusted as
+ *   authoritative and are always server-derived.
  *
  * **Cross-field rule.** At least one of `email` or `phone` must be
  * non-empty. A real lead has at least one contact channel; the agency
@@ -75,6 +82,25 @@ export const leadInputSchema = z.object({
     .max(12, 'locale_invalid')
     .optional()
     .or(z.literal('')),
+  /**
+   * Property context. The slug is the canonical identifier; the
+   * server uses it to look up the property in the catalog and
+   * stamps the lead with a server-derived `PropertyReference`.
+   * A slug that does not match any catalog record is accepted
+   * here (the format is validated) but produces a lead without
+   * a `property` field. Title, price, location, and any other
+   * property metadata are NEVER accepted from the client.
+   */
+  property: z
+    .object({
+      slug: z
+        .string()
+        .trim()
+        .min(1, 'property_slug_required')
+        .max(120, 'property_slug_too_long')
+        .regex(/^[a-z0-9-]+$/, 'property_slug_invalid'),
+    })
+    .optional(),
 })
 
 /**

@@ -382,3 +382,151 @@ describe('emailAdapter', () => {
     })
   })
 })
+
+/**
+ * Property inquiry branch — email subject + body carry the
+ * verified property reference so the agency sees the listing
+ * context without having to look it up. The property title, slug,
+ * and URL are all server-derived catalog metadata (escaped
+ * defensively in HTML).
+ */
+describe('emailAdapter — property inquiry', () => {
+  const propertyLead: Lead = {
+    ...VALID_LEAD,
+    source: 'property_inquiry',
+    property: {
+      slug: 'modern-hillside-villa',
+      title: 'Modern Hillside Villa',
+      url: '/properties/modern-hillside-villa',
+    },
+  }
+
+  beforeEach(() => {
+    setConfig()
+    // Clear the mock history so `mockSendMail.mock.calls[0]`
+    // is the call from THIS test, not the previous one. The
+    // outer describe's `beforeEach` runs first (resetting the
+    // mock), then the inner `beforeEach` runs (clearing the
+    // history without resetting the implementation so the
+    // resolved value persists across tests in this block).
+    mockSendMail.mockClear()
+    mockTransporterClose.mockClear()
+    mockSendMail.mockResolvedValue({ messageId: 'ok' })
+  })
+
+  it('prefixes the subject with "Property inquiry:" and includes the title', async () => {
+    await emailAdapter.deliver({ lead: propertyLead })
+    const options = mockSendMail.mock.calls[0]?.[0] as { subject: string }
+    expect(options.subject).toContain('Property inquiry:')
+    expect(options.subject).toContain('Modern Hillside Villa')
+  })
+
+  it('renders the property title in the plain-text body', async () => {
+    await emailAdapter.deliver({ lead: propertyLead })
+    const options = mockSendMail.mock.calls[0]?.[0] as { text: string }
+    expect(options.text).toContain('New property inquiry')
+    expect(options.text).toContain('Property: Modern Hillside Villa')
+    expect(options.text).toContain('Property URL: /properties/modern-hillside-villa')
+    expect(options.text).toContain('Property slug: modern-hillside-villa')
+  })
+
+  it('renders the property title in the HTML body', async () => {
+    await emailAdapter.deliver({ lead: propertyLead })
+    const options = mockSendMail.mock.calls[0]?.[0] as { html: string }
+    expect(options.html).toContain('New property inquiry')
+    expect(options.html).toContain('Modern Hillside Villa')
+    expect(options.html).toContain('/properties/modern-hillside-villa')
+    expect(options.html).toContain('modern-hillside-villa')
+  })
+
+  it('does NOT use the contact-form heading for property inquiries', async () => {
+    // The two sources render different headings so the agency
+    // can scan the inbox and route accordingly.
+    await emailAdapter.deliver({ lead: propertyLead })
+    const options = mockSendMail.mock.calls[0]?.[0] as { text: string, html: string }
+    expect(options.text).not.toContain('New lead from the contact form')
+    expect(options.html).not.toContain('New lead from the contact form')
+  })
+
+  it('falls back gracefully when propertyLead has no property (legacy / soft-failure path)', async () => {
+    // A soft failure in the property lookup at the endpoint
+    // level can produce a `source: 'property_inquiry'` lead
+    // without a `property` reference. The adapter must not crash;
+    // it should render the heading with no property block.
+    const softFail: Lead = { ...propertyLead, property: undefined }
+    const result = await emailAdapter.deliver({ lead: softFail })
+    expect(result.ok).toBe(true)
+    const options = mockSendMail.mock.calls[0]?.[0] as { text: string, html: string }
+    expect(options.text).not.toContain('Property:')
+    expect(options.html).not.toContain('Property URL:')
+  })
+
+  it('uses the "Property inquiry — <name>" subject on soft failure (no property reference)', async () => {
+    // Task 101B: the source 'property_inquiry' is preserved
+    // independently of whether the catalog lookup
+    // succeeded. A soft-failure lead (source: 'property_inquiry'
+    // without a `property` field) still signals "Property
+    // inquiry" in the subject line so the agency can filter
+    // it from general contact submissions in their inbox.
+    // The subject falls back to "Property inquiry — <name>"
+    // (without the property title) when the reference is
+    // absent.
+    const softFail: Lead = { ...propertyLead, property: undefined }
+    await emailAdapter.deliver({ lead: softFail })
+    const options = mockSendMail.mock.calls[0]?.[0] as { subject: string }
+    expect(options.subject).toContain('Property inquiry')
+    expect(options.subject).not.toContain('New lead')
+    // The subject does NOT include a title (no reference).
+    expect(options.subject).not.toContain('Modern Hillside Villa')
+  })
+
+  it('falls back to the general "New lead: <name>" subject for source "contact"', async () => {
+    // The general-contact subject is unchanged by the
+    // Task 101B contract. A lead with source: 'contact' (no
+    // body property block) uses the historical subject line.
+    await emailAdapter.deliver({ lead: VALID_LEAD })
+    const options = mockSendMail.mock.calls[0]?.[0] as { subject: string }
+    expect(options.subject).toBe(`New lead: ${VALID_LEAD.name}`)
+  })
+
+  it('escapes a malicious property title in the HTML body', async () => {
+    const malicious: Lead = {
+      ...propertyLead,
+      property: {
+        slug: 'modern-hillside-villa',
+        title: '<script>"&\'</script>',
+        url: '/properties/modern-hillside-villa',
+      },
+    }
+    await emailAdapter.deliver({ lead: malicious })
+    const options = mockSendMail.mock.calls[0]?.[0] as { html: string, text: string }
+    // The raw script tag must not appear in the HTML body.
+    expect(options.html).not.toContain('<script>')
+    expect(options.html).toContain('&lt;script&gt;')
+    // The plain-text body is NOT escaped (it's plain text) —
+    // it carries the literal title because plain-text clients
+    // (mail clients with no HTML rendering) need the
+    // human-readable form. The plaintext value is what the user
+    // submitted, so the privacy boundary is the same as for the
+    // contact form.
+    expect(options.text).toContain('<script>')
+  })
+
+  it('escapes a malicious slug in the HTML body', async () => {
+    const malicious: Lead = {
+      ...propertyLead,
+      property: {
+        slug: 'a<b>c',
+        title: 'Title',
+        url: '/properties/a',
+      },
+    }
+    await emailAdapter.deliver({ lead: malicious })
+    const options = mockSendMail.mock.calls[0]?.[0] as { html: string }
+    // Slug 'a<b>c' fails the slug regex at the schema level — the
+    // service never sees a malformed slug. But defensive escaping
+    // is still applied in case a future schema relaxes the
+    // regex.
+    expect(options.html).not.toContain('a<b>c')
+  })
+})

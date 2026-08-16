@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Lead } from '../../../app/features/leads/types/lead.types'
+import type { Lead, PropertyReference } from '../../../app/features/leads/types/lead.types'
 import { leadService } from './lead.service'
 
 /**
@@ -560,6 +560,279 @@ describe('leadService.submit — delivery mapping', () => {
       { requestKey: freshKey('unsup'), fallbackLocale: 'en' },
     )
     expect(result).toEqual({ status: 'delivery' })
+  })
+})
+
+/**
+ * Property inquiry branch — `propertyContext`.
+ *
+ * The endpoint looks up the property server-side via the catalog
+ * and passes a verified `PropertyReference` to the service. The
+ * service stamps the lead with `source: 'property_inquiry'` and
+ * the `property` field; client-supplied title, price, or
+ * location are NEVER trusted (the endpoint produces the
+ * reference, not the client).
+ */
+describe('leadService.submit — property inquiry context', () => {
+  const propertyContext: PropertyReference = {
+    slug: 'modern-hillside-villa',
+    title: 'Modern Hillside Villa',
+    url: '/properties/modern-hillside-villa',
+  }
+
+  /**
+   * Body for a property-inquiry submission: `validLead` (which
+   * has no `property` block) plus the property slug block. With
+   * the Task 101B contract, the source is derived from the body's
+   * `property` field, so the body MUST carry the slug for the
+   * source to be `property_inquiry`.
+   */
+  const validPropertyBody = {
+    ...validLead,
+    property: { slug: propertyContext.slug },
+  }
+
+  beforeEach(() => {
+    mockAdapter.deliver.mockResolvedValue({ ok: true })
+  })
+
+  it('stamps source "property_inquiry" when the body carries property.slug and a verified propertyContext is supplied', async () => {
+    // The happy path: the body carries property.slug AND the
+    // canonical lookup succeeded (propertyContext is defined).
+    // The lead is stamped with source: 'property_inquiry' AND
+    // the property reference.
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    const result = await leadService.submit(
+      { body: validPropertyBody, propertyContext },
+      { requestKey: freshKey('pi-source'), fallbackLocale: 'en' },
+    )
+    expect(result.status).toBe('ok')
+    expect(captured?.source).toBe('property_inquiry')
+    expect(captured?.property).toEqual(propertyContext)
+  })
+
+  it('stamps the verified property reference on the lead', async () => {
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    await leadService.submit(
+      { body: validPropertyBody, propertyContext },
+      { requestKey: freshKey('pi-ref'), fallbackLocale: 'en' },
+    )
+    expect(captured?.property).toEqual(propertyContext)
+  })
+
+  it('does not validate the body against the property schema (the endpoint already did)', async () => {
+    // The service trusts the body has been schema-validated by
+    // the endpoint, but it still runs the same schema as a
+    // safety net. The property block is optional in the schema,
+    // so a body without a property block is valid.
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    await leadService.submit(
+      { body: validPropertyBody, propertyContext },
+      { requestKey: freshKey('pi-body'), fallbackLocale: 'en' },
+    )
+    expect(captured?.source).toBe('property_inquiry')
+    expect(captured?.property).toEqual(propertyContext)
+  })
+
+  it('stamps source "contact" when the body has no property block (general contact form path unchanged)', async () => {
+    // Task 101B: source is derived from the body, not from
+    // propertyContext. A body without property.slug is a
+    // general contact submission — the source is 'contact'.
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    await leadService.submit(
+      { body: validLead },
+      { requestKey: freshKey('contact-source'), fallbackLocale: 'en' },
+    )
+    expect(captured?.source).toBe('contact')
+    expect(captured?.property).toBeUndefined()
+  })
+
+  it('preserves source "property_inquiry" when the body carries property.slug but the lookup returned undefined (soft failure: slug not in catalog)', async () => {
+    // Task 101B regression: the source is preserved
+    // independently of whether the catalog lookup
+    // succeeded. A slug that does not match any catalog
+    // record produces a lead with source: 'property_inquiry'
+    // but NO `property` field. The agency can filter the
+    // inquiry source from general contact submissions even
+    // when the slug is unknown to the server.
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    const result = await leadService.submit(
+      {
+        body: { ...validLead, property: { slug: 'removed-listing' } },
+        // No propertyContext — soft failure (slug not in
+        // catalog).
+      },
+      { requestKey: freshKey('pi-soft-missing'), fallbackLocale: 'en' },
+    )
+    expect(result.status).toBe('ok')
+    expect(captured?.source).toBe('property_inquiry')
+    // The property field is omitted (no verified reference).
+    expect(captured).not.toHaveProperty('property')
+  })
+
+  it('preserves source "property_inquiry" when the body carries property.slug and the propertyContext is undefined (soft failure: lookup error)', async () => {
+    // Task 101B regression: the source is preserved when the
+    // catalog lookup throws (transient api failure, timeout,
+    // DNS error). The endpoint catches the throw and passes
+    // `propertyContext: undefined`. The service stamps
+    // source: 'property_inquiry' from the body's property
+    // block and omits the property field.
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    const result = await leadService.submit(
+      {
+        body: { ...validLead, property: { slug: 'any-slug' } },
+        // No propertyContext — the endpoint's lookup threw
+        // and was caught, returning undefined.
+      },
+      { requestKey: freshKey('pi-soft-error'), fallbackLocale: 'en' },
+    )
+    expect(result.status).toBe('ok')
+    expect(captured?.source).toBe('property_inquiry')
+    expect(captured).not.toHaveProperty('property')
+  })
+
+  it('omits lead.property when the body has no property block even if propertyContext is supplied (source/property invariant — Task 101C)', async () => {
+    // Defensive + invariant: the body is the source of truth
+    // for the user's intent, AND a `contact` lead MUST NOT
+    // carry property metadata. A hypothetical endpoint that
+    // supplies `propertyContext` without a matching body
+    // `property` block does NOT turn a general contact
+    // submission into a hybrid that confuses the agency's
+    // downstream filters. The endpoint contract today always
+    // derives `propertyContext` from the body's `property.slug`,
+    // so this scenario cannot happen in production — but the
+    // service enforces the invariant defensively:
+    // `lead.property` is stamped ONLY when both
+    // `isPropertyInquiry` AND `propertyContext` are present.
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    await leadService.submit(
+      {
+        body: validLead, // No property block.
+        propertyContext, // ← would be unusual; defensively DROPPED.
+      },
+      { requestKey: freshKey('contact-invariant'), fallbackLocale: 'en' },
+    )
+    // Source is derived from the body (no property → contact).
+    expect(captured?.source).toBe('contact')
+    // The property field is OMITTED — the source/property
+    // invariant pins this: a `contact` lead can never carry
+    // property metadata, even if a defensive `propertyContext`
+    // was supplied. The agency's downstream filters never see
+    // a hybrid `contact` lead with `property`.
+    expect(captured).not.toHaveProperty('property')
+  })
+
+  it('does not trust a client-supplied source field (defense-in-depth)', async () => {
+    // The schema's z.object(...) strips unknown keys, so a
+    // body with `source: 'contact'` still parses to
+    // LeadInputParsed without a `source` field. Even if a
+    // future schema relaxation passes the value through,
+    // the service derives source from the body's intent
+    // (property.slug present or not), NOT from the body's
+    // source field. The server is the sole authority for
+    // lead.source.
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    await leadService.submit(
+      {
+        body: {
+          ...validLead,
+          property: { slug: 'modern-hillside-villa' },
+          // User tries to forge: "this is a general contact".
+          source: 'contact',
+        },
+        propertyContext,
+      },
+      { requestKey: freshKey('pi-forged-source'), fallbackLocale: 'en' },
+    )
+    // The body has property.slug → source is property_inquiry.
+    expect(captured?.source).toBe('property_inquiry')
+  })
+
+  it('triggers the honeypot path even when the body carries property.slug', async () => {
+    // A property inquiry with a non-empty honeypot is still
+    // silently dropped — the bot detection is independent of
+    // the property intent.
+    mockAdapter.deliver.mockClear()
+    const result = await leadService.submit(
+      {
+        body: { ...validPropertyBody, website: 'http://bot.example.com' },
+        propertyContext,
+      },
+      { requestKey: freshKey('pi-honey'), fallbackLocale: 'en' },
+    )
+    expect(result).toEqual({ status: 'honeypot' })
+    expect(mockAdapter.deliver).not.toHaveBeenCalled()
+  })
+
+  it('rate-limits property inquiries under the same per-process budget as contact submissions', async () => {
+    // The rate limiter is shared across both sources. Five
+    // accepted property inquiries within the window succeed;
+    // the sixth is rejected with status "rate_limited".
+    mockAdapter.deliver.mockResolvedValue({ ok: true })
+    const key = freshKey('pi-rl')
+    for (let i = 0; i < 5; i++) {
+      const r = await leadService.submit(
+        { body: validPropertyBody, propertyContext },
+        { requestKey: key, fallbackLocale: 'en' },
+      )
+      expect(r.status).toBe('ok')
+    }
+    const sixth = await leadService.submit(
+      { body: validPropertyBody, propertyContext },
+      { requestKey: key, fallbackLocale: 'en' },
+    )
+    expect(sixth).toEqual({ status: 'rate_limited' })
+  })
+
+  it('omits the property field from the lead when no propertyContext is supplied (matches existing JSON shape)', async () => {
+    // When the body has no property block (a general contact
+    // submission), the lead is stamped with source: 'contact'
+    // and no property field. The field is omitted (not set to
+    // null) so the JSON shape matches the existing adapter
+    // contract.
+    let captured: Lead | null = null
+    mockAdapter.deliver.mockImplementation(async (input) => {
+      captured = input.lead
+      return { ok: true }
+    })
+    await leadService.submit(
+      { body: validLead },
+      { requestKey: freshKey('contact-no-prop'), fallbackLocale: 'en' },
+    )
+    expect(captured?.source).toBe('contact')
+    expect(captured).not.toHaveProperty('property')
   })
 })
 

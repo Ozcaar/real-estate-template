@@ -246,6 +246,140 @@ describe('POST /api/contact — headers and response shape', () => {
   })
 })
 
+/**
+ * Property inquiry branch — the endpoint looks up the property
+ * server-side via `loadPropertiesServer` and `propertiesService.getBySlug`,
+ * then forwards a verified `PropertyReference` (or undefined) to
+ * the service. Client-supplied title / price / other metadata are
+ * NEVER trusted as authoritative; the reference is built from the
+ * catalog record.
+ */
+
+// Mock the server-only property loader + the pure helper at
+// module scope (vitest hoists `vi.mock` calls above the import
+// statements). The `mockLoadPropertiesServer` and `mockGetBySlug`
+// references are resolved at call time, not at hoist time, so
+// `mockReset()` + `mockResolvedValue()` per test configure the
+// hoisted functions correctly.
+const mockLoadPropertiesServer = vi.fn()
+const mockGetBySlug = vi.fn()
+
+vi.mock('../utils/properties', () => ({
+  loadPropertiesServer: (...args: unknown[]) => mockLoadPropertiesServer(...args),
+}))
+
+vi.mock('../../app/features/properties/services/properties.service', () => ({
+  propertiesService: {
+    getBySlug: (...args: unknown[]) => mockGetBySlug(...args),
+    getAll: vi.fn(),
+    getRelated: vi.fn(),
+    getFeatured: vi.fn(),
+    filter: vi.fn(),
+    loadAll: vi.fn(),
+  },
+}))
+
+describe('POST /api/contact — property inquiry context', () => {
+  beforeEach(() => {
+    submit.mockReset()
+    mockLoadPropertiesServer.mockReset()
+    mockGetBySlug.mockReset()
+  })
+
+  it('forwards a verified PropertyReference when the slug matches a catalog record', async () => {
+    // The endpoint builds a PropertyReference from the catalog
+    // record — the title and URL come from the server-side
+    // lookup, never from the client body.
+    mockLoadPropertiesServer.mockResolvedValue([
+      { slug: 'modern-hillside-villa', title: 'Modern Hillside Villa', price: 1, currency: 'USD' },
+    ])
+    mockGetBySlug.mockReturnValue({ slug: 'modern-hillside-villa', title: 'Modern Hillside Villa', price: 1, currency: 'USD' })
+    submit.mockResolvedValue({ status: 'ok', id: '00000000-0000-0000-0000-000000000010' })
+
+    const r = await post({
+      body: POST({
+        ...VALID,
+        property: { slug: 'modern-hillside-villa', title: 'FORGED TITLE', price: 999999 },
+      }),
+    })
+    expect(r.status).toBe(200)
+    expect(submit).toHaveBeenCalledTimes(1)
+    const [input] = submit.mock.calls[0] as [{ body: unknown, propertyContext: { slug: string, title: string, url: string } | undefined }]
+    // The endpoint read the slug from the body but built the
+    // reference from the catalog — the client-supplied title
+    // "FORGED TITLE" and price 999999 did NOT leak into the
+    // propertyContext.
+    expect(input.propertyContext).toEqual({
+      slug: 'modern-hillside-villa',
+      title: 'Modern Hillside Villa',
+      url: '/properties/modern-hillside-villa',
+    })
+  })
+
+  it('forwards undefined when the slug does not match any catalog record', async () => {
+    // A stale page submits a slug that was removed from the
+    // catalog. The endpoint accepts the submission (the schema
+    // validates the format) but does not stamp a property
+    // reference; the lead is delivered as a general contact
+    // submission.
+    mockLoadPropertiesServer.mockResolvedValue([])
+    mockGetBySlug.mockReturnValue(undefined)
+    submit.mockResolvedValue({ status: 'ok', id: '00000000-0000-0000-0000-000000000011' })
+
+    const r = await post({
+      body: POST({ ...VALID, property: { slug: 'removed-listing' } }),
+    })
+    expect(r.status).toBe(200)
+    const [input] = submit.mock.calls[0] as [{ propertyContext: unknown }]
+    expect(input.propertyContext).toBeUndefined()
+  })
+
+  it('forwards undefined when the body has no property block', async () => {
+    // The general contact form on /contact sends no property
+    // block; the endpoint must not call the loader or pass a
+    // propertyContext.
+    submit.mockResolvedValue({ status: 'ok', id: '00000000-0000-0000-0000-000000000012' })
+
+    const r = await post({ body: POST(VALID) })
+    expect(r.status).toBe(200)
+    expect(mockLoadPropertiesServer).not.toHaveBeenCalled()
+    const [input] = submit.mock.calls[0] as [{ propertyContext: unknown }]
+    expect(input.propertyContext).toBeUndefined()
+  })
+
+  it('forwards undefined when the property lookup throws (transient api failure)', async () => {
+    // A misconfigured api or transient upstream failure must
+    // NOT take down the contact form. The endpoint catches the
+    // error and stamps the lead without a property reference;
+    // the agency's webhook / email payload simply lacks the
+    // `property` field.
+    mockLoadPropertiesServer.mockRejectedValue(new Error('upstream 503'))
+    submit.mockResolvedValue({ status: 'ok', id: '00000000-0000-0000-0000-000000000013' })
+
+    const r = await post({
+      body: POST({ ...VALID, property: { slug: 'modern-hillside-villa' } }),
+    })
+    expect(r.status).toBe(200)
+    const [input] = submit.mock.calls[0] as [{ propertyContext: unknown }]
+    expect(input.propertyContext).toBeUndefined()
+  })
+
+  it('does not call the property lookup when the property block has no slug', async () => {
+    // Defensive: a malformed body with `property: {}` (no slug)
+    // must not trigger a lookup. The schema rejects this, but
+    // the endpoint's defensive extraction is the trust boundary.
+    submit.mockResolvedValue({ status: 'ok', id: '00000000-0000-0000-0000-000000000014' })
+
+    const r = await post({
+      body: POST({ ...VALID, property: {} }),
+    })
+    expect(r.status).toBe(200)
+    expect(mockLoadPropertiesServer).not.toHaveBeenCalled()
+    const [input] = submit.mock.calls[0] as [{ propertyContext: unknown }]
+    expect(input.propertyContext).toBeUndefined()
+  })
+})
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
