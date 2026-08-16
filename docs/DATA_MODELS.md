@@ -566,7 +566,70 @@ export function paginate<T>(items: readonly T[], requestedPage: number, pageSize
 
 Pure helper. Slices a list into a single page. The input array is never mutated. An empty input returns `{ items: [], page: 1, totalItems: 0, totalPages: 0 }`. `pageSize < 1` is coerced to `1`. The effective page is clamped to `[1, max(1, totalPages)]`.
 
-## 10. Model Rules
+## 10. Data-Source Boundary (CMS / API)
+
+The properties feature is the first consumer of the `DataSourceAdapter<T>` boundary. The boundary is provider-agnostic: the page layer calls `propertiesService.loadAll()` and the service does not know whether the data came from the bundled static catalog, an HTTP API, or a CMS. Switching between sources is a deployment-time env-var change.
+
+### 10.1 Kinds
+
+```ts
+type DataSourceKind = 'static' | 'api' | 'cms'
+```
+
+| Kind | Implementation | Shipped? |
+| --- | --- | --- |
+| `'static'` | `createStaticDataSource<T>({ data, schema? })` — bundles a TypeScript array, validates once at construction. | yes (the bundled default) |
+| `'api'` | `createApiDataSource<T>({ endpoint, schema?, timeoutMs? })` — generic HTTP/JSON adapter; uses the platform `fetch` with an `AbortController`-based timeout. | yes (v1.1.0 M17) |
+| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20) |
+
+### 10.2 Configuration (properties only)
+
+The selection is driven by three server-only env vars read inside `server/utils/properties.ts` (the canonical Nuxt 4 server-only location):
+
+```sh
+NUXT_PROPERTIES_DATA_SOURCE=static|api|cms
+NUXT_PROPERTIES_API_URL=https://api.example.test/properties   # when kind=api
+NUXT_PROPERTIES_API_TIMEOUT_MS=10000                          # optional, default 10 000 ms
+NUXT_PROPERTIES_CMS_URL=https://cms.example.test/properties   # when kind=cms
+NUXT_PROPERTIES_CMS_TIMEOUT_MS=10000                          # optional, default 10 000 ms
+```
+
+The env vars are intentionally NOT declared in `nuxt.config.ts → runtimeConfig`. Reading them through `process.env` keeps the adapter modules and the three `NUXT_PROPERTIES_*` env-var names on the server-only side of the bundle; they cannot reach the client output by code organization (the loader is in `server/utils/`).
+
+### 10.3 Validation boundary
+
+Every source path — static, api, cms — passes the resolved data through `propertyListSchema`. A malformed record is a hard error at the boundary; the loader does NOT silently fall back to the bundled static catalog when a remote source misbehaves. The five boundary error classes:
+
+- `DataSourceMissingConfigError` — `kind + field`. Raised at construction when the configured kind has a missing required env var (`NUXT_PROPERTIES_API_URL`, `NUXT_PROPERTIES_CMS_URL`).
+- `DataSourceHttpError` — non-2xx response. Carries status + endpoint URL.
+- `DataSourceTimeoutError` — request exceeded the configured timeout. Carries endpoint + `timeoutMs`; the original `AbortError` is NOT chained.
+- `DataSourceInvalidPayloadError` — 2xx response that fails Zod validation. Carries endpoint + underlying `ZodError` as `cause`.
+- `DataSourceNotImplementedError` — selected kind has no registered adapter. No longer raised for `'cms'` (M20 ships the adapter); still raised for unknown kinds (`'graphql'`, `'sanity'`, case variants like `'STATIC'`).
+
+### 10.4 CMS driver boundary (v1.1.0 M20)
+
+The CMS path splits provider-specific knowledge from the data-source contract:
+
+```ts
+// app/core/data-source/cms-driver.ts
+interface CmsDriver<T> {
+  readonly id: string
+  dispatch(): Promise<readonly T[]>   // load + map
+}
+
+// app/core/data-source/adapters/http-json-cms-driver.ts (one concrete provider)
+createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? }): CmsDriver<T>
+```
+
+The contract is "load + map". Provider-specific HTTP calls, pagination, auth, and per-record mapping all live inside the driver's `dispatch()` method; the adapter (`createCmsDataSource`) only validates the result with the supplied boundary Zod schema and memoise the array. The simple HTTP/JSON provider performs identity mapping — it expects the upstream endpoint to return records already in the `T` shape (or in a shape the boundary schema accepts after no transformation).
+
+A future Sanity / Contentful / Strapi driver would carry a per-record `mapRecord` step that converts the provider's native document shape into `Property`. The contract stays the same; only the driver changes. CMS preview mode, draft / publish workflow, auth tokens (Sanity read tokens, Contentful CDA tokens, etc.), webhook-driven revalidation, and retry / cache layers are intentionally deferred — the cms path is a thin transport + boundary validation, matching the api path's documented constraints.
+
+### 10.5 Cache and concurrency
+
+The loader does NOT retain a successful remote result between calls. Each call to `loadPropertiesServer()` constructs a fresh adapter (static, api, or cms) and awaits its `loadAll()`; concurrent calls share the in-flight `pending` promise, and the `pending` reference is cleared on settle (success or failure) so the next call performs a new fetch. The cms path follows the same no-permanent-cache contract as the api path.
+
+## 11. Model Rules
 
 * Use TypeScript interfaces for main entities.
 * Use union types for fixed values.

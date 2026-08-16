@@ -1,5 +1,7 @@
 import { createApiDataSource } from '~/core/data-source/adapters/api-adapter'
+import { createHttpJsonCmsDriver } from '~/core/data-source/adapters/http-json-cms-driver'
 import { createStaticDataSource } from '~/core/data-source/adapters/static-adapter'
+import { createCmsDataSource } from '~/core/data-source/cms-driver'
 import {
   DataSourceMissingConfigError,
   DataSourceNotImplementedError,
@@ -89,12 +91,11 @@ import type { Property } from '~/features/properties/types/property.types'
  *    {@link DataSourceMissingConfigError} at the first
  *    loader call so the misconfiguration is fixed at server
  *    startup rather than at first request.
- *  - `NUXT_PROPERTIES_DATA_SOURCE=cms` raises
- *    {@link DataSourceNotImplementedError} at the first
- *    loader call: the contract defines `'cms'` but no CMS
- *    adapter ships in v1.x. A rebrand that asks for `'cms'`
- *    fails loudly rather than silently shipping the bundled
- *    static data.
+ *  - `NUXT_PROPERTIES_DATA_SOURCE=cms` with an empty /
+ *    whitespace `NUXT_PROPERTIES_CMS_URL` raises
+ *    {@link DataSourceMissingConfigError}; with a non-empty
+ *    endpoint, the loader constructs the CMS adapter (the
+ *    simple HTTP/JSON driver + `propertyListSchema` boundary).
  *  - Any other non-empty value (e.g. `'graphql'`, `'STATIC'`,
  *    `'Api'`, `'sanity'`) raises
  *    {@link DataSourceNotImplementedError} naming the
@@ -102,13 +103,13 @@ import type { Property } from '~/features/properties/types/property.types'
  *    {@link isDataSourceKind} is the source of truth for the
  *    accepted set; case variants and unknown strings are
  *    misconfigurations, not silently-coerced defaults.
- *  - A non-integer `NUXT_PROPERTIES_API_TIMEOUT_MS` falls
- *    back to the documented default (10 000 ms). The
- *    fallback is silent (no log line) — a malformed timeout
- *    is a deployment misconfiguration, not an
- *    operator-facing condition.
- *  - The remote API returning a non-2xx response, a JSON
- *    parse failure, a timeout, or a payload that fails
+ *  - A non-integer `NUXT_PROPERTIES_API_TIMEOUT_MS` or
+ *    `NUXT_PROPERTIES_CMS_TIMEOUT_MS` falls back to the
+ *    documented default (10 000 ms). The fallback is silent
+ *    (no log line) — a malformed timeout is a deployment
+ *    misconfiguration, not an operator-facing condition.
+ *  - The remote API / CMS returning a non-2xx response, a
+ *    JSON parse failure, a timeout, or a payload that fails
  *    {@link propertyListSchema} re-throws the matching
  *    `DataSourceHttpError` / `DataSourceTimeoutError` /
  *    `DataSourceInvalidPayloadError` from the loader's
@@ -121,14 +122,17 @@ import type { Property } from '~/features/properties/types/property.types'
 const PROP_ENV_KIND = 'NUXT_PROPERTIES_DATA_SOURCE'
 const PROP_ENV_ENDPOINT = 'NUXT_PROPERTIES_API_URL'
 const PROP_ENV_TIMEOUT_MS = 'NUXT_PROPERTIES_API_TIMEOUT_MS'
+const PROP_ENV_CMS_URL = 'NUXT_PROPERTIES_CMS_URL'
+const PROP_ENV_CMS_TIMEOUT_MS = 'NUXT_PROPERTIES_CMS_TIMEOUT_MS'
 
 /**
- * The default request timeout for the api adapter (10
- * seconds). Matches the default inside `createApiDataSource`
- * so a deployment that omits the env var still has a
- * documented upper bound.
+ * The default request timeout for the api + cms adapters
+ * (10 seconds). Matches the default inside `createApiDataSource`
+ * and `createHttpJsonCmsDriver` so a deployment that omits
+ * the env var still has a documented upper bound.
  */
 const DEFAULT_API_TIMEOUT_MS = 10_000
+const DEFAULT_CMS_TIMEOUT_MS = 10_000
 
 /**
  * Read an env var from `process.env`, guarded by
@@ -145,15 +149,15 @@ function readEnv(name: string): string {
  * The kinds the loader ships with.
  *
  * `'static'` is the bundled default; `'api'` is the real
- * HTTP adapter. `'cms'` is intentionally NOT in the list:
- * the contract is defined but no CMS adapter ships in v1.x.
- * A rebrand that asks for `'cms'` (or any other unknown
- * value such as `'graphql'` or `'STATIC'`) fails loudly via
- * {@link DataSourceNotImplementedError} so the
+ * HTTP adapter; `'cms'` is the simple HTTP/JSON CMS
+ * provider adapter (Task 103). Anything else (e.g.
+ * `'graphql'`, `'STATIC'`, `'sanity'`) is rejected at
+ * construction via the `isDataSourceKind` type guard and
+ * surfaced as {@link DataSourceNotImplementedError} so the
  * misconfiguration is fixed at server startup rather than
  * silently shipping the bundled static data.
  */
-const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api'] as const
+const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api', 'cms'] as const
 
 /**
  * Construct the data-source adapter the loader should use.
@@ -163,9 +167,11 @@ const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api'] as const
  *    adapter.
  *  - `NUXT_PROPERTIES_DATA_SOURCE=api` + a non-empty
  *    `NUXT_PROPERTIES_API_URL` → the api adapter.
- *  - `NUXT_PROPERTIES_DATA_SOURCE=cms` → raises
- *    {@link DataSourceNotImplementedError} (the contract
- *    exists but no CMS adapter ships in v1.x).
+ *  - `NUXT_PROPERTIES_DATA_SOURCE=cms` + a non-empty
+ *    `NUXT_PROPERTIES_CMS_URL` → the CMS adapter (the
+ *    simple HTTP/JSON driver + `propertyListSchema` boundary).
+ *  - `NUXT_PROPERTIES_DATA_SOURCE=cms` + an empty /
+ *    whitespace endpoint → {@link DataSourceMissingConfigError}.
  *  - Any other non-empty value (e.g. `'graphql'`,
  *    `'STATIC'`, `'API'`) → raises
  *    {@link DataSourceNotImplementedError} naming the
@@ -174,10 +180,11 @@ const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api'] as const
  *    the accepted set; everything else is a misconfiguration
  *    that must be fixed, not silently coerced to `'static'`.
  *
- * The api-adapter module is imported here only — the
- * `server/utils/` location keeps the import server-only by
+ * The api / cms driver modules are imported here only — the
+ * `server/utils/` location keeps the imports server-only by
  * code organization. Exposed for the unit tests that
- * exercise the static default and the api-configured branch.
+ * exercise the static default, the api-configured branch,
+ * and the cms-configured branch.
  */
 export function createPropertiesServerAdapter(): DataSourceAdapter<Property> {
   const rawKind = readEnv(PROP_ENV_KIND)
@@ -195,8 +202,9 @@ export function createPropertiesServerAdapter(): DataSourceAdapter<Property> {
 
   // Use the existing type guard to dispatch on a known
   // kind. The guard rejects case variants (`'STATIC'`,
-  // `'Api'`) and unknown strings (`'graphql'`, `'cms'`)
-  // uniformly; we then dispatch on the validated value.
+  // `'Api'`) and unknown strings (`'graphql'`,
+  // `'sanity'`) uniformly; we then dispatch on the
+  // validated value.
   if (!isDataSourceKind(rawKind)) {
     // The value is non-empty but is not a documented kind.
     // The type guard's narrowed type is `DataSourceKind`,
@@ -212,12 +220,25 @@ export function createPropertiesServerAdapter(): DataSourceAdapter<Property> {
   }
 
   if (rawKind === 'cms') {
-    // The contract defines `'cms'`, but no CMS adapter
-    // ships in v1.x. Throw the existing not-implemented
-    // error so a rebrand that asks for `'cms'` fails
-    // loudly instead of silently falling back to the
-    // bundled static data.
-    throw new DataSourceNotImplementedError('cms', SHIPPED_KINDS)
+    const endpoint = readEnv(PROP_ENV_CMS_URL)
+    if (endpoint.trim() === '') {
+      throw new DataSourceMissingConfigError('cms', PROP_ENV_CMS_URL)
+    }
+    const timeoutRaw = readEnv(PROP_ENV_CMS_TIMEOUT_MS)
+    const timeoutMs = timeoutRaw === ''
+      ? DEFAULT_CMS_TIMEOUT_MS
+      : Number.parseInt(timeoutRaw, 10) || DEFAULT_CMS_TIMEOUT_MS
+    const source = `cms:${PROP_ENV_CMS_URL}`
+    const driver = createHttpJsonCmsDriver<Property>({
+      endpoint,
+      source,
+      timeoutMs,
+    })
+    return createCmsDataSource<Property>({
+      driver,
+      schema: propertyListSchema,
+      source,
+    })
   }
 
   if (rawKind === 'api') {
