@@ -4,37 +4,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeH3Event } from '../../tests/helpers/h3-event'
 import { _resetPropertiesServerCacheForTests } from '../utils/properties'
 
-// Mock the `#imports` module so `useRuntimeConfig` returns a
-// public site URL (the default stub returns `{}`, which makes
-// `config.public` undefined and crashes the route handler).
-vi.mock('#imports', async () => {
-  const stub = await import('../../tests/stubs/imports')
-  return {
-    ...stub,
-    useRuntimeConfig: () => ({
-      public: {
-        siteUrl: process.env[ENV_SITE_URL] || '',
-      },
-    }),
-  }
-})
-
 /**
  * Tests for the `GET /sitemap.xml` Nitro route.
  *
- * The route is the dynamic sitemap. The route handler is a
- * server-only module: it must not import app composables
- * (e.g. `useState`, `useSiteConfig`) or code that depends on
- * the Nuxt app context. Property detail URLs are sourced from
- * the server-only property loader at
- * `server/utils/properties.ts` (NOT the property service, which
- * is a client-bundled module that calls the same-origin Nitro
- * endpoint at `/api/properties` over `$fetch`).
+ * The route is the dynamic tenant-aware sitemap (Task 102).
+ * The route handler is a server-only module: it must not
+ * import app composables (e.g. `useState`, `useSiteConfig`)
+ * or code that depends on the Nuxt app context. Property
+ * detail URLs are sourced from the server-only property
+ * loader at `server/utils/properties.ts` (NOT the property
+ * service, which is a client-bundled module that calls the
+ * same-origin Nitro endpoint at `/api/properties` over
+ * `$fetch`).
  *
  * The route's contract:
  *
- *  - Reads `NUXT_PUBLIC_SITE_URL` (the documented public site
- *    URL) and normalizes the trailing slash. When the value is
+ *  - Calls `resolveTenantContext` from `server/utils/tenant-context.ts`
+ *    per request, using the `host` (or `x-forwarded-host`)
+ *    header to resolve the active tenant.
+ *  - Reads the per-tenant canonical site URL from the resolved
+ *    tenant context (per-tenant env-var override with fallback
+ *    to the global `NUXT_PUBLIC_SITE_URL`). When the value is
  *    empty, the route returns HTTP 503 with a plain-text hint
  *    so a misconfigured deployment is obvious in crawlers'
  *    logs.
@@ -51,14 +41,38 @@ vi.mock('#imports', async () => {
  * detail in `server/utils/properties.test.ts`. This file covers
  * the route's source-level contract (the import surface, the
  * boundary with the app layer) and a few runtime smoke tests
- * (503 when `siteUrl` is empty, 200 with the expected URLs when
- * `siteUrl` is set).
+ * (503 when the resolved `siteUrl` is empty, 200 with the
+ * expected URLs when `siteUrl` is set, tenant-aware per-tenant
+ * URL resolution).
  */
+
+// Mock `#imports` so `useRuntimeConfig` returns a configurable
+// public site URL (the default stub returns `{}`, which makes
+// `config.public` undefined and crashes the resolver). The
+// mock is hoisted; the test body mutates `mockReturnValue` per
+// case via `setGlobalSiteUrl`.
+vi.mock('#imports', async () => {
+  const stub = await import('../../tests/stubs/imports')
+  return {
+    ...stub,
+    useRuntimeConfig: vi.fn(),
+  }
+})
+
+async function setGlobalSiteUrl(url: string | undefined) {
+  const { useRuntimeConfig } = await import('#imports')
+  vi.mocked(useRuntimeConfig).mockReturnValue({
+    public: {
+      siteUrl: url ?? '',
+    },
+  })
+}
 
 const ENV_KIND = 'NUXT_PROPERTIES_DATA_SOURCE'
 const ENV_ENDPOINT = 'NUXT_PROPERTIES_API_URL'
 const ENV_TIMEOUT = 'NUXT_PROPERTIES_API_TIMEOUT_MS'
-const ENV_SITE_URL = 'NUXT_PUBLIC_SITE_URL'
+const ENV_GLOBAL = 'NUXT_PUBLIC_SITE_URL'
+const ENV_ACME = 'NUXT_PUBLIC_SITE_URL__ACME'
 
 const originalEnv = { ...process.env }
 
@@ -66,12 +80,13 @@ beforeEach(() => {
   Reflect.deleteProperty(process.env, ENV_KIND)
   Reflect.deleteProperty(process.env, ENV_ENDPOINT)
   Reflect.deleteProperty(process.env, ENV_TIMEOUT)
-  process.env[ENV_SITE_URL] = 'https://example.test'
+  Reflect.deleteProperty(process.env, ENV_GLOBAL)
+  Reflect.deleteProperty(process.env, ENV_ACME)
 })
 
 afterEach(() => {
   _resetPropertiesServerCacheForTests()
-  for (const key of [ENV_KIND, ENV_ENDPOINT, ENV_TIMEOUT, ENV_SITE_URL]) {
+  for (const key of [ENV_KIND, ENV_ENDPOINT, ENV_TIMEOUT, ENV_GLOBAL, ENV_ACME]) {
     Reflect.deleteProperty(process.env, key)
   }
   for (const [key, value] of Object.entries(originalEnv)) {
@@ -152,20 +167,29 @@ describe('server/routes/sitemap.xml.ts — server-only Nitro route', () => {
       expect(source).not.toMatch(/NUXT_PROPERTIES_API_TIMEOUT_MS/)
     })
 
-    it('imports the server-only loader directly', async () => {
+    it('imports the server-only loader and tenant-context resolver directly', async () => {
       const source = readFileSync(
         join(__dirname, 'sitemap.xml.ts'),
         'utf8',
       )
-      expect(source).toMatch(/server\/utils\/properties/)
+      // The loader is imported via a relative path
+      // (`../utils/properties`); the tenant resolver is imported
+      // via `../utils/tenant-context`. Both modules live in
+      // `server/utils/` (the canonical Nuxt 4 server-only
+      // location).
+      expect(source).toMatch(/utils\/properties/)
       expect(source).toMatch(/loadPropertiesServer/)
+      expect(source).toMatch(/utils\/tenant-context/)
+      expect(source).toMatch(/resolveTenantContext/)
     })
   })
 
   describe('runtime (handler)', () => {
-    it('returns 503 with a documented hint when NUXT_PUBLIC_SITE_URL is empty', async () => {
-      Reflect.deleteProperty(process.env, ENV_SITE_URL)
-      const { event, getResponse } = makeH3Event({ method: 'GET' })
+    it('returns 503 with a documented hint when neither NUXT_PUBLIC_SITE_URL nor a per-tenant override is set', async () => {
+      Reflect.deleteProperty(process.env, ENV_GLOBAL)
+      Reflect.deleteProperty(process.env, ENV_ACME)
+      await setGlobalSiteUrl(undefined)
+      const { event, getResponse } = makeH3Event({ method: 'GET', headers: { host: 'unknown.example' } })
       const handler = await loadHandler()
       await handler(event)
       const response = getResponse()
@@ -173,8 +197,10 @@ describe('server/routes/sitemap.xml.ts — server-only Nitro route', () => {
       expect(response.headers['content-type']).toContain('text/plain')
     })
 
-    it('returns 200 with an XML urlset when NUXT_PUBLIC_SITE_URL is set', async () => {
-      const { event, getResponse } = makeH3Event({ method: 'GET' })
+    it('returns 200 with an XML urlset when NUXT_PUBLIC_SITE_URL is set (default tenant)', async () => {
+      process.env[ENV_GLOBAL] = 'https://example.test'
+      await setGlobalSiteUrl('https://example.test')
+      const { event, getResponse } = makeH3Event({ method: 'GET', headers: { host: 'unknown.example' } })
       const handler = await loadHandler()
       const body = await handler(event)
       const response = getResponse()
@@ -187,12 +213,14 @@ describe('server/routes/sitemap.xml.ts — server-only Nitro route', () => {
     })
 
     it('emits one URL per visible property from the server-only loader', async () => {
+      process.env[ENV_GLOBAL] = 'https://example.test'
+      await setGlobalSiteUrl('https://example.test')
       // The static default catalog (NUXT_PROPERTIES_DATA_SOURCE
       // unset) is the bundled `sampleProperties` array. The
       // sitemap iterates over the resolved list and emits one
       // URL per visible record; `status: 'hidden'` records are
       // excluded.
-      const { event } = makeH3Event({ method: 'GET' })
+      const { event } = makeH3Event({ method: 'GET', headers: { host: 'unknown.example' } })
       const handler = await loadHandler()
       const body = (await handler(event)) as string
       // The static catalog includes `modern-hillside-villa` and
@@ -202,6 +230,8 @@ describe('server/routes/sitemap.xml.ts — server-only Nitro route', () => {
     })
 
     it('emits the api-resolved URLs when the api source is configured', async () => {
+      process.env[ENV_GLOBAL] = 'https://example.test'
+      await setGlobalSiteUrl('https://example.test')
       // Mock the platform fetch so the api adapter's request
       // resolves with a known catalog that includes an
       // api-only slug (`api-only-property`) that is NOT in
@@ -232,10 +262,23 @@ describe('server/routes/sitemap.xml.ts — server-only Nitro route', () => {
         },
       ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
 
-      const { event } = makeH3Event({ method: 'GET' })
+      const { event } = makeH3Event({ method: 'GET', headers: { host: 'unknown.example' } })
       const handler = await loadHandler()
       const body = (await handler(event)) as string
       expect(body).toMatch(/<loc>https:\/\/example\.test\/properties\/api-only-property<\/loc>/)
+    })
+
+    it('honors x-forwarded-host (Task 102: tenant-aware resolver reads the request host)', async () => {
+      process.env[ENV_GLOBAL] = 'https://default.test'
+      await setGlobalSiteUrl('https://default.test')
+      const { event } = makeH3Event({
+        method: 'GET',
+        headers: { host: 'unknown.example', 'x-forwarded-host': 'unknown.example' },
+      })
+      const handler = await loadHandler()
+      const body = (await handler(event)) as string
+      // The default tenant resolves to the global site URL.
+      expect(body).toMatch(/<loc>https:\/\/default\.test\/<\/loc>/)
     })
   })
 })

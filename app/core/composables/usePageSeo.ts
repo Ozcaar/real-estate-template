@@ -39,8 +39,10 @@ export interface UsePageSeoOptions {
 
 export interface UsePageSeoResult {
   /**
-   * The normalized site URL (`runtimeConfig.public.siteUrl` with any
-   * trailing slash stripped). Empty string when not configured.
+   * The normalized site URL for the active tenant (Task 102),
+   * with any trailing slash stripped. Empty string when neither
+   * a per-tenant override (`NUXT_PUBLIC_SITE_URL__<TENANT_ID>`)
+   * nor the global env var (`NUXT_PUBLIC_SITE_URL`) is set.
    */
   siteUrl: ReturnType<typeof computed<string>>
   /**
@@ -89,11 +91,20 @@ export function usePageSeo(options: UsePageSeoOptions = {}): UsePageSeoResult {
   const config = useRuntimeConfig()
   const site = useSiteConfig()
 
-  // Strip any trailing slash so concatenation with `route.path` (which
-  // already starts with `/`) never produces `//`.
-  const siteUrl = computed(() =>
-    (config.public.siteUrl ?? '').replace(/\/+$/, ''),
-  )
+  // The per-tenant canonical site URL is seeded by the server-only
+  // tenant-resolution plugin (`app/plugins/tenancy.server.ts`) into
+  // `useState('site-config-url')`. The composable prefers the
+  // seeded value (Task 102) and falls back to the global
+  // `runtimeConfig.public.siteUrl` for the no-SSR / client-only
+  // navigation path. Strip any trailing slash so concatenation
+  // with `route.path` (which already starts with `/`) never
+  // produces `//`.
+  const tenantSiteUrl = useState<string>('site-config-url', () => '')
+  const siteUrl = computed(() => {
+    const tenant = (tenantSiteUrl.value ?? '').replace(/\/+$/, '')
+    if (tenant !== '') return tenant
+    return (config.public.siteUrl ?? '').replace(/\/+$/, '')
+  })
 
   function toAbsoluteUrl(path: string): string {
     if (!path) return path

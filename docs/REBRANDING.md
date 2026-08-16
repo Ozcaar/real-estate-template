@@ -12,6 +12,7 @@ Before starting, skim the relevant background documentation:
 * `docs/I18N.md` — translation rules and locale structure
 * `docs/DATA_MODELS.md` — TypeScript models for agency, theme, and content
 * `docs/ARCHITECTURE.md` — feature-first folder layout and ownership
+* `docs/MULTI_TENANT.md` — multi-tenant deployment (per-tenant hostname, canonical site URL, default locale). Only relevant if you host multiple agencies behind a single build; the single-tenant deployment (Option A below) needs nothing here.
 
 ## 2. Rebranding Checklist
 
@@ -291,9 +292,7 @@ The default ships with `blog: false` because the blog module is not part of the 
 
 ## 9. Step 7 — Configure the Production Site URL
 
-`usePageSeo()` reads `runtimeConfig.public.siteUrl` to build absolute canonical URLs and Open Graph URLs. In development the value is empty; in production it must be set or the canonical and `og:url` tags will be omitted.
-
-The template also serves `/sitemap.xml` and `/robots.txt` at runtime. Both are produced by Nitro server routes and read the same `NUXT_PUBLIC_SITE_URL` env var. With the env var empty, the sitemap returns 503 and `robots.txt` blocks all crawling. With the env var set, the sitemap lists every public route gated by `agency.modules.*` and excludes `status: 'hidden'` properties.
+`usePageSeo()` reads `useState('site-config-url')` (seeded by the server-only tenancy plugin) for the canonical site URL, falling back to `runtimeConfig.public.siteUrl` for the no-SSR / client-only navigation path. The Nitro server routes that produce `/sitemap.xml` and `/robots.txt` call the same per-tenant resolver (`server/utils/tenant-context.ts`) on every request. In development the value is empty; in production it must be set or the canonical and `og:url` tags will be omitted, the sitemap returns 503, and `robots.txt` blocks all crawling.
 
 Set the env var in the deployment environment:
 
@@ -301,9 +300,21 @@ Set the env var in the deployment environment:
 NUXT_PUBLIC_SITE_URL=https://www.acme-realestate.com
 ```
 
-The value is read by `nuxt.config.ts` at build time. Trailing slashes are stripped automatically by `usePageSeo()` and by the sitemap/robots routes.
+The value is read by `nuxt.config.ts` at build time. Trailing slashes are stripped automatically by the resolver, `usePageSeo()`, and the sitemap/robots routes.
 
 When `siteUrl` is empty, `canonicalUrl` returns `null` and pages skip emitting canonical and `og:url` tags — this is intentional for local development.
+
+### Multi-tenant override
+
+A deployment that hosts multiple agencies behind a single build (the v1.1.0 M16 multi-tenant foundation plus the M19 hardening) adds per-tenant env-var overrides:
+
+```bash
+NUXT_PUBLIC_SITE_URL=https://default.example.com
+NUXT_PUBLIC_SITE_URL__ACME=https://acme.example.com
+NUXT_PUBLIC_SITE_URL__COASTAL=https://coastal.example.com
+```
+
+The per-tenant override takes precedence over the global; the global is the fallback. The tenant id is uppercased and any non-alphanumeric character is replaced with `_` for the env-var name. See `docs/MULTI_TENANT.md` for the full deployment guide, the per-tenant operational checklist, and the deferred Task 105 (per-tenant lead delivery configuration).
 
 The template also emits **JSON-LD structured data** automatically on the pages that benefit from it. The home page, properties catalog, property detail, agents, and contact page each emit a schema.org payload as a `<script type="application/ld+json">` block. `NUXT_PUBLIC_SITE_URL` is required for absolute URLs in the structured data; with the env var empty, `@id`, `url`, and other absolute-URL fields are omitted (matching the canonical-URL fallback).
 

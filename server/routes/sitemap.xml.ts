@@ -1,7 +1,6 @@
-import { defineEventHandler, setResponseHeader, setResponseStatus } from 'h3'
-import { useRuntimeConfig } from '#imports'
-import { siteConfig } from '~/config/site.config'
+import { defineEventHandler, getRequestHeader, setResponseHeader, setResponseStatus } from 'h3'
 import { loadPropertiesServer } from '../utils/properties'
+import { resolveTenantContext } from '../utils/tenant-context'
 import { developmentsService } from '~/features/developments/services/developments.service'
 import { agentsService } from '~/features/agents/services/agents.service'
 import type { Property } from '~/features/properties/types/property.types'
@@ -9,12 +8,13 @@ import type { Property } from '~/features/properties/types/property.types'
 /**
  * Dynamic `/sitemap.xml` endpoint.
  *
- * Lists every public route the agency exposes, gated by `agency.modules.*`
- * (a disabled module removes its entries from the sitemap, mirroring how the
- * header, footer and home sections disappear). Property detail URLs are
- * sourced from the server-only property loader
- * (`server/utils/properties.ts`) so `status: 'hidden'` records are excluded
- * automatically — do not duplicate that filter here.
+ * Lists every public route the active **tenant** exposes, gated
+ * by the resolved tenant's `agency.modules.*` (a disabled module
+ * removes its entries from the sitemap, mirroring how the
+ * header, footer and home sections disappear). Property detail
+ * URLs are sourced from the server-only property loader
+ * (`server/utils/properties.ts`) so `status: 'hidden'` records
+ * are excluded automatically — do not duplicate that filter here.
  *
  * **Why the loader, not the service.** This route is a Nitro
  * server route, not a Nuxt app page. It must not import app
@@ -53,24 +53,48 @@ import type { Property } from '~/features/properties/types/property.types'
  * `<priority>`) because the data models do not carry a last-modified
  * timestamp. The sitemaps.org spec treats all three as optional.
  *
- * `siteUrl` is read from `runtimeConfig.public.siteUrl` (sourced from
- * `NUXT_PUBLIC_SITE_URL`) and normalized the same way as `usePageSeo()`:
- * any trailing slash is stripped so concatenation with a path that starts
- * with `/` never produces `//`. When the value is empty (no env var set),
- * the route returns HTTP 503 with a plain-text hint so a misconfigured
+ * **Tenant-aware resolution (Task 102).** The route calls
+ * `resolveTenantContext` per request to pick the active tenant
+ * from the request hostname (the registry's `normalizeHostname`
+ * handles port stripping, case folding, etc.) and to read the
+ * **per-tenant canonical site URL**. The per-tenant URL is
+ * resolved with the documented
+ * `NUXT_PUBLIC_SITE_URL__<TENANT_ID>` override + global
+ * `NUXT_PUBLIC_SITE_URL` fallback; the default tenant uses the
+ * global env var, preserving the existing single-agency behavior
+ * byte-identically. The route imports NO app composables and
+ * NO global `siteConfig` — the tenant context is the source of
+ * truth. When the resolved `siteUrl` is empty, the route returns
+ * HTTP 503 with a plain-text hint so a misconfigured
  * deployment is obvious in crawlers' logs.
  */
+
+/**
+ * Read the request hostname for tenant resolution.
+ *
+ * Honors `x-forwarded-host` first (a CDN / load balancer
+ * rewrites the host header at the edge), then falls back to
+ * `host`. Both headers are lowercased and trimmed for stable
+ * matching against the registry's `hosts` lists.
+ */
+function readHost(event: Parameters<typeof defineEventHandler>[0]): string {
+  const fwd = getRequestHeader(event, 'x-forwarded-host')
+  const host = getRequestHeader(event, 'host')
+  const raw = (fwd ?? host ?? '').split(',')[0]?.trim() ?? ''
+  return raw
+}
+
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig()
-  const siteUrl = String(config.public.siteUrl || '').replace(/\/+$/, '')
+  const ctx = resolveTenantContext(readHost(event))
+  const siteUrl = ctx.siteUrl
 
   if (!siteUrl) {
     setResponseStatus(event, 503)
     setResponseHeader(event, 'Content-Type', 'text/plain; charset=utf-8')
-    return 'Configure NUXT_PUBLIC_SITE_URL to enable the sitemap.'
+    return 'Configure NUXT_PUBLIC_SITE_URL (or a per-tenant NUXT_PUBLIC_SITE_URL__<TENANT_ID> override) to enable the sitemap.'
   }
 
-  const { modules } = siteConfig.agency
+  const { modules } = ctx.agency
 
   const urls: string[] = ['/', '/about']
 
