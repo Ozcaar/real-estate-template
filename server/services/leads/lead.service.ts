@@ -4,6 +4,7 @@ import type {
   Lead,
   PropertyReference,
 } from '../../../app/features/leads/types/lead.types'
+import type { TenantLeadsConfig } from '../../utils/lead-config'
 import type { LeadDeliveryAdapter } from './delivery-adapter'
 import { getAdapter } from './adapters'
 
@@ -146,6 +147,29 @@ export interface LeadSubmitContext {
   /** Optional locale fallback. The schema's `locale` field
    *  overrides this when present. */
   fallbackLocale: string
+  /**
+   * Optional per-tenant lead-delivery configuration snapshot
+   * (Task 106). When present, the service:
+   *
+   *  - selects the adapter via `getAdapter(tenantLeadsConfig)` so
+   *    a per-tenant `NUXT_LEADS_ADAPTER__<TENANT_ID>` override
+   *    wins over the global `NUXT_LEADS_ADAPTER`;
+   *  - threads the snapshot into the adapter's `LeadDeliveryInput`
+   *    so the webhook / email adapters read the per-tenant
+   *    URL / secret / SMTP credentials / from / to instead of
+   *    `useRuntimeConfig()`.
+   *
+   * When absent, the service falls back to the documented
+   * single-tenant / no-tenant-context behavior:
+   * `getAdapter()` reads `runtimeConfig.leadsAdapter` and the
+   * adapters read `useRuntimeConfig()` directly.
+   *
+   * The snapshot is passed explicitly through the pipeline
+   * (rather than stored in module-level mutable state) so
+   * concurrent requests for different tenants cannot share
+   * adapter configuration.
+   */
+  tenantLeadsConfig?: TenantLeadsConfig
 }
 
 export const leadService = {
@@ -233,9 +257,22 @@ export const leadService = {
       ...(isPropertyInquiry && propertyContext ? { property: propertyContext } : {}),
     }
 
-    // 5. Delivery.
-    const adapter: LeadDeliveryAdapter = getAdapter()
-    const result = await adapter.deliver({ lead })
+    // 5. Delivery. The adapter is selected per-request via the
+    //    active tenant's lead configuration (Task 106). When
+    //    the contact endpoint threads a `tenantLeadsConfig`
+    //    snapshot into the context, `getAdapter(snapshot)` reads
+    //    the per-tenant `NUXT_LEADS_ADAPTER__<TENANT_ID>` (or the
+    //    snapshot's `adapterId` field) and returns the matching
+    //    adapter. The snapshot is then passed to the adapter
+    //    through the input so the adapter reads the per-tenant
+    //    URL / secret / SMTP credentials / from / to — never
+    //    `useRuntimeConfig()`.
+    //
+    //    When the snapshot is absent (the single-tenant / no-tenant
+    //    context path), the service falls back to the documented
+    //    global config behavior.
+    const adapter: LeadDeliveryAdapter = getAdapter(ctx.tenantLeadsConfig)
+    const result = await adapter.deliver({ lead, tenantLeadsConfig: ctx.tenantLeadsConfig })
 
     if (result.ok) {
       return { status: 'ok', id: lead.id }

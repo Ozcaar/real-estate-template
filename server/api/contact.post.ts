@@ -4,12 +4,14 @@ import {
   defineEventHandler,
   getHeader,
   getRequestIP,
+  getRequestHeader,
   readRawBody,
   setResponseHeader,
   setResponseStatus,
 } from 'h3'
 import { leadService, type LeadSubmitStatus } from '../services/leads/lead.service'
 import { propertiesService } from '../../app/features/properties/services/properties.service'
+import { resolveTenantLeadsConfig } from '../utils/lead-config'
 import { loadPropertiesServer } from '../utils/properties'
 import type { PropertyReference } from '../../app/features/leads/types/lead.types'
 
@@ -98,6 +100,23 @@ function jsonResponse(event: Parameters<typeof defineEventHandler>[0] extends (e
   setResponseStatus(event, status)
   setResponseHeader(event, 'content-type', 'application/json; charset=utf-8')
   return body
+}
+
+/**
+ * Read the request hostname for tenant resolution.
+ *
+ * Honors `x-forwarded-host` first (a CDN / load balancer
+ * rewrites the host header at the edge), then falls back to
+ * `host`. Both are lowercased and trimmed for stable matching
+ * against the registry's `hosts` lists. Mirrors the same
+ * helper the sitemap and robots routes use so a multi-tenant
+ * deployment sees one consistent host resolution across the
+ * three Nitro routes.
+ */
+function readHost(event: Parameters<typeof defineEventHandler>[0]): string {
+  const fwd = getRequestHeader(event, 'x-forwarded-host')
+  const host = getRequestHeader(event, 'host')
+  return (fwd ?? host ?? '').split(',')[0]?.trim() ?? ''
 }
 
 function buildRequestKey(event: Parameters<typeof defineEventHandler>[0] extends (e: infer E) => unknown ? E : never): string {
@@ -212,9 +231,21 @@ export default defineEventHandler(async (event) => {
 
   const propertyContext = await buildPropertyContext(propertySlug)
 
+  // Per-tenant lead-delivery configuration (Task 106). The
+  // endpoint resolves the active tenant from the request
+  // hostname (same source the sitemap + robots use) and asks
+  // the per-tenant resolver for a `TenantLeadsConfig`
+  // snapshot. The snapshot is passed explicitly through the
+  // lead pipeline; the service threads it into the adapter
+  // input so the adapter reads URL / secret / SMTP fields
+  // from the snapshot, NOT from `useRuntimeConfig()`. This
+  // keeps concurrent requests for different tenants from
+  // sharing adapter configuration.
+  const tenantLeadsConfig = resolveTenantLeadsConfig(readHost(event))
+
   const result: LeadSubmitStatus = await leadService.submit(
     { body, propertyContext },
-    { requestKey, fallbackLocale },
+    { requestKey, fallbackLocale, tenantLeadsConfig },
   )
 
   // Transport mapping. The service's `LeadSubmitStatus` is the

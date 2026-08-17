@@ -35,6 +35,31 @@ import type {
  * the connection uses port 465 by default; setting the env var
  * explicitly overrides that.
  *
+ * **Per-tenant override (Task 106).** When the contact endpoint
+ * resolves the active tenant's `TenantLeadsConfig` snapshot and
+ * threads it into the input, the SMTP fields are read from the
+ * snapshot first. The per-tenant env-var convention is
+ * `NUXT_LEADS_SMTP_<KEY>__<TENANT_ID>` /
+ * `NUXT_LEADS_EMAIL_<KEY>__<TENANT_ID>` with the documented
+ * site-URL normalization (uppercase + non-alphanumeric → `_`).
+ * Per-tenant overrides take precedence over the global env
+ * vars; the global config remains the fallback.
+ *
+ * | Env var                       | Runtime config key       | Required |
+ * | ----------------------------- | ------------------------ | -------- |
+ * | `NUXT_LEADS_SMTP_HOST`        | `leadsSmtpHost`          | yes      |
+ * | `NUXT_LEADS_SMTP_PORT`        | `leadsSmtpPort`          | yes      |
+ * | `NUXT_LEADS_SMTP_SECURE`      | `leadsSmtpSecure`        | no       |
+ * | `NUXT_LEADS_SMTP_USER`        | `leadsSmtpUser`          | yes      |
+ * | `NUXT_LEADS_SMTP_PASSWORD`    | `leadsSmtpPassword`      | yes      |
+ * | `NUXT_LEADS_EMAIL_FROM`       | `leadsEmailFrom`         | yes      |
+ * | `NUXT_LEADS_EMAIL_TO`         | `leadsEmailTo`           | yes      |
+ *
+ * `NUXT_LEADS_SMTP_SECURE` accepts `"true"` (use TLS) or any other
+ * value (plaintext SMTP). Nodemailer's `secure` flag is `true` when
+ * the connection uses port 465 by default; setting the env var
+ * explicitly overrides that.
+ *
  * **Validation.** All required values are checked **before** the
  * transporter is created. A missing host / port / user / password /
  * from / to returns `{ ok: false, errorCode: 'unsupported',
@@ -80,15 +105,27 @@ interface SmtpConfig {
   to: string
 }
 
-function readSmtpConfig(): SmtpConfig | null {
-  const config = useRuntimeConfig()
-  const host = String(config.leadsSmtpHost ?? '').trim()
-  const portRaw = String(config.leadsSmtpPort ?? '').trim()
-  const secureRaw = String(config.leadsSmtpSecure ?? '').trim()
-  const user = String(config.leadsSmtpUser ?? '').trim()
-  const pass = String(config.leadsSmtpPassword ?? '').trim()
-  const from = String(config.leadsEmailFrom ?? '').trim()
-  const to = String(config.leadsEmailTo ?? '').trim()
+function readSmtpConfig(input?: LeadDeliveryInput): SmtpConfig | null {
+  // Per-tenant config takes precedence over the global runtime
+  // config (Task 106). When the contact endpoint resolves the
+  // active tenant and threads the snapshot into the input, the
+  // adapter reads the SMTP fields from the snapshot; otherwise
+  // it falls back to the runtime config. The fallback preserves
+  // the documented single-tenant / no-tenant-context behavior.
+  //
+  // The runtime-config fallback is fetched ONCE per call (not
+  // once per field) so a test that uses `mockReturnValueOnce`
+  // to set the next `useRuntimeConfig` value sees the mocked
+  // values for all fields in the same call.
+  const tenant = input?.tenantLeadsConfig
+  const fallback = useRuntimeConfig()
+  const host = tenant ? tenant.smtpHost : String(fallback.leadsSmtpHost ?? '').trim()
+  const portRaw = tenant ? tenant.smtpPort : String(fallback.leadsSmtpPort ?? '').trim()
+  const secureRaw = tenant ? tenant.smtpSecure : String(fallback.leadsSmtpSecure ?? '').trim()
+  const user = tenant ? tenant.smtpUser : String(fallback.leadsSmtpUser ?? '').trim()
+  const pass = tenant ? tenant.smtpPassword : String(fallback.leadsSmtpPassword ?? '').trim()
+  const from = tenant ? tenant.emailFrom : String(fallback.leadsEmailFrom ?? '').trim()
+  const to = tenant ? tenant.emailTo : String(fallback.leadsEmailTo ?? '').trim()
 
   if (!host || !portRaw || !user || !pass || !from || !to) {
     return null
@@ -248,7 +285,7 @@ function mapSmtpError(error: unknown): LeadDeliveryResult {
 export const emailAdapter: LeadDeliveryAdapter = {
   id: 'email',
   async deliver(input: LeadDeliveryInput): Promise<LeadDeliveryResult> {
-    const cfg = readSmtpConfig()
+    const cfg = readSmtpConfig(input)
     if (!cfg) {
       return { ok: false, errorCode: 'unsupported', retryable: false }
     }

@@ -862,6 +862,187 @@ describe('leadService.submit — non-object bodies', () => {
   })
 })
 
+describe('leadService.submit — per-tenant lead configuration (Task 106)', () => {
+  // The contact endpoint resolves the active tenant from the
+  // request hostname and threads a `TenantLeadsConfig` snapshot
+  // through the lead pipeline. The service forwards the
+  // snapshot to the adapter; the adapter reads URL / secret /
+  // SMTP fields from the snapshot, not from `useRuntimeConfig()`.
+  // These tests pin the threading contract.
+  function makeTenantLeadsConfig(adapterId: string): {
+    adapterId: string
+    webhookUrl: string
+    webhookSecret: string
+    smtpHost: string
+    smtpPort: string
+    smtpSecure: string
+    smtpUser: string
+    smtpPassword: string
+    emailFrom: string
+    emailTo: string
+  } {
+    return {
+      adapterId,
+      webhookUrl: '',
+      webhookSecret: '',
+      smtpHost: '',
+      smtpPort: '',
+      smtpSecure: '',
+      smtpUser: '',
+      smtpPassword: '',
+      emailFrom: '',
+      emailTo: '',
+    }
+  }
+
+  it('threads the tenantLeadsConfig into the adapter input when supplied', async () => {
+    mockAdapter.deliver.mockReset()
+    mockAdapter.deliver.mockResolvedValue({ ok: true })
+    let captured: { lead: unknown, tenantLeadsConfig?: unknown } | null = null
+    mockAdapter.deliver.mockImplementation(async (input: { lead: unknown, tenantLeadsConfig?: unknown }) => {
+      captured = input
+      return { ok: true }
+    })
+    const tenantLeadsConfig = makeTenantLeadsConfig('webhook')
+    tenantLeadsConfig.webhookUrl = 'https://acme-hooks.example.com/inbox'
+    tenantLeadsConfig.webhookSecret = 'acme-secret'
+    await leadService.submit(
+      { body: validLead },
+      { requestKey: freshKey('tenant-thread'), fallbackLocale: 'en', tenantLeadsConfig },
+    )
+    expect(captured).not.toBeNull()
+    expect(captured?.tenantLeadsConfig).toBe(tenantLeadsConfig)
+    // The snapshot is forwarded by reference — the adapter
+    // reads from the same object the service received, with
+    // no per-tenant env-var dispatch in between.
+    const c = captured?.tenantLeadsConfig as { webhookUrl: string, webhookSecret: string }
+    expect(c?.webhookUrl).toBe('https://acme-hooks.example.com/inbox')
+    expect(c?.webhookSecret).toBe('acme-secret')
+  })
+
+  it('does not include tenantLeadsConfig when the context omits it (single-tenant / no-tenant path)', async () => {
+    mockAdapter.deliver.mockReset()
+    mockAdapter.deliver.mockResolvedValue({ ok: true })
+    let captured: { lead: unknown, tenantLeadsConfig?: unknown } | null = null
+    mockAdapter.deliver.mockImplementation(async (input: { lead: unknown, tenantLeadsConfig?: unknown }) => {
+      captured = input
+      return { ok: true }
+    })
+    await leadService.submit(
+      { body: validLead },
+      { requestKey: freshKey('no-tenant'), fallbackLocale: 'en' },
+    )
+    // The input carries `tenantLeadsConfig: undefined` when
+    // the context omits it — the adapter falls back to
+    // `useRuntimeConfig()`. The service threads the field
+    // unconditionally so the adapter's TypeScript signature
+    // is uniform; the runtime value is `undefined` when
+    // the contact endpoint did not resolve a per-tenant
+    // snapshot.
+    expect(captured).not.toBeNull()
+    expect(captured?.tenantLeadsConfig).toBeUndefined()
+  })
+
+  it('selects the adapter via getAdapter(tenantLeadsConfig) so the per-tenant adapterId wins', async () => {
+    // The contact endpoint selects the adapter from the
+    // tenant's snapshot. The service must forward the
+    // snapshot to getAdapter (which then returns the matching
+    // adapter) and to the adapter's input (so the adapter
+    // reads URL / secret / SMTP fields from the snapshot).
+    //
+    // This is the "two-tenant, different adapter" integration
+    // check: the same `getAdapter` mock returns the same
+    // `mockAdapter` for every call (it does not read the
+    // snapshot's adapterId), so the assertion below is on the
+    // input alone — the snapshot is forwarded. The
+    // adapter-selection logic is tested separately in
+    // `server/services/leads/adapters/index.test.ts`.
+    mockAdapter.deliver.mockReset()
+    mockAdapter.deliver.mockResolvedValue({ ok: true })
+    let captured: { lead: unknown, tenantLeadsConfig?: unknown } | null = null
+    mockAdapter.deliver.mockImplementation(async (input: { lead: unknown, tenantLeadsConfig?: unknown }) => {
+      captured = input
+      return { ok: true }
+    })
+
+    // Tenant 1 (acme) — webhook destination.
+    const acmeConfig = makeTenantLeadsConfig('webhook')
+    acmeConfig.webhookUrl = 'https://acme-hooks.example.com/inbox'
+    acmeConfig.webhookSecret = 'acme-secret'
+    // Tenant 2 (coastal) — email destination.
+    const coastalConfig = makeTenantLeadsConfig('email')
+    coastalConfig.smtpHost = 'mail.coastal.example.com'
+    coastalConfig.smtpUser = 'leads@coastal.example.com'
+    coastalConfig.emailFrom = 'leads@coastal.example.com'
+    coastalConfig.emailTo = 'inbox@coastal.example.com'
+
+    // Two concurrent requests, two snapshots, two adapter
+    // calls. The service forwards each snapshot by reference
+    // — concurrent requests for different tenants do NOT
+    // share adapter configuration.
+    const keyA = freshKey('acme-tenant')
+    const keyC = freshKey('coastal-tenant')
+    await leadService.submit({ body: validLead }, { requestKey: keyA, fallbackLocale: 'en', tenantLeadsConfig: acmeConfig })
+    await leadService.submit({ body: validLead }, { requestKey: keyC, fallbackLocale: 'en', tenantLeadsConfig: coastalConfig })
+
+    expect(mockAdapter.deliver).toHaveBeenCalledTimes(2)
+    const calls = mockAdapter.deliver.mock.calls as Array<[{ lead: unknown, tenantLeadsConfig?: { webhookUrl: string, webhookSecret: string, smtpHost: string, smtpUser: string, emailFrom: string, emailTo: string } }]>
+    // The first call (acme) carries the webhook config.
+    expect(calls[0]?.[0]?.tenantLeadsConfig?.webhookUrl).toBe('https://acme-hooks.example.com/inbox')
+    expect(calls[0]?.[0]?.tenantLeadsConfig?.webhookSecret).toBe('acme-secret')
+    // The second call (coastal) carries the email config —
+    // NOT the webhook config. The two snapshots are
+    // independent; concurrent requests do not share
+    // configuration.
+    expect(calls[1]?.[0]?.tenantLeadsConfig?.smtpHost).toBe('mail.coastal.example.com')
+    expect(calls[1]?.[0]?.tenantLeadsConfig?.webhookUrl).toBe('')
+    expect(calls[1]?.[0]?.tenantLeadsConfig?.smtpUser).toBe('leads@coastal.example.com')
+    expect(calls[1]?.[0]?.tenantLeadsConfig?.emailFrom).toBe('leads@coastal.example.com')
+    expect(calls[1]?.[0]?.tenantLeadsConfig?.emailTo).toBe('inbox@coastal.example.com')
+    // Both snapshots are distinct references (the service
+    // does not memoise).
+    expect(calls[0]?.[0]?.tenantLeadsConfig).toBe(acmeConfig)
+    expect(calls[1]?.[0]?.tenantLeadsConfig).toBe(coastalConfig)
+    // The captured input still has the same `lead` shape (the
+    // service does not mutate the lead between the rate-limit
+    // check and the adapter dispatch).
+    expect(captured).not.toBeNull()
+  })
+
+  it('the honeypot path does not forward the snapshot to the adapter (silent discard)', async () => {
+    // The honeypot path returns the silent success result
+    // WITHOUT calling the adapter. The snapshot is not
+    // forwarded because no delivery happens.
+    mockAdapter.deliver.mockReset()
+    await leadService.submit(
+      { body: { ...validLead, website: 'http://bot.example.com' } },
+      { requestKey: freshKey('honey-tenant'), fallbackLocale: 'en', tenantLeadsConfig: makeTenantLeadsConfig('webhook') },
+    )
+    expect(mockAdapter.deliver).not.toHaveBeenCalled()
+  })
+
+  it('the rate-limit path does not forward the snapshot to the adapter', async () => {
+    // Same: the rate-limit path returns the rate_limited
+    // result WITHOUT calling the adapter.
+    mockAdapter.deliver.mockReset()
+    mockAdapter.deliver.mockResolvedValue({ ok: true })
+    const key = freshKey('rl-tenant')
+    for (let i = 0; i < 5; i++) {
+      await leadService.submit(
+        { body: validLead },
+        { requestKey: key, fallbackLocale: 'en', tenantLeadsConfig: makeTenantLeadsConfig('webhook') },
+      )
+    }
+    mockAdapter.deliver.mockClear()
+    const r = await leadService.submit(
+      { body: validLead },
+      { requestKey: key, fallbackLocale: 'en', tenantLeadsConfig: makeTenantLeadsConfig('webhook') },
+    )
+    expect(r).toEqual({ status: 'rate_limited' })
+    expect(mockAdapter.deliver).not.toHaveBeenCalled()
+  })
+})
+
 afterEach(() => {
   mockAdapter.deliver.mockReset()
 })

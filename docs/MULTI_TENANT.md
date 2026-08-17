@@ -183,9 +183,89 @@ The Task 102 hardening is pinned by:
 | `tests/e2e/multi-tenant.spec.ts` (existing) | End-to-end: default tenant's agency name reaches the page output. |
 | `app/config/agencies/registry.test.ts` (existing) | The registry's matching + fallback surface is unchanged. |
 
-## 8. Deferred work
+## 9. Per-tenant lead delivery configuration (Task 106)
 
-- **Per-tenant lead delivery configuration (Task 105).** Lead delivery is global today. The Task 105 follow-up will introduce `NUXT_LEADS_<KEY>__<TENANT_ID>` overrides (matching the site-URL convention) and wire the lead service + adapter selector + adapters to read from a per-request `TenantLeadsConfig`.
+The Task 102 hardening made the canonical site URL, the sitemap, and the robots tenant-aware. Lead delivery stayed global — a multi-tenant deployment either shared one delivery destination or ran separate processes per tenant. Task 106 makes lead delivery tenant-aware while preserving the single-tenant behavior byte-identically for deployments that do not opt in.
+
+### 9.1 The convention
+
+The contact endpoint resolves the active tenant from the request hostname (the same dispatch the sitemap, the robots, and the canonical URL use) and asks the per-tenant lead resolver for a `TenantLeadsConfig` snapshot. The snapshot is passed explicitly through the lead pipeline — the service threads it into the adapter's `LeadDeliveryInput`. The adapter reads URL / secret / SMTP fields from the snapshot first, falling back to `useRuntimeConfig()` when the snapshot is absent (the documented single-tenant / no-tenant-context behavior).
+
+### 9.2 Per-tenant env-var dispatch
+
+The resolver reads `process.env.NUXT_LEADS_<KEY>__<TENANT_ID>` first, falling back to the global `NUXT_LEADS_<KEY>` (the documented single-tenant knob, surfaced through `useRuntimeConfig()`). The tenant id is uppercased and any non-alphanumeric character is replaced with `_` for the env-var name — the same normalization rule the site-URL resolver uses (`server/utils/tenant-context.ts`).
+
+```sh
+# Single-tenant deployment (default tenant, no per-tenant override needed)
+NUXT_LEADS_ADAPTER=email
+NUXT_LEADS_SMTP_HOST=mail.example.com
+NUXT_LEADS_SMTP_PORT=587
+NUXT_LEADS_SMTP_USER=leads@example.com
+NUXT_LEADS_SMTP_PASSWORD=secret
+NUXT_LEADS_EMAIL_FROM=leads@example.com
+NUXT_LEADS_EMAIL_TO=inbox@example.com
+
+# Multi-tenant deployment: acme uses webhook, coastal uses email
+NUXT_LEADS_ADAPTER=webhook
+NUXT_LEADS_WEBHOOK_URL=https://default-hooks.example.com/inbox
+NUXT_LEADS_WEBHOOK_SECRET=default-secret
+
+NUXT_LEADS_ADAPTER__ACME=webhook
+NUXT_LEADS_WEBHOOK_URL__ACME=https://acme-hooks.example.com/inbox
+NUXT_LEADS_WEBHOOK_SECRET__ACME=acme-secret
+
+NUXT_LEADS_ADAPTER__COASTAL=email
+NUXT_LEADS_SMTP_HOST__COASTAL=mail.coastal.example.com
+NUXT_LEADS_SMTP_PORT__COASTAL=587
+NUXT_LEADS_SMTP_USER__COASTAL=leads@coastal.example.com
+NUXT_LEADS_SMTP_PASSWORD__COASTAL=coastal-secret
+NUXT_LEADS_EMAIL_FROM__COASTAL=leads@coastal.example.com
+NUXT_LEADS_EMAIL_TO__COASTAL=inbox@coastal.example.com
+```
+
+Per-field dispatch: a tenant can override the adapter id only, the SMTP host only, or any combination. Unset fields fall back to the global config field-by-field (not all-or-nothing). The default tenant falls back to the global config when no per-tenant env vars are set — the documented single-tenant behavior.
+
+### 9.3 How the snapshot flows through the pipeline
+
+1. The contact endpoint reads the request hostname (`x-forwarded-host` first, then `host`) and calls `resolveTenantLeadsConfig(host)`.
+2. The resolver dispatches per-tenant env vars over the global `useRuntimeConfig()` fallback and returns a fresh `TenantLeadsConfig` snapshot.
+3. The endpoint passes the snapshot through `leadService.submit({ body, propertyContext }, { requestKey, fallbackLocale, tenantLeadsConfig })`.
+4. The service uses `getAdapter(tenantLeadsConfig)` to select the adapter (per-tenant `adapterId` wins; empty / whitespace falls back to the global `runtimeConfig.leadsAdapter`).
+5. The service calls `adapter.deliver({ lead, tenantLeadsConfig })` — the adapter reads URL / secret / SMTP fields from the snapshot first; absent snapshot fields fall back to `useRuntimeConfig()`.
+6. The snapshot is opaque to the service — the service only forwards it. No module-level mutable state holds the snapshot; concurrent requests for different tenants cannot share adapter configuration.
+
+### 9.4 Request-isolation guarantees
+
+- **No module-level state.** Every call to `resolveTenantLeadsConfig` constructs a fresh `TenantLeadsConfig` snapshot. Two concurrent requests on different hostnames cannot share config.
+- **Snapshot is forwarded by reference.** The service does not memoise the snapshot; the adapter receives the exact object the endpoint constructed. Clearing `process.env` between tests resets the resolver (no in-memory state to clear).
+- **Per-tenant env-var lookup reads `process.env` directly.** `runtimeConfig` does not support per-tenant overrides (Nuxt's runtime config is global), so the resolver reads `process.env` for the per-tenant override path. The global fallback reads `useRuntimeConfig()` once per call (not once per field) so a test that uses `mockReturnValueOnce` sees the mocked values for all fields.
+- **Adapter selection is per-call.** `getAdapter(tenantLeadsConfig)` returns a fresh `LeadDeliveryAdapter` lookup on every call. Concurrent requests for different tenants receive different adapters.
+- **Existing single-tenant deployments are byte-identical.** When no per-tenant env vars are set, the resolver returns the global config and the adapter falls back to `useRuntimeConfig()`. A `pnpm dev` on `localhost:3000`, a `pnpm preview` on `127.0.0.1:3000`, and a `pnpm generate` static export all see the same single-tenant behavior.
+
+### 9.5 What uses the per-tenant lead configuration
+
+| Consumer | Surface | Behavior |
+| --- | --- | --- |
+| `server/api/contact.post.ts` | Lead capture endpoint | Resolves the active tenant from the request hostname, calls `resolveTenantLeadsConfig(host)`, threads the snapshot into `leadService.submit({ body, propertyContext }, { requestKey, fallbackLocale, tenantLeadsConfig })`. |
+| `server/services/leads/lead.service.ts` | Lead service pipeline | Uses `getAdapter(tenantLeadsConfig)` to select the adapter; forwards `tenantLeadsConfig` to `adapter.deliver({ lead, tenantLeadsConfig })`. No module-level mutable state. |
+| `server/services/leads/adapters/webhook.ts` | Webhook delivery | Reads `webhookUrl` / `webhookSecret` from the snapshot first; falls back to `useRuntimeConfig()`. |
+| `server/services/leads/adapters/email.ts` | SMTP email delivery | Reads `smtpHost` / `smtpPort` / `smtpSecure` / `smtpUser` / `smtpPassword` / `emailFrom` / `emailTo` from the snapshot first; falls back to `useRuntimeConfig()`. |
+| `server/services/leads/adapters/log.ts` | Redacted log delivery | Reads only `lead` (no config needed). |
+| `server/services/leads/adapters/disabled.ts` | Disabled delivery | Reads only `lead` (no config needed). |
+
+### 9.6 Boundary regression coverage
+
+| Test file | Purpose |
+| --- | --- |
+| `server/utils/lead-config.test.ts` (NEW) | Per-tenant env-var dispatch + global fallback + two-tenant isolation + field-level fallback + unknown-host fallback. |
+| `server/services/leads/adapters/index.test.ts` (UPDATED) | `getAdapter(tenantLeadsConfig)` selects the per-tenant adapter; the per-tenant path takes precedence over the global config. |
+| `server/services/leads/lead.service.test.ts` (UPDATED) | The service threads the snapshot into the adapter input; concurrent requests for different tenants do not share adapter configuration. |
+| `server/services/leads/adapters/webhook.test.ts` (UNCHANGED) | The single-tenant `useRuntimeConfig()` fallback path still works (backward compat). |
+| `server/services/leads/adapters/email.test.ts` (UNCHANGED) | The single-tenant `useRuntimeConfig()` fallback path still works (backward compat). |
+| `server/api/contact.post.test.ts` (UNCHANGED) | The endpoint's transport mapping is unchanged. |
+
+## 10. Deferred work
+
 - **Per-tenant i18n first-pass default.** The Task 102 hook in `app.vue` covers the no-cookie path. The first-pass default (before the cookie check) is still deployment-scoped. A future task can plumb the tenant's `defaultLocale` into the i18n module's first-pass logic if needed.
 - **Distributed rate limiting.** The lead-capture rate limiter is per-process (a `Map`-based sliding window). A multi-process deployment (PM2 cluster, Cloudflare Workers isolates) shares no state between instances. A future task can move the rate limiter to a Nitro storage driver backed by an external KV.
-- **Distributed cache.** The per-request resolver is not cached. Two concurrent requests on the same hostname re-resolve from the registry + env vars. The cost is one `selectAgencyByHost` call (a frozen `Record` lookup) plus two `process.env` reads — negligible at any scale. A future task can add a request-scoped cache if profiling shows a need.
+- **Distributed cache.** The per-request resolver is not cached. Two concurrent requests on the same hostname re-resolve from the registry + env vars. The cost is one `selectAgencyByHost` call (a frozen `Record` lookup) plus a small number of `process.env` reads — negligible at any scale. A future task can add a request-scoped cache if profiling shows a need.

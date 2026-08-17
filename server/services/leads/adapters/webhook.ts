@@ -25,6 +25,19 @@ import type {
  * so the endpoint can surface a 502 with a clear agency-side
  * configuration error.
  *
+ * **Per-tenant override (Task 106).** When the contact endpoint
+ * resolves an active tenant's `TenantLeadsConfig` snapshot, the
+ * webhook URL and secret come from the snapshot's
+ * `webhookUrl` / `webhookSecret` instead of `useRuntimeConfig()`.
+ * The per-tenant env-var convention is
+ * `NUXT_LEADS_WEBHOOK_URL__<TENANT_ID>` /
+ * `NUXT_LEADS_WEBHOOK_SECRET__<TENANT_ID>` with the documented
+ * site-URL normalization (uppercase + non-alphanumeric → `_`).
+ * Per-tenant overrides take precedence over the global env
+ * vars; the global config remains the fallback so a missing
+ * tenant override produces the documented single-tenant
+ * behavior.
+ *
  * **Behavior.**
  *
  * - 5-second timeout via `AbortController`.
@@ -55,9 +68,26 @@ import type {
 export const webhookAdapter: LeadDeliveryAdapter = {
   id: 'webhook',
   async deliver(input: LeadDeliveryInput): Promise<LeadDeliveryResult> {
-    const config = useRuntimeConfig()
-    const url = String(config.leadsWebhookUrl ?? '').trim()
-    const secret = String(config.leadsWebhookSecret ?? '').trim()
+    // Per-tenant config takes precedence over the global runtime
+    // config (Task 106). When the contact endpoint resolves
+    // the active tenant and threads the snapshot into the
+    // input, the adapter reads the URL + secret from the
+    // snapshot; otherwise it falls back to the runtime config.
+    //
+    // The runtime-config fallback is fetched ONCE per call
+    // (not once per field) so a test that uses
+    // `mockReturnValueOnce` to set the next `useRuntimeConfig`
+    // value sees the mocked values for both fields in the same
+    // call — two calls would consume the `Once` value on the
+    // first and read the default mock on the second.
+    const tenant = input.tenantLeadsConfig
+    const fallback = useRuntimeConfig()
+    const url = tenant
+      ? tenant.webhookUrl
+      : String(fallback.leadsWebhookUrl ?? '').trim()
+    const secret = tenant
+      ? tenant.webhookSecret
+      : String(fallback.leadsWebhookSecret ?? '').trim()
 
     if (!url || !secret) {
       return { ok: false, errorCode: 'unsupported', retryable: false }

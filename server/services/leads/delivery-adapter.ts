@@ -1,4 +1,5 @@
 import type { Lead } from '../../../app/features/leads/types/lead.types'
+import type { TenantLeadsConfig } from '../../utils/lead-config'
 
 /**
  * Server-only delivery adapter boundary.
@@ -21,10 +22,36 @@ import type { Lead } from '../../../app/features/leads/types/lead.types'
  * failures all become a structured `LeadDeliveryResult` with an
  * `errorCode`. The endpoint maps the result to an HTTP status; the
  * adapter never raises.
+ *
+ * **Per-tenant lead configuration (Task 106).** When the contact
+ * endpoint resolves the active tenant's `TenantLeadsConfig` (a
+ * per-request snapshot of the resolved adapter id + webhook /
+ * SMTP / email credentials), it threads the snapshot into
+ * {@link LeadDeliveryInput.tenantLeadsConfig}. Adapters read from
+ * this snapshot **first**, falling back to `useRuntimeConfig()` when
+ * it is absent (preserves the single-tenant / no-tenant-context
+ * behavior). The snapshot is opaque to the lead service — the
+ * service only forwards it. This is the documented boundary that
+ * keeps concurrent requests for different tenants from sharing
+ * adapter configuration (no module-level mutable state).
  */
 export interface LeadDeliveryInput {
   /** The stamped lead. */
   lead: Lead
+  /**
+   * Optional per-tenant lead-delivery configuration. When
+   * present, the adapter reads its `webhookUrl` / `webhookSecret`
+   * / `smtpHost` / `smtpPort` / `smtpSecure` / `smtpUser` /
+   * `smtpPassword` / `emailFrom` / `emailTo` from this snapshot.
+   * When absent, the adapter falls back to `useRuntimeConfig()` —
+   * the documented single-tenant behavior.
+   *
+   * Note: `adapterId` is NOT threaded here. Adapter selection is
+   * the lead service's responsibility (via
+   * {@link getAdapter}); the input only carries the credentials
+   * the chosen adapter needs.
+   */
+  tenantLeadsConfig?: TenantLeadsConfig
 }
 
 export interface LeadDeliveryResult {
