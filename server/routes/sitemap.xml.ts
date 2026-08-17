@@ -1,8 +1,8 @@
 import { defineEventHandler, getRequestHeader, setResponseHeader, setResponseStatus } from 'h3'
 import { loadAgentsServer } from '../utils/agents'
+import { loadDevelopmentsServer } from '../utils/developments'
 import { loadPropertiesServer } from '../utils/properties'
 import { resolveTenantContext } from '../utils/tenant-context'
-import { developmentsService } from '~/features/developments/services/developments.service'
 import type { Property } from '~/features/properties/types/property.types'
 
 /**
@@ -38,11 +38,15 @@ import type { Property } from '~/features/properties/types/property.types'
  * records included, for the api path) and the visibility
  * filter is the sitemap's contract with the data.
  *
- * Development detail URLs are sourced from
- * `developmentsService.getAll()`. The development model does not carry
- * a `status: 'hidden'` field, so the service returns the full catalog;
- * if a future task adds a visibility flag, the service is the place to
- * filter it out (the sitemap will pick up the change automatically.
+ * Development detail URLs are sourced from `loadDevelopmentsServer()`
+ * (the server-only development loader). The development model does not
+ * carry a `status: 'hidden'` field; the loader returns the full catalog
+ * (validated against `developmentListSchema`) and the sitemap loop
+ * emits one entry per development's stable slug. The sitemap uses
+ * the loader directly rather than the app-side `developmentsService`
+ * so the api-adapter module, the `NUXT_DEVELOPMENTS_*` env vars, and
+ * the boundary regression tests on the app-side service do not
+ * influence the server-only Nitro bundle.
  *
  * Agent detail URLs are sourced from `loadAgentsServer()` (the
  * server-only agent loader). The agent model does not carry a
@@ -123,7 +127,8 @@ export default defineEventHandler(async (event) => {
   }
   if (modules.developments) {
     urls.push('/developments')
-    for (const development of developmentsService.getAll()) {
+    const developments = await loadDevelopmentsServer()
+    for (const development of developments) {
       urls.push(`/developments/${development.slug}`)
     }
   }

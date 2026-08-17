@@ -1,20 +1,41 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { sampleDevelopments } from '~/features/developments/data/developments'
+import { developmentsService } from '~/features/developments/services/developments.service'
 import { usePageSeo } from '~/core/composables/usePageSeo'
 
 /**
  * Developments listing page (`/developments`).
  *
- * Thin route: it reads the sample development catalog from the
- * developments feature, composes a responsive grid of
- * `DevelopmentCard`s, and sets page-level SEO metadata. No individual
- * development detail pages, no filtering, no map view — those are
+ * Thin route: it loads the development catalog through the
+ * documented async service, composes a responsive grid of
+ * `DevelopmentCard`s, and sets page-level SEO metadata. The
+ * data is resolved through `useAsyncData` so SSR awaits the
+ * service's `loadAll()` before rendering the markup.
+ *
+ * **Data source.** The service consumes the resolved public
+ * development list through the same-origin Nitro endpoint at
+ * `/api/developments`. The endpoint delegates to the
+ * server-only loader at `server/utils/developments.ts`, which
+ * owns the static / api source selection and reads the
+ * `NUXT_DEVELOPMENTS_*` env vars. The page renders the
+ * resolved list as-is; no filtering, no map view — those are
  * future-phase tasks.
  */
 const { t } = useI18n()
 
-const developments = computed(() => sampleDevelopments)
+/**
+ * Development data source. Loaded through Nuxt's `useAsyncData`
+ * so SSR awaits the adapter's `loadAll()` before rendering the
+ * markup. The `developments:listing` key is unique to this
+ * page; a future per-page filter chip that wants its own key
+ * should prefix it.
+ */
+const { data: allDevelopments } = await useAsyncData(
+  'developments:listing',
+  () => developmentsService.loadAll(),
+)
+
+const developments = computed(() => allDevelopments.value ?? [])
 
 // --- SEO ----------------------------------------------------------------
 /**

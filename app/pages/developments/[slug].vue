@@ -9,15 +9,19 @@ import type { BreadcrumbItem } from '~/types/breadcrumb.types'
 /**
  * Development detail page (`/developments/[slug]`).
  *
- * Thin route: it looks up the development by slug through the documented
- * service, raises a proper 404 when the slug is unknown, then composes a
- * clean detail layout from existing primitives. A related-developments
- * section reuses the development card through a `DevelopmentCard`
- * component (one card per related record, no separate grid component
- * — the catalog has at most a handful of developments, so a 3-card
- * layout does not need a dedicated primitive). A map, a unit
- * availability table, a mortgage calculator, and an inquiry form are
- * intentionally out of scope for this foundation.
+ * Thin route: it loads the development catalog through the documented
+ * async service, looks up the development by slug, raises a proper 404
+ * when the slug is unknown, then composes a clean detail layout from
+ * existing primitives. The page follows the property / agent detail
+ * pages' SEO contract (canonical, `ogType: 'article'`, the
+ * development's own image as the social image, `Residence` +
+ * `BreadcrumbList` JSON-LD). A related-developments section reuses
+ * the development card through a `DevelopmentCard` component (one
+ * card per related record, no separate grid component — the catalog
+ * has at most a handful of developments, so a 3-card layout does
+ * not need a dedicated primitive). A map, a unit availability
+ * table, a mortgage calculator, and an inquiry form are intentionally
+ * out of scope for this foundation.
  */
 const { t } = useI18n()
 const site = useSiteConfig()
@@ -28,8 +32,22 @@ const slug = computed(() => {
   return Array.isArray(raw) ? raw[0] : raw
 })
 
+/**
+ * Development data source. Loaded through Nuxt's `useAsyncData` so
+ * SSR awaits the service's `loadAll()` before rendering the
+ * markup. The `developments:detail` key is unique to this page; a
+ * future per-development widget that wants its own key should
+ * prefix the slug.
+ */
+const { data: allDevelopments } = await useAsyncData(
+  'developments:detail',
+  () => developmentsService.loadAll(),
+)
+
 const development = computed(() =>
-  slug.value ? developmentsService.getBySlug(slug.value) : undefined,
+  allDevelopments.value && slug.value
+    ? developmentsService.getBySlug(allDevelopments.value, slug.value)
+    : undefined,
 )
 
 if (!development.value) {
@@ -48,7 +66,11 @@ const areaUnit = computed(() =>
   (d.sizeUnit ?? site.value.agency.measurementUnit) === 'imperial' ? 'ft²' : 'm²',
 )
 
-const related = computed(() => developmentsService.getRelated(d, 3))
+const related = computed(() =>
+  allDevelopments.value
+    ? developmentsService.getRelated(allDevelopments.value, d, 3)
+    : [],
+)
 
 /**
  * Map a development status to a human-readable label. The mapping is

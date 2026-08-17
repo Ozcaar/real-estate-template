@@ -129,11 +129,24 @@ export interface Development {
 }
 ```
 
-> **Runtime validation.** `Development` currently has no Zod schema. The
-> hand-written `Development` interface above is the current source of
-> truth and is enforced by the TypeScript compiler. A future task may
-> add a development schema mirroring the property pattern
-> (`features/properties/schemas/property.schema.ts`).
+> **Runtime validation.** The `developmentListSchema` Zod schema
+> (added in v1.1.0 M22) is the runtime boundary tool. It is
+> consumed by the static adapter at module load and by the api
+> adapter at response-parse time so a malformed record fails
+> at the boundary rather than reaching the UI. Required fields
+> (`id`, `name`, `slug`, `status`, `location`, `description`,
+> `image`) are non-empty strings (`.min(1)`); `status` is
+> validated against `developmentStatusSchema` (the four
+> documented values); optional numeric fields
+> (`priceFrom` / `priceTo` / `areaFrom` / `areaTo`) accept
+> non-negative numbers; `units` and `bedrooms` accept
+> non-negative integers; `sizeUnit` is validated against the
+> `'metric' | 'imperial'` enum; `deliveryDate` / `currency`
+> are non-empty when supplied; `featured` is a boolean when
+> supplied. The schema output is pinned to the canonical
+> `Development` interface via a compile-time guard so the two
+> cannot drift. The schema lives at
+> `app/features/developments/schemas/development.schema.ts`.
 
 ## 4. Agent
 
@@ -582,7 +595,7 @@ Pure helper. Slices a list into a single page. The input array is never mutated.
 
 ## 10. Data-Source Boundary (CMS / API)
 
-The properties and agents features are the consumers of the `DataSourceAdapter<T>` boundary (developments still ships the bundled static catalog only). The boundary is provider-agnostic: the page layer calls `propertiesService.loadAll()` / `agentsService.loadAll()` and the service does not know whether the data came from the bundled static catalog, an HTTP API, or a CMS. Switching between sources is a deployment-time env-var change.
+The properties, agents, and developments features are the consumers of the `DataSourceAdapter<T>` boundary. The boundary is provider-agnostic: the page layer calls `propertiesService.loadAll()` / `agentsService.loadAll()` / `developmentsService.loadAll()` and the service does not know whether the data came from the bundled static catalog, an HTTP API, or a CMS. Switching between sources is a deployment-time env-var change.
 
 ### 10.1 Kinds
 
@@ -593,8 +606,8 @@ type DataSourceKind = 'static' | 'api' | 'cms'
 | Kind | Implementation | Shipped? |
 | --- | --- | --- |
 | `'static'` | `createStaticDataSource<T>({ data, schema? })` — bundles a TypeScript array, validates once at construction. | yes (the bundled default) |
-| `'api'` | `createApiDataSource<T>({ endpoint, schema?, timeoutMs? })` — generic HTTP/JSON adapter; uses the platform `fetch` with an `AbortController`-based timeout. | yes (v1.1.0 M17, properties + agents) |
-| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20, properties only — agents CMS deferred to a future task) |
+| `'api'` | `createApiDataSource<T>({ endpoint, schema?, timeoutMs? })` — generic HTTP/JSON adapter; uses the platform `fetch` with an `AbortController`-based timeout. | yes (v1.1.0 M17, properties + agents + developments) |
+| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20, properties only — agents CMS and developments CMS are deferred to a future task) |
 
 ### 10.2 Configuration (per feature)
 
@@ -619,6 +632,16 @@ NUXT_AGENTS_API_TIMEOUT_MS=10000                       # optional, default 10 00
 ```
 
 The agents loader ships `'static'` + `'api` only; `'cms'` raises `DataSourceNotImplementedError` with the loader's actual `SHIPPED_KINDS` list (`['static', 'api']`). Adding a CMS source for agents follows the same pattern as the property CMS source path (v1.1.0 M20).
+
+#### Developments (`server/utils/developments.ts` — added in v1.1.0 M22)
+
+```sh
+NUXT_DEVELOPMENTS_DATA_SOURCE=static|api       # cms is reserved for a future task
+NUXT_DEVELOPMENTS_API_URL=https://api.example.test/developments   # when kind=api
+NUXT_DEVELOPMENTS_API_TIMEOUT_MS=10000                            # optional, default 10 000 ms
+```
+
+The developments loader ships `'static'` + `'api'` only; `'cms'` raises `DataSourceNotImplementedError` with the loader's actual `SHIPPED_KINDS` list (`['static', 'api']`). Adding a CMS source for developments follows the same pattern as the property CMS source path (v1.1.0 M20). The developments / agents / property loaders follow the same template; per-task shared extraction is intentionally avoided to keep each loader self-contained and the property data-source code unchanged.
 
 ### 10.3 Validation boundary
 
