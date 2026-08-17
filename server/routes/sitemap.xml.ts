@@ -1,8 +1,8 @@
 import { defineEventHandler, getRequestHeader, setResponseHeader, setResponseStatus } from 'h3'
+import { loadAgentsServer } from '../utils/agents'
 import { loadPropertiesServer } from '../utils/properties'
 import { resolveTenantContext } from '../utils/tenant-context'
 import { developmentsService } from '~/features/developments/services/developments.service'
-import { agentsService } from '~/features/agents/services/agents.service'
 import type { Property } from '~/features/properties/types/property.types'
 
 /**
@@ -44,10 +44,15 @@ import type { Property } from '~/features/properties/types/property.types'
  * if a future task adds a visibility flag, the service is the place to
  * filter it out (the sitemap will pick up the change automatically.
  *
- * Agent detail URLs are sourced from `agentsService.getAll()`. The
- * agent model does not carry a visibility flag either; the service
- * returns the full catalog and the sitemap loop emits one entry per
- * agent's stable slug.
+ * Agent detail URLs are sourced from `loadAgentsServer()` (the
+ * server-only agent loader). The agent model does not carry a
+ * visibility flag; the loader returns the full catalog (validated
+ * against `agentListSchema`) and the sitemap loop emits one entry
+ * per agent's stable slug. The sitemap uses the loader directly
+ * rather than the app-side `agentsService` so the api-adapter
+ * module, the `NUXT_AGENTS_*` env vars, and the boundary
+ * regression tests on the app-side service do not influence the
+ * server-only Nitro bundle.
  *
  * The output is a minimal `urlset` (no `<lastmod>`, `<changefreq>` or
  * `<priority>`) because the data models do not carry a last-modified
@@ -101,7 +106,8 @@ export default defineEventHandler(async (event) => {
   if (modules.contact) urls.push('/contact')
   if (modules.agents) {
     urls.push('/agents')
-    for (const agent of agentsService.getAll()) {
+    const agents = await loadAgentsServer()
+    for (const agent of agents) {
       urls.push(`/agents/${agent.slug}`)
     }
   }

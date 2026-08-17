@@ -1,21 +1,44 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { sampleAgents } from '~/features/agents/data/agents'
+import { agentsService } from '~/features/agents/services/agents.service'
 import { usePageSeo } from '~/core/composables/usePageSeo'
 import { useJsonLd } from '~/core/composables/useJsonLd'
 
 /**
  * Agents listing page (`/agents`).
  *
- * Thin route: it reads the sample agent catalog from the agents feature,
- * composes a responsive grid of `AgentCard`s, and sets page-level SEO
- * metadata. No individual agent detail pages, no filtering, no backend
- * integration — those are future-phase tasks.
+ * Thin route: it loads the agent catalog through the
+ * documented async service, composes a responsive grid of
+ * `AgentCard`s, and sets page-level SEO metadata. The data
+ * is resolved through `useAsyncData` so SSR awaits the
+ * service's `loadAll()` before rendering the markup.
+ *
+ * **Data source.** The service consumes the resolved public
+ * agent list through the same-origin Nitro endpoint at
+ * `/api/agents`. The endpoint delegates to the server-only
+ * loader at `server/utils/agents.ts`, which owns the static
+ * / api source selection and reads the `NUXT_AGENTS_*` env
+ * vars. The page renders the resolved list as-is; no
+ * individual agent detail pages, no filtering, no backend
+ * integration beyond the documented `NUXT_AGENTS_*`
+ * configuration.
  */
 const { t } = useI18n()
 const site = useSiteConfig()
 
-const agents = computed(() => sampleAgents)
+/**
+ * Agent data source. Loaded through Nuxt's `useAsyncData` so
+ * SSR awaits the adapter's `loadAll()` before rendering the
+ * markup. The `agents:listing` key is unique to this page; a
+ * future per-page filter chip that wants its own key should
+ * prefix it.
+ */
+const { data: allAgents } = await useAsyncData(
+  'agents:listing',
+  () => agentsService.loadAll(),
+)
+
+const agents = computed(() => allAgents.value ?? [])
 
 // --- SEO ----------------------------------------------------------------
 /**

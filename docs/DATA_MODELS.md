@@ -143,6 +143,12 @@ export interface Agent {
   id: string
   /** Display name. */
   name: string
+  /**
+   * Stable, URL-safe slug used by the detail page route
+   * (`/agents/[slug]`). Must be unique across the catalog and
+   * stable across releases — renaming a slug is a broken-link event.
+   */
+  slug: string
   /** Role / position within the agency (agency content, not i18n). */
   role: string
   /** Short biography shown on the team card. */
@@ -160,11 +166,19 @@ export interface Agent {
 }
 ```
 
-> **Runtime validation.** `Agent` currently has no Zod schema. The
-> hand-written `Agent` interface above is the current source of truth
-> and is enforced by the TypeScript compiler. A future task may add an
-> agent schema mirroring the property pattern
-> (`features/properties/schemas/property.schema.ts`).
+> **Runtime validation.** The `agentListSchema` Zod schema
+> (added in v1.1.0 M21) is the runtime boundary tool. It is
+> consumed by the static adapter at module load and by the api
+> adapter at response-parse time so a malformed record fails
+> at the boundary rather than reaching the UI. Required fields
+> (`id`, `name`, `slug`, `role`, `bio`, `image`) are non-empty
+> strings (`.min(1)`); optional fields (`phone`, `email`,
+> `whatsapp`, `specialties`) accept any string (with per-item
+> `.min(1)` on `specialties` so a rendered badge is never an
+> empty string). The schema output is pinned to the canonical
+> `Agent` interface via a compile-time guard so the two cannot
+> drift. The schema lives at
+> `app/features/agents/schemas/agent.schema.ts`.
 
 ## 5. Lead
 
@@ -568,7 +582,7 @@ Pure helper. Slices a list into a single page. The input array is never mutated.
 
 ## 10. Data-Source Boundary (CMS / API)
 
-The properties feature is the first consumer of the `DataSourceAdapter<T>` boundary. The boundary is provider-agnostic: the page layer calls `propertiesService.loadAll()` and the service does not know whether the data came from the bundled static catalog, an HTTP API, or a CMS. Switching between sources is a deployment-time env-var change.
+The properties and agents features are the consumers of the `DataSourceAdapter<T>` boundary (developments still ships the bundled static catalog only). The boundary is provider-agnostic: the page layer calls `propertiesService.loadAll()` / `agentsService.loadAll()` and the service does not know whether the data came from the bundled static catalog, an HTTP API, or a CMS. Switching between sources is a deployment-time env-var change.
 
 ### 10.1 Kinds
 
@@ -579,12 +593,14 @@ type DataSourceKind = 'static' | 'api' | 'cms'
 | Kind | Implementation | Shipped? |
 | --- | --- | --- |
 | `'static'` | `createStaticDataSource<T>({ data, schema? })` — bundles a TypeScript array, validates once at construction. | yes (the bundled default) |
-| `'api'` | `createApiDataSource<T>({ endpoint, schema?, timeoutMs? })` — generic HTTP/JSON adapter; uses the platform `fetch` with an `AbortController`-based timeout. | yes (v1.1.0 M17) |
-| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20) |
+| `'api'` | `createApiDataSource<T>({ endpoint, schema?, timeoutMs? })` — generic HTTP/JSON adapter; uses the platform `fetch` with an `AbortController`-based timeout. | yes (v1.1.0 M17, properties + agents) |
+| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20, properties only — agents CMS deferred to a future task) |
 
-### 10.2 Configuration (properties only)
+### 10.2 Configuration (per feature)
 
-The selection is driven by three server-only env vars read inside `server/utils/properties.ts` (the canonical Nuxt 4 server-only location):
+Each feature has its own server-only env-var set, owned by the loader in `server/utils/<feature>.ts` (the canonical Nuxt 4 server-only location). The env vars are intentionally NOT declared in `nuxt.config.ts → runtimeConfig` — reading them through `process.env` keeps the adapter modules and the env-var names on the server-only side of the bundle; they cannot reach the client output by code organization.
+
+#### Properties (`server/utils/properties.ts`)
 
 ```sh
 NUXT_PROPERTIES_DATA_SOURCE=static|api|cms
@@ -594,7 +610,15 @@ NUXT_PROPERTIES_CMS_URL=https://cms.example.test/properties   # when kind=cms
 NUXT_PROPERTIES_CMS_TIMEOUT_MS=10000                          # optional, default 10 000 ms
 ```
 
-The env vars are intentionally NOT declared in `nuxt.config.ts → runtimeConfig`. Reading them through `process.env` keeps the adapter modules and the three `NUXT_PROPERTIES_*` env-var names on the server-only side of the bundle; they cannot reach the client output by code organization (the loader is in `server/utils/`).
+#### Agents (`server/utils/agents.ts` — added in v1.1.0 M21)
+
+```sh
+NUXT_AGENTS_DATA_SOURCE=static|api               # cms is reserved for a future task
+NUXT_AGENTS_API_URL=https://api.example.test/agents   # when kind=api
+NUXT_AGENTS_API_TIMEOUT_MS=10000                       # optional, default 10 000 ms
+```
+
+The agents loader ships `'static'` + `'api` only; `'cms'` raises `DataSourceNotImplementedError` with the loader's actual `SHIPPED_KINDS` list (`['static', 'api']`). Adding a CMS source for agents follows the same pattern as the property CMS source path (v1.1.0 M20).
 
 ### 10.3 Validation boundary
 

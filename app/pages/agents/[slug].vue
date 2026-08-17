@@ -9,18 +9,19 @@ import type { BreadcrumbItem } from '~/types/breadcrumb.types'
 /**
  * Agent detail page (`/agents/[slug]`).
  *
- * Thin route: it looks up the agent by slug through the documented
- * service, raises a proper 404 when the slug is unknown, then
- * composes a clean detail layout from existing primitives. The page
- * follows the property / development detail pages' SEO contract
- * (canonical, `ogType: 'article'`, the agent's own image as the
- * social image, `BreadcrumbList` JSON-LD) and emits a `Person`
- * schema.org node tied back to the agency via `worksFor:
- * RealEstateAgent`. A related-agents section is intentionally
- * omitted: the agent model has no obvious relatedness signal (no
- * `featured` field, no `developmentId` link to the property
- * model, no `team` group), and a curated "Other agents you may
- * like" section would be arbitrary for a 4-record catalog.
+ * Thin route: it loads the agent catalog through the documented
+ * async service, looks up the agent by slug, raises a proper 404
+ * when the slug is unknown, then composes a clean detail layout
+ * from existing primitives. The page follows the property /
+ * development detail pages' SEO contract (canonical,
+ * `ogType: 'article'`, the agent's own image as the social image,
+ * `BreadcrumbList` JSON-LD) and emits a `Person` schema.org node
+ * tied back to the agency via `worksFor: RealEstateAgent`. A
+ * related-agents section is intentionally omitted: the agent model
+ * has no obvious relatedness signal (no `featured` field, no
+ * `developmentId` link to the property model, no `team` group),
+ * and a curated "Other agents you may like" section would be
+ * arbitrary for a 4-record catalog.
  */
 const { t } = useI18n()
 const site = useSiteConfig()
@@ -31,8 +32,22 @@ const slug = computed(() => {
   return Array.isArray(raw) ? raw[0] : raw
 })
 
+/**
+ * Agent data source. Loaded through Nuxt's `useAsyncData` so
+ * SSR awaits the service's `loadAll()` before rendering the
+ * markup. The `agents:detail` key is unique to this page; a
+ * future per-agent widget that wants its own key should prefix
+ * the slug.
+ */
+const { data: allAgents } = await useAsyncData(
+  'agents:detail',
+  () => agentsService.loadAll(),
+)
+
 const agent = computed(() =>
-  slug.value ? agentsService.getBySlug(slug.value) : undefined,
+  allAgents.value && slug.value
+    ? agentsService.getBySlug(allAgents.value, slug.value)
+    : undefined,
 )
 
 if (!agent.value) {

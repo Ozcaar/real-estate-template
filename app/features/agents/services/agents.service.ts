@@ -1,79 +1,111 @@
+// The agent service is bundled to BOTH the server and the
+// client. The data source is server-only by code organization:
+// the api-adapter module, the `NUXT_AGENTS_*` env vars, and the
+// static / api source selection all live in
+// `server/utils/agents.ts`. The service consumes the resolved
+// public list through the same-origin Nitro endpoint at
+// `/api/agents` (served by `server/api/agents.get.ts`), so the
+// client bundle references only a same-origin path -- never
+// the external API URL, never the `NUXT_AGENTS_*` env-var
+// names, never the api-adapter module.
+//
+// `$fetch` is Nuxt 4's universal fetch. It is auto-imported
+// on both server and client and resolves to a same-origin
+// request on the server (loopback to the Nitro endpoint) and
+// a same-origin HTTP request on the client. The TypeScript
+// declaration below matches the auto-injected `$fetch` global;
+// the runtime call uses no new dependency (the implementation
+// is `ofetch`, which is a transitive dep of Nuxt).
 import type { Agent } from '../types/agent.types'
-import { sampleAgents } from '../data/agents'
-import {
-  DEFAULT_DATA_SOURCE,
-  selectDataSource,
-  type DataSourceAdapter,
-} from '../../../core/data-source/data-source'
-import { createStaticDataSource } from '../../../core/data-source/adapters/static-adapter'
+
+declare const $fetch: <T = unknown>(url: string, options?: unknown) => Promise<T>
 
 /**
- * Agents business logic.
+ * Boundary note.
  *
- * Mirrors the structure of `developmentsService`: every consumer goes
- * through this service so the static data can later be swapped for an
- * API response (e.g. `$fetch('/api/agents')`) without changing
- * components. Methods are synchronous over static data, which keeps
- * SSR rendering deterministic.
+ * This module is bundled to BOTH the server and the client.
+ * It must NOT import the api-adapter module
+ * (`app/core/data-source/adapters/api-adapter.ts`) and it must
+ * NOT contain `NUXT_AGENTS_DATA_SOURCE`, `NUXT_AGENTS_API_URL`,
+ * or `NUXT_AGENTS_API_TIMEOUT_MS` -- those are private
+ * configuration that lives in `server/utils/agents.ts`. The
+ * service consumes the resolved public list through the
+ * same-origin Nitro endpoint at `/api/agents`; the client
+ * bundle references only the same-origin path.
  *
- * The agent model is intentionally simpler than the development
- * model: there is no `status: 'hidden'` field, no `featured` flag,
- * and no `deliveryDate` / `units` / `priceFrom` / `areaFrom`
- * numeric fields. The detail page therefore does not need a
- * `getFeatured` or `getRelated` helper — the listing is small
- * (4 records in the static catalog) and a "related agents" section
- * has no obvious relatedness signal in the data model. When a
- * future task adds one (e.g. `specialty` overlap, shared
- * `developmentId` on the property model, or a "team lead" graph),
- * the `getRelated` method is the place to add it.
- *
- * **Data source.** The service consumes the bundled sample
- * catalog through the data-source adapter boundary (see
- * `app/core/data-source/`). A future release can swap the
- * source for an HTTP API or a headless CMS by registering a
- * new adapter and switching {@link DEFAULT_DATA_SOURCE} (or
- * supplying a per-feature `DataSourceConfig`) without changing
- * the service signatures pages and components depend on. The
- * static adapter ships without a Zod schema for `Agent`
- * because no agent schema exists yet; the data file is the
- * source of truth. When an agent schema is added in a future
- * pass, it is passed to `createStaticDataSource` as the
- * `schema` option exactly the way the property service does.
+ * The boundary regression test in
+ * `app/features/agents/services/agents.service.boundary.test.ts`
+ * pins this contract: a textual scan of this file fails the
+ * suite if any of the api-adapter import, the env-var name
+ * strings, or the `typeof window === 'undefined'` guard ever
+ * reappears.
  */
 
 /**
- * The agents data-source adapter. The selector throws
- * `DataSourceNotImplementedError` if the default kind ever
- * changes to a kind without a registered adapter.
+ * Agents business logic (Task 104).
+ *
+ * Mirrors the structure of `propertiesService` after the v1.1.0
+ * M17 async contract evolution:
+ *
+ *  - `loadAll()` is async and returns the resolved public
+ *    list from the same-origin Nitro endpoint. Pages consume
+ *    it through Nuxt's `useAsyncData('agents:listing', () =>
+ *    agentsService.loadAll())` so SSR awaits the load before
+ *    rendering.
+ *  - The pure helpers (`getBySlug(data, slug)`) take the
+ *    loaded data as their first argument. They do not perform
+ *    any I/O and do not call `loadAll()` themselves; the page
+ *    resolves the data once and threads it through.
+ *
+ * The agent model is intentionally simpler than the property
+ * model: there is no `status: 'hidden'` field, no `featured`
+ * flag, and no `deliveryDate` / `units` / `priceFrom` /
+ * `areaFrom` numeric fields. The detail page therefore does
+ * not need a `getFeatured` or `getRelated` helper — the
+ * listing is small (4 records in the static catalog) and a
+ * "related agents" section has no obvious relatedness
+ * signal in the data model. When a future task adds one
+ * (e.g. `specialty` overlap, shared `developmentId` on the
+ * property model, or a "team lead" graph), the `getRelated`
+ * method is the place to add it.
+ *
+ * **Data source.** The service consumes the resolved public
+ * list through the same-origin Nitro endpoint, which delegates
+ * to the server-only loader at `server/utils/agents.ts`. The
+ * loader owns the static / api source selection, reads the
+ * `NUXT_AGENTS_*` env vars, and validates the result with
+ * `agentListSchema`. A rebrand that wants a real HTTP API
+ * configures `NUXT_AGENTS_DATA_SOURCE=api` +
+ * `NUXT_AGENTS_API_URL` at deploy time; the service
+ * signature is unchanged.
  */
-const agentsAdapter: DataSourceAdapter<Agent> = selectDataSource(
-  DEFAULT_DATA_SOURCE,
-  {
-    static: createStaticDataSource<Agent>({
-      data: sampleAgents,
-      source: 'app/features/agents/data/agents.ts',
-    }),
-  },
-)
-
-/**
- * The cached, full list of agents. The service's `getAll()`
- * returns this list as-is (no hidden filtering because the
- * `Agent` model has no `status` field), matching the
- * pre-adapter behaviour exactly.
- */
-const allAgents: readonly Agent[] = agentsAdapter.getAll()
-
 export const agentsService = {
-  /** Every agent in the catalog, in insertion order. */
-  getAll(): Agent[] {
-    return allAgents
+  /**
+   * Async loader. Fetches the resolved public agent list from
+   * the same-origin Nitro endpoint at `/api/agents`. Returns
+   * the validated list (the Zod parse is the loader's
+   * responsibility; the endpoint is a thin transport).
+   *
+   * Pages consume this through Nuxt's `useAsyncData` so SSR
+   * awaits the load before rendering. The returned array is
+   * typed as `readonly Agent[]` so a rebrand cannot mutate
+   * the resolved list through this surface.
+   */
+  async loadAll(): Promise<readonly Agent[]> {
+    return await $fetch<readonly Agent[]>('/api/agents')
   },
 
   /**
-   * Look up a single agent by its slug. Returns `undefined` when
-   * the slug is unknown so callers can map that to a proper 404
-   * (e.g. via `createError({ statusCode: 404, ... })`).
+   * Look up a single agent by its slug. Returns `undefined`
+   * when the slug is unknown so callers can map that to a
+   * proper 404 (e.g. via `createError({ statusCode: 404, ...
+   * })`).
+   *
+   * The pure helper takes the loaded data as its first
+   * argument. It does NOT call `loadAll()` — the page
+   * resolves the data once and threads it through. This is
+   * the same shape `propertiesService.getBySlug` uses after
+   * the v1.1.0 M17 async evolution.
    *
    * Slug lookups are case-sensitive. The static catalog ships
    * already-lowercase slugs; the lookup is case-sensitive so a
@@ -82,7 +114,7 @@ export const agentsService = {
    * 404 for the wrong-case path. The development and property
    * services use the same case-sensitive contract.
    */
-  getBySlug(slug: string): Agent | undefined {
-    return allAgents.find(agent => agent.slug === slug)
+  getBySlug(agents: readonly Agent[], slug: string): Agent | undefined {
+    return agents.find(agent => agent.slug === slug)
   },
 }

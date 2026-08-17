@@ -44,6 +44,7 @@ export default defineConfig({
     environment: 'node',
     include: [
       'app/features/leads/schemas/**/*.test.ts',
+      'app/features/agents/schemas/**/*.test.ts',
       'app/features/properties/services/**/*.test.ts',
       'app/features/developments/services/**/*.test.ts',
       'app/features/agents/services/**/*.test.ts',
