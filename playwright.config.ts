@@ -19,11 +19,25 @@ import { defineConfig, devices } from '@playwright/test'
  *    `/api/contact`; the preview server mirrors the `pnpm build`
  *    Nitro output, which is the recommended deploy target for live
  *    lead capture.
- * 2. The `nuxt preview` server binds to `0.0.0.0:3000` by default;
+ * 2. `webServer.env` pins `NITRO_HOST=127.0.0.1` + `NITRO_PORT=3000`
+ *    so the preview server binds to the IPv4 loopback address that
+ *    Playwright's `webServer.url: 'http://127.0.0.1:3000'` probes.
+ *    Without these env vars, Nitro binds to `::` (IPv6 dual-stack)
+ *    on Node v24 / Windows, which Playwright cannot reach as
+ *    `127.0.0.1` and the readiness probe times out. The pin is a
+ *    permanent test-infrastructure fix, not diagnostic
+ *    instrumentation: it makes the bind address deterministic
+ *    across Windows / macOS / Linux and across local + CI runs.
+ *    Production deploys (and `pnpm dev`) are unaffected because
+ *    `webServer.env` only injects env vars into the Playwright-
+ *    spawned `pnpm preview` process.
+ * 3. The `nuxt preview` server binds to `0.0.0.0:3000` by default
+ *    on older Nitro versions and to `::3000` on newer ones; the
+ *    `webServer.env` pin overrides both with the IPv4 loopback.
  *    `reuseExistingServer: !process.env.CI` lets a developer run
  *    `pnpm test:e2e` against an already-running `pnpm dev` server
  *    (or `pnpm preview`) without Playwright starting a duplicate.
- * 3. The CI workflow runs `pnpm build` once and then `pnpm
+ * 4. The CI workflow runs `pnpm build` once and then `pnpm
  *    test:e2e`; the `webServer` step in the Playwright config then
  *    starts the preview server on demand and tears it down when
  *    the run is done.
@@ -56,6 +70,13 @@ export default defineConfig({
     // every test run.
     command: 'pnpm preview',
     url: 'http://127.0.0.1:3000',
+    // Pin the preview server's bind address to the IPv4 loopback
+    // so it matches the readiness URL above. See the JSDoc on the
+    // `webServer` block above for the full rationale.
+    env: {
+      NITRO_HOST: '127.0.0.1',
+      NITRO_PORT: '3000',
+    },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     stdout: 'pipe',

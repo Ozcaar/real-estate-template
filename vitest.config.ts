@@ -43,6 +43,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: [
+      'app/config/**/*.test.ts',
       'app/features/leads/schemas/**/*.test.ts',
       'app/features/agents/schemas/**/*.test.ts',
       'app/features/developments/schemas/**/*.test.ts',

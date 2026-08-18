@@ -75,36 +75,61 @@ The header value is normalized by the registry's `normalizeHostname` (port strip
 
 ## 3. Tenant-aware default locale
 
-### 3.1 The hook in `app.vue`
+### 3.1 The client/server-safe shared module
 
-The `@nuxtjs/i18n` module's deployment-scoped `defaultLocale` is still the first-pass default on the server. To honor the active tenant's `agency.defaultLocale` when no explicit user preference exists, `app/app.vue` runs a server-only override:
+The per-tenant i18n locale resolution lives in `app/config/tenant-locale.ts` (Task 107B). This module is the single source of truth for the locale priority order. It is imported by BOTH the server-only tenancy plugin (`app/plugins/tenancy.server.ts`) AND the client-bundled `app/app.vue`. The module contains no server-only dependencies (no `useRuntimeConfig`, no `process.env`, no `agencyRegistry`) and is safe to import from any client-bundled code — the prior arrangement (Task 107) had the functions in `server/utils/tenant-context.ts`, which meant `app.vue` had to import from `server/` (a boundary leak that risked pulling the tenant registry, the `useRuntimeConfig` call, and the env-var dispatch into the client bundle).
 
-```ts
-if (import.meta.server) {
-  const cookie = useCookie('i18n_locale')
-  if (!cookie.value) {
-    const tenantDefault = site.value.agency.defaultLocale
-    if (tenantDefault && locales.value.some(l => l.code === tenantDefault)) {
-      setLocale(tenantDefault)
-    }
-  }
-}
-```
+The module exports:
 
-The override:
+- `resolveTenantLocale(cookieValue, tenantDefault, availableLocaleCodes, i18nDefaultLocale)` — the pure priority-order function.
+- `TenantLocaleResolution` — the discriminated union (`{ kind: 'cookie' | 'tenant' | 'fallback', locale }`) that pins the priority order.
+- `applyTenantLocaleResolution(resolution, i18n)` — the authoritative application step that calls `setLocale` for ALL three outcomes (with the no-op optimization when the current locale already matches).
+- `TenantLocaleI18n` — a minimal structural type for the i18n module interaction (so the module has no Nuxt-specific imports).
 
-- Runs only on the server (`import.meta.server`) — the client-side i18n module already re-derives the locale from the cookie on hydration, so running the override twice would be redundant.
-- Respects the documented user-override path. A user who has explicitly switched languages keeps their choice across tenant navigations and page reloads.
-- Falls through if the tenant's `defaultLocale` is not in the registered locales (a defensive guard — the agency schema already requires `defaultLocale ⊆ availableLocales ⊆ i18nLocales`, so this branch is unreachable for a properly configured tenant).
+### 3.2 The priority order
 
-### 3.2 What is not covered
+`resolveTenantLocale` returns:
 
-The first-pass default locale on the server (the value the i18n module uses before the cookie check) is still deployment-scoped. A deployment that needs every tenant to use a different default locale at first paint must either:
+1. **`{ kind: 'cookie', locale }`** — the `i18n_locale` cookie is set to a registered locale code. The function treats the cookie as the user's explicit choice. An empty string, whitespace-only, or unrecognized cookie value falls through to the next rule (the i18n module's `detectBrowserLanguage` ignores it).
+2. **`{ kind: 'tenant', locale }`** — the cookie is absent (or unrecognized) and the tenant's `defaultLocale` is in the i18n module's registered locales list. The per-tenant fallback.
+3. **`{ kind: 'fallback', locale }`** — the cookie is absent and the tenant's `defaultLocale` is missing or unsupported. The i18n module's deployment-wide default.
 
-- Run separate processes per tenant (each with its own `i18n.defaultLocale` and `agency.defaultLocale`).
-- Plumb the tenant's `defaultLocale` into the i18n module's first-pass logic via a custom plugin (out of Task 102 scope; a future task can add this without changing the public API).
+The cookie check is `cookieValue && cookieValue.length > 0 && availableLocaleCodes.includes(cookieValue)`. The same `tenantDefault` check applies to the tenant default (must be a non-empty string in the registered locales list).
 
-The Task 102 override in `app.vue` covers the no-cookie path. The user-override path (the `i18n_locale` cookie) is unchanged.
+### 3.3 SSR: the `tenancy.server.ts` plugin
+
+The `tenancy.server.ts` plugin runs on every Nitro request, server-only. It calls `resolveTenantContext(host)` to resolve the active tenant, then calls `resolveTenantLocale(cookie.value, tenant.defaultLocale, availableLocaleCodes, i18nDefaultLocale)` to resolve the active locale. The plugin calls `applyTenantLocaleResolution(resolution, { locale, setLocale })` — which applies the resolution to the i18n module's locale. `applyTenantLocaleResolution` is authoritative for ALL three outcomes: when the resolution kind is `'cookie'`, the i18n module's `detectBrowserLanguage` plugin has already set the locale from the cookie value, and the helper skips the `setLocale` call because the current locale already matches (no-op optimization). When the resolution kind is `'tenant'` or `'fallback'`, the helper calls `setLocale` with the resolved locale.
+
+This is the **first-pass tenant-aware locale** — it runs before any page renders, so the i18n module's initial locale is the tenant's default (not the deployment-wide `defaultLocale: 'en'`). The HTML's `<html lang>`, the SSR content, and the SEO metadata all use the tenant's default on the first pass.
+
+### 3.4 Client: the `app.vue` override
+
+The `app.vue` script runs the SAME `applyTenantLocaleResolution` function with the same inputs (cookie value from `useCookie('i18n_locale')`, tenant default from the hydrated `useSiteConfig()`, available locales from `useI18n().locales.value`, i18n default from `useI18n().locale.value`). The override runs on both the server and the client — there is no `if (import.meta.server)` guard. The `applyTenantLocaleResolution` helper is deterministic and the no-op optimization avoids redundant `setLocale` calls.
+
+The reason: the server runs the override once in the `tenancy.server.ts` plugin, and `app.vue` runs it again on the client after `useSiteConfig()` is hydrated from the SSR payload. The pure function is deterministic, so both calls produce the same output. The client override is what fixes the prior hydration mismatch: without it, the client i18n module would use the deployment-wide `defaultLocale: 'en'` (the i18n module's first-pass value) when no cookie was set, even though the SSR HTML used the tenant's default.
+
+### 3.5 No plugin-order assumption
+
+`applyTenantLocaleResolution` treats the resolution as authoritative for ALL three outcomes — it calls `setLocale` with the resolved locale when the current locale does not already match. This makes the behavior independent of the i18n module's `detectBrowserLanguage` execution order: even if the i18n module's plugin has not yet set the locale from the cookie, the resolved cookie locale is applied unconditionally (modulo the no-op optimization). The cookie path works without relying on `detectBrowserLanguage` — the resolution is the source of truth.
+
+### 3.6 SSR / hydration consistency
+
+The same `resolveTenantLocale` and `applyTenantLocaleResolution` functions are used on both sides:
+
+- **SSR:** the `tenancy.server.ts` plugin reads the cookie from the HTTP request, the tenant's `defaultLocale` from `resolveTenantContext(host)`, the available locales from `useI18n().locales.value`, and the i18n default from `useI18n().locale.value`. The result is applied to the i18n module's locale BEFORE the first SSR render.
+- **Hydration:** the client reads the cookie from the browser, the tenant's `defaultLocale` from the hydrated `useSiteConfig()` (carried in the SSR payload), the available locales from `useI18n().locales.value`, and the i18n default from `useI18n().locale.value`. The result is applied to the i18n module's locale on the client BEFORE the page hydrates.
+
+Both calls produce the same output for the same inputs, so SSR and hydration agree on the same initial locale. The cookie is the same value on both sides (it's part of the HTTP request). The tenant's `defaultLocale` is the same on both sides (it's part of the SSR payload via `useState('site-config')`). No per-request mutable state is involved.
+
+### 3.7 Cookie preservation
+
+The cookie is the user's explicit choice. When the cookie is set to a valid locale code (a value in the i18n module's registered locales), the i18n module's `detectBrowserLanguage` plugin reads the cookie on the server, and the i18n module's hydration reads the cookie on the client. `applyTenantLocaleResolution` reports `{ kind: 'cookie' }` and skips the `setLocale` call because the current locale already matches — the documented user-override path is preserved. A user that has explicitly switched languages keeps their choice across tenant navigations and page reloads.
+
+When the cookie is empty, whitespace-only, or unrecognized, `resolveTenantLocale` falls through to the tenant default (or the i18n default if the tenant default is also unrecognized). The i18n module's `detectBrowserLanguage` plugin would have ignored the cookie in the same way (it checks the cookie against the registered locales), so the resolution matches the i18n module's effective behavior.
+
+### 3.8 What was not changed
+
+The cookie's persistence and the language switcher are unchanged. The cookie is still set by `@nuxtjs/i18n`'s `detectBrowserLanguage` plugin and read by the i18n module on every hydration. The `AppLanguageSwitcher` component (the user-facing language picker) is unchanged — it still calls `setLocale` to switch languages, and the i18n module's cookie persistence handles the persistence. The Task 107B change is purely structural: the locale resolution moved from `server/utils/tenant-context.ts` to the client/server-safe shared module `app/config/tenant-locale.ts`, and the application step now treats the resolution as authoritative for all three outcomes. No user-facing UX change.
 
 ## 4. Adding a new tenant (operational checklist)
 
@@ -266,6 +291,5 @@ Per-field dispatch: a tenant can override the adapter id only, the SMTP host onl
 
 ## 10. Deferred work
 
-- **Per-tenant i18n first-pass default.** The Task 102 hook in `app.vue` covers the no-cookie path. The first-pass default (before the cookie check) is still deployment-scoped. A future task can plumb the tenant's `defaultLocale` into the i18n module's first-pass logic if needed.
 - **Distributed rate limiting.** The lead-capture rate limiter is per-process (a `Map`-based sliding window). A multi-process deployment (PM2 cluster, Cloudflare Workers isolates) shares no state between instances. A future task can move the rate limiter to a Nitro storage driver backed by an external KV.
 - **Distributed cache.** The per-request resolver is not cached. Two concurrent requests on the same hostname re-resolve from the registry + env vars. The cost is one `selectAgencyByHost` call (a frozen `Record` lookup) plus a small number of `process.env` reads — negligible at any scale. A future task can add a request-scoped cache if profiling shows a need.

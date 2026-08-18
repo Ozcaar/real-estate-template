@@ -55,7 +55,12 @@ import {
  * preference; the tenant-aware override is wired in
  * `app/app.vue` via `useI18n()` so the SSR HTML `lang`
  * attribute reflects the active tenant when no
- * `i18n_locale` cookie is present.
+ * `i18n_locale` cookie is present. The pure locale
+ * resolver (`resolveTenantLocale`) and the application step
+ * (`applyTenantLocaleResolution`) live in the client/server-safe
+ * shared module `app/config/tenant-locale.ts` (Task 107B); this
+ * file (server-only) imports them for the server plugin's
+ * use but does not re-export them.
  *
  * **No module-level state.** Every call constructs a fresh
  * `TenantContext` from the registry + `process.env` +

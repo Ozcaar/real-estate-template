@@ -1,5 +1,9 @@
 import type { SiteConfig } from '~/types/site.types'
 import { resolveTenantContext } from '../../server/utils/tenant-context'
+import {
+  applyTenantLocaleResolution,
+  resolveTenantLocale,
+} from '~/config/tenant-locale'
 
 /**
  * Tenant resolution plugin (server-only).
@@ -51,15 +55,47 @@ import { resolveTenantContext } from '../../server/utils/tenant-context'
  * `usePageSeo()` can pick it up during SSR. The default tenant
  * (no per-tenant override) resolves to the global env-var value,
  * preserving the existing single-tenant behavior byte-identically.
+ *
+ * **Per-tenant i18n first-pass resolution (Task 107 / 107B).**
+ * When the `i18n_locale` cookie is absent, the plugin sets the
+ * i18n module's locale to the active tenant's
+ * `agency.defaultLocale` BEFORE the first SSR render. This makes
+ * the i18n module's initial locale tenant-aware from the start
+ * (the prior app.vue override ran AFTER the first render and
+ * produced an SSR / hydration mismatch on the client when the
+ * cookie was absent — the SSR HTML used the tenant's default
+ * while the client i18n module used the deployment-wide
+ * `defaultLocale: 'en'`). The override is purely additive: when
+ * the cookie is set, the i18n module's `detectBrowserLanguage`
+ * already set the locale, and the plugin does NOT touch it
+ * (the documented user-override path is preserved). The
+ * resolution is delegated to the pure function
+ * {@link resolveTenantLocale} so the same inputs always produce
+ * the same output (concurrent requests for different tenants
+ * cannot share locale resolution).
+ *
+ * **Plugin-context i18n access (Task 107B).** The plugin reads
+ * the i18n instance via `nuxtApp.$i18n` rather than the
+ * `useI18n()` composable. `useI18n()` is designed for
+ * component-setup contexts; calling it from a Nuxt plugin
+ * can fail to resolve the Vue-i18n composer when the plugin
+ * runs outside a component setup (the composer context may
+ * not be available at that phase on some Nuxt 4 / i18n module
+ * versions). The Nuxt app instance exposes the i18n composer
+ * directly via `nuxtApp.$i18n`; this works reliably from a
+ * Nuxt plugin on every platform.
  */
 
 /**
  * Seed the shared `useState` singletons with the resolved
- * tenant context (SiteConfig + per-tenant siteUrl).
+ * tenant context (SiteConfig + per-tenant siteUrl) AND set
+ * the i18n module's first-pass locale when the user has no
+ * `i18n_locale` cookie (Task 107 / 107B).
  *
  * The function is not exported (it lives only inside this
  * server-only module) so the seed path cannot reach the client
- * bundle. Two `useState` calls are issued per request:
+ * bundle. Three `useState` calls and at most one `setLocale`
+ * call are issued per request:
  *
  *   - `'site-config'` — the existing singleton that
  *     `useSiteConfig()` reads on both the server and the client.
@@ -72,8 +108,22 @@ import { resolveTenantContext } from '../../server/utils/tenant-context'
  *     `usePageSeo` treats the empty value as "no canonical
  *     URL configured" and falls back to its own empty-URL
  *     behavior (no canonical link, no `og:url`).
+ *   - `i18n.locale` — the i18n module's reactive locale ref.
+ *     The plugin sets it ONLY when the `i18n_locale` cookie is
+ *     absent AND the tenant's `defaultLocale` is a registered
+ *     locale (or the i18n module's default is the documented
+ *     last-resort fallback). When the cookie is set, the
+ *     `detectBrowserLanguage` plugin already set the locale
+ *     from the cookie value and the plugin does NOT override it.
+ *
+ * @param nuxtApp The Nuxt app instance, passed from the
+ * `defineNuxtPlugin` callback. The i18n composer is read via
+ * `nuxtApp.$i18n` (see the JSDoc above).
  */
-function seedSiteConfig(host: string | null | undefined): void {
+function seedSiteConfig(
+  host: string | null | undefined,
+  nuxtApp: { $i18n?: { locale: unknown, locales: unknown, setLocale: unknown } },
+): void {
   const ctx = resolveTenantContext(host)
 
   const state = useState<SiteConfig>('site-config')
@@ -81,9 +131,53 @@ function seedSiteConfig(host: string | null | undefined): void {
 
   const urlState = useState<string>('site-config-url', () => '')
   urlState.value = ctx.siteUrl
+
+  // Per-tenant i18n first-pass locale (Task 107 / 107B).
+  // Resolve the active locale from the cookie + tenant default
+  // + i18n module default, and apply the result via
+  // `applyTenantLocaleResolution` — which treats the resolution
+  // as authoritative for all three outcomes and calls `setLocale`
+  // exactly once when the current locale does not already
+  // match. The pure `resolveTenantLocale` function is the
+  // single source of truth for the priority order; the
+  // client-side `app.vue` uses the same function with the same
+  // inputs, so SSR and hydration produce the same initial locale.
+  // No plugin-order assumption: the override is independent
+  // of whether the i18n module's `detectBrowserLanguage` plugin
+  // has already set the locale.
+  const cookie = useCookie('i18n_locale')
+  const i18n = nuxtApp.$i18n
+  if (!i18n) {
+    // The i18n module is not installed. The SSR continues with
+    // the i18n module's deployment-scoped default (whatever that
+    // is). Per-tenant locale resolution is not available in
+    // this configuration — fall through without setting the
+    // locale. The pure `resolveTenantLocale` / `applyTenantLocaleResolution`
+    // contract still works for callers that read the resolved
+    // locale (the contract is independent of whether the i18n
+    // module is installed).
+    return
+  }
+  // `nuxtApp.$i18n.locale` is a `Ref<string>` and
+  // `nuxtApp.$i18n.locales` is a `Ref<LocaleObject[]>` — the same
+  // shape `useI18n()` returns on the client. Reading `.value` on
+  // both refs yields the underlying string / array (the structural
+  // type in `tenant-locale.ts` consumes the refs via `.value`).
+  const localeRef = i18n.locale as { value: string }
+  const localesRef = i18n.locales as { value: Array<{ code: string }> }
+  const setLocale = i18n.setLocale as (locale: string) => unknown
+  const i18nDefaultLocale = String(localeRef.value ?? 'en')
+  const availableLocaleCodes = localesRef.value.map(l => l.code)
+  const resolution = resolveTenantLocale(
+    typeof cookie.value === 'string' ? cookie.value : null,
+    ctx.agency.defaultLocale,
+    availableLocaleCodes,
+    i18nDefaultLocale,
+  )
+  applyTenantLocaleResolution(resolution, { locale: localeRef, setLocale })
 }
 
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin((nuxtApp) => {
   const url = useRequestURL()
-  seedSiteConfig(url.hostname)
+  seedSiteConfig(url.hostname, nuxtApp)
 })
