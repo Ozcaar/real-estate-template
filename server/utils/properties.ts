@@ -1,24 +1,21 @@
-import { createApiDataSource } from '~/core/data-source/adapters/api-adapter'
-import { createHttpJsonCmsDriver } from '~/core/data-source/adapters/http-json-cms-driver'
-import { createStaticDataSource } from '~/core/data-source/adapters/static-adapter'
 import { createCmsDataSource } from '~/core/data-source/cms-driver'
-import {
-  DataSourceMissingConfigError,
-  DataSourceNotImplementedError,
-  isDataSourceKind,
-  type DataSourceAdapter,
-  type DataSourceKind,
-} from '~/core/data-source/data-source'
+import { createHttpJsonCmsDriver } from '~/core/data-source/adapters/http-json-cms-driver'
+import type { DataSourceAdapter, DataSourceKind } from '~/core/data-source/data-source'
 import { propertyListSchema } from '~/features/properties/schemas/property.schema'
 import { sampleProperties } from '~/features/properties/data/properties'
 import type { Property } from '~/features/properties/types/property.types'
+import {
+  createServerDataSourceAdapter,
+  createServerLoader,
+  type ServerDataSourceOptions,
+} from './server-data-source'
 
 /**
  * Server-only property loader.
  *
  * The single source of truth for the resolved property list on
  * the server. Owns the `NUXT_PROPERTIES_*` private configuration
- * and the static / api source selection, and exposes the
+ * and the static / api / cms source selection, and exposes the
  * resolved data through two public surfaces:
  *
  *  - {@link loadPropertiesServer} — async, returns the
@@ -30,8 +27,9 @@ import type { Property } from '~/features/properties/types/property.types'
  *    endpoint).
  *  - {@link createPropertiesServerAdapter} — lower-level
  *    factory that returns a {@link DataSourceAdapter}. Exposed
- *    for the unit tests that exercise the static-default and
- *    api-configured branches without booting a Nitro server.
+ *    for the unit tests that exercise the static-default,
+ *    api-configured, and cms-configured branches without
+ *    booting a Nitro server.
  *
  * **Why a `server/utils/` module.** `server/utils/` is the
  * canonical Nuxt 4 location for server-only utilities: the
@@ -41,6 +39,24 @@ import type { Property } from '~/features/properties/types/property.types'
  * cannot reach the client bundle by code organization, not by
  * tree-shaking — a future change cannot reintroduce the leak
  * without moving the file out of `server/utils/`.
+ *
+ * **Shared server-side data-source utilities (Task 108).**
+ * The kind-parsing, `isDataSourceKind` dispatch,
+ * missing-config / unsupported-kind error mapping, timeout
+ * parsing, and in-flight `pending` coalescing are NOT
+ * re-implemented here. They live in
+ * `server/utils/server-data-source.ts` and are reused through
+ * {@link createServerDataSourceAdapter} + {@link createServerLoader}.
+ * This file owns ONLY the feature-specific surface: the
+ * `NUXT_PROPERTIES_*` env var names, the property Zod
+ * schema, the bundled `sampleProperties` catalog, and the
+ * CMS branch's `createHttpJsonCmsDriver` +
+ * `createCmsDataSource` wiring. The agents and developments
+ * loaders delegate to the same shared utilities without
+ * shipping CMS support — they omit the `cms` branch on
+ * `propertiesOptions` and the shared utility raises
+ * `DataSourceNotImplementedError('cms', shippedKinds)` for
+ * them.
  *
  * **Why no Nuxt plugin.** A Nuxt plugin would run on EVERY
  * server request and pre-populate shared state, which couples
@@ -57,16 +73,18 @@ import type { Property } from '~/features/properties/types/property.types'
  * **No permanent process-lifetime cache.** A successful
  * API result is NOT retained between calls. Each call to
  * {@link loadPropertiesServer} constructs a fresh adapter
- * and awaits its `loadAll()`; a later request observes the
- * latest upstream data, not a stale snapshot. The only
- * shared state is the `pending` reference, which coalesces
- * concurrent in-flight calls: when a call arrives while a
- * previous call is still resolving, it shares the same
- * promise. The `pending` reference is cleared after settle
- * (success or failure), so the next call constructs a new
- * adapter and performs a new fetch. The api is therefore
- * fetched on every call, not "at most once per server
- * lifetime".
+ * (via `createPropertiesServerAdapter` → the shared
+ * `createServerDataSourceAdapter`) and awaits its
+ * `loadAll()`; a later request observes the latest upstream
+ * data, not a stale snapshot. The only shared state is the
+ * `pending` reference captured in the per-feature loader's
+ * `createServerLoader` closure, which coalesces concurrent
+ * in-flight calls: when a call arrives while a previous call
+ * is still resolving, it shares the same promise. The
+ * `pending` reference is cleared after settle (success or
+ * failure), so the next call constructs a new adapter and
+ * performs a new fetch. The api is therefore fetched on
+ * every call, not "at most once per server lifetime".
  *
  * **Why `process.env` directly (not `useRuntimeConfig`).**
  * `NUXT_PROPERTIES_API_URL` and `NUXT_PROPERTIES_API_TIMEOUT_MS`
@@ -74,10 +92,11 @@ import type { Property } from '~/features/properties/types/property.types'
  * `runtimeConfig`. Declaring them in `runtimeConfig` would
  * put them on the `nuxt` runtime config surface (server-only
  * by Nuxt convention, but still a public-ish surface); the
- * `process.env` read keeps them in the loader module only.
- * `runtimeConfig` is reserved for the `leads*` /
- * `NUXT_LEADS_*` configuration that the lead-capture
- * pipeline consumes through `useRuntimeConfig`.
+ * `process.env` read (now via the shared `readEnv` helper)
+ * keeps them in the loader module only. `runtimeConfig` is
+ * reserved for the `leads*` / `NUXT_LEADS_*` configuration
+ * that the lead-capture pipeline consumes through
+ * `useRuntimeConfig`.
  *
  * **Failure modes.**
  *
@@ -119,31 +138,12 @@ import type { Property } from '~/features/properties/types/property.types'
  *    does not memoise successes OR failures. The next call
  *    constructs a new adapter and retries from scratch.
  */
+
 const PROP_ENV_KIND = 'NUXT_PROPERTIES_DATA_SOURCE'
 const PROP_ENV_ENDPOINT = 'NUXT_PROPERTIES_API_URL'
 const PROP_ENV_TIMEOUT_MS = 'NUXT_PROPERTIES_API_TIMEOUT_MS'
 const PROP_ENV_CMS_URL = 'NUXT_PROPERTIES_CMS_URL'
 const PROP_ENV_CMS_TIMEOUT_MS = 'NUXT_PROPERTIES_CMS_TIMEOUT_MS'
-
-/**
- * The default request timeout for the api + cms adapters
- * (10 seconds). Matches the default inside `createApiDataSource`
- * and `createHttpJsonCmsDriver` so a deployment that omits
- * the env var still has a documented upper bound.
- */
-const DEFAULT_API_TIMEOUT_MS = 10_000
-const DEFAULT_CMS_TIMEOUT_MS = 10_000
-
-/**
- * Read an env var from `process.env`, guarded by
- * `typeof process` so the loader can be evaluated in test
- * environments that do not define `process.env` (older Node,
- * certain bundlers).
- */
-function readEnv(name: string): string {
-  if (typeof process === 'undefined' || !process.env) return ''
-  return process.env[name] ?? ''
-}
 
 /**
  * The kinds the loader ships with.
@@ -152,146 +152,117 @@ function readEnv(name: string): string {
  * HTTP adapter; `'cms'` is the simple HTTP/JSON CMS
  * provider adapter (Task 103). Anything else (e.g.
  * `'graphql'`, `'STATIC'`, `'sanity'`) is rejected at
- * construction via the `isDataSourceKind` type guard and
- * surfaced as {@link DataSourceNotImplementedError} so the
+ * construction via the shared utility's `isDataSourceKind`
+ * type guard and surfaced as
+ * {@link DataSourceNotImplementedError} so the
  * misconfiguration is fixed at server startup rather than
  * silently shipping the bundled static data.
  */
 const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api', 'cms'] as const
 
 /**
+ * The shared-utilities options for the properties loader.
+ *
+ * Holds the env-var names + boundary schema + bundled data +
+ * CMS builder wiring. Module-level (the env vars are NOT
+ * read here — the shared utility's `readEnv` reads them
+ * fresh on every adapter construction, so a test that flips
+ * `process.env` between calls sees the new value on the next
+ * adapter construction).
+ */
+const propertiesOptions: ServerDataSourceOptions<Property> = {
+  kindEnvName: PROP_ENV_KIND,
+  shippedKinds: SHIPPED_KINDS,
+  static: {
+    data: sampleProperties,
+    schema: propertyListSchema,
+    source: 'app/features/properties/data/properties.ts',
+  },
+  api: {
+    endpointEnvName: PROP_ENV_ENDPOINT,
+    timeoutEnvName: PROP_ENV_TIMEOUT_MS,
+    schema: propertyListSchema,
+  },
+  cms: {
+    endpointEnvName: PROP_ENV_CMS_URL,
+    timeoutEnvName: PROP_ENV_CMS_TIMEOUT_MS,
+    schema: propertyListSchema,
+    /**
+     * Construct the CMS adapter from the resolved endpoint
+     * + timeout + schema + source. This is the only
+     * feature-specific piece of the CMS branch — the agents
+     * and developments loaders do not supply a `build`
+     * because they intentionally do not ship CMS support.
+     */
+    build: ({ endpoint, timeoutMs, schema, source }) => {
+      const driver = createHttpJsonCmsDriver<Property>({
+        endpoint,
+        source,
+        timeoutMs,
+      })
+      return createCmsDataSource<Property>({
+        driver,
+        schema,
+        source,
+      })
+    },
+  },
+}
+
+/**
  * Construct the data-source adapter the loader should use.
  *
+ * Thin wrapper that delegates to the shared
+ * {@link createServerDataSourceAdapter} with the properties
+ * options. The kind parsing, the `isDataSourceKind`
+ * dispatch, the missing-config / unsupported-kind error
+ * mapping, the timeout parsing, and the static / api / cms
+ * branch construction are all handled by the shared utility
+ * — this wrapper exists so the public surface stays a
+ * `createPropertiesServerAdapter()` call site (the agents
+ * and developments loaders follow the same pattern).
+ *
  *  - `NUXT_PROPERTIES_DATA_SOURCE` unset / empty /
- *    whitespace / `'static'` → the bundled static
- *    adapter.
+ *    whitespace / `'static'` → the bundled static adapter.
  *  - `NUXT_PROPERTIES_DATA_SOURCE=api` + a non-empty
  *    `NUXT_PROPERTIES_API_URL` → the api adapter.
  *  - `NUXT_PROPERTIES_DATA_SOURCE=cms` + a non-empty
- *    `NUXT_PROPERTIES_CMS_URL` → the CMS adapter (the
- *    simple HTTP/JSON driver + `propertyListSchema` boundary).
+ *    `NUXT_PROPERTIES_CMS_URL` → the CMS adapter.
  *  - `NUXT_PROPERTIES_DATA_SOURCE=cms` + an empty /
  *    whitespace endpoint → {@link DataSourceMissingConfigError}.
  *  - Any other non-empty value (e.g. `'graphql'`,
  *    `'STATIC'`, `'API'`) → raises
  *    {@link DataSourceNotImplementedError} naming the
- *    unknown kind. The type guard
- *    {@link isDataSourceKind} is the source of truth for
- *    the accepted set; everything else is a misconfiguration
- *    that must be fixed, not silently coerced to `'static'`.
+ *    unknown kind.
  *
- * The api / cms driver modules are imported here only — the
- * `server/utils/` location keeps the imports server-only by
- * code organization. Exposed for the unit tests that
- * exercise the static default, the api-configured branch,
- * and the cms-configured branch.
+ * Exposed for the unit tests that exercise the static
+ * default, the api-configured branch, and the
+ * cms-configured branch.
  */
 export function createPropertiesServerAdapter(): DataSourceAdapter<Property> {
-  const rawKind = readEnv(PROP_ENV_KIND)
-
-  // Unset / empty / whitespace → default to the bundled
-  // static adapter. This is the documented behavior for a
-  // deployment that does not opt into a non-default source.
-  if (rawKind.trim() === '') {
-    return createStaticDataSource<Property>({
-      data: sampleProperties,
-      schema: propertyListSchema,
-      source: 'app/features/properties/data/properties.ts',
-    })
-  }
-
-  // Use the existing type guard to dispatch on a known
-  // kind. The guard rejects case variants (`'STATIC'`,
-  // `'Api'`) and unknown strings (`'graphql'`,
-  // `'sanity'`) uniformly; we then dispatch on the
-  // validated value.
-  if (!isDataSourceKind(rawKind)) {
-    // The value is non-empty but is not a documented kind.
-    // The type guard's narrowed type is `DataSourceKind`,
-    // but the value is genuinely unknown; we cast through
-    // `DataSourceKind` so the error names the literal
-    // env-var value. The error message lists the kinds the
-    // loader actually ships so an operator can fix the
-    // misconfiguration without reading source code.
-    throw new DataSourceNotImplementedError(
-      rawKind as DataSourceKind,
-      SHIPPED_KINDS,
-    )
-  }
-
-  if (rawKind === 'cms') {
-    const endpoint = readEnv(PROP_ENV_CMS_URL)
-    if (endpoint.trim() === '') {
-      throw new DataSourceMissingConfigError('cms', PROP_ENV_CMS_URL)
-    }
-    const timeoutRaw = readEnv(PROP_ENV_CMS_TIMEOUT_MS)
-    const timeoutMs = timeoutRaw === ''
-      ? DEFAULT_CMS_TIMEOUT_MS
-      : Number.parseInt(timeoutRaw, 10) || DEFAULT_CMS_TIMEOUT_MS
-    const source = `cms:${PROP_ENV_CMS_URL}`
-    const driver = createHttpJsonCmsDriver<Property>({
-      endpoint,
-      source,
-      timeoutMs,
-    })
-    return createCmsDataSource<Property>({
-      driver,
-      schema: propertyListSchema,
-      source,
-    })
-  }
-
-  if (rawKind === 'api') {
-    const endpoint = readEnv(PROP_ENV_ENDPOINT)
-    if (endpoint.trim() === '') {
-      throw new DataSourceMissingConfigError('api', PROP_ENV_ENDPOINT)
-    }
-    const timeoutRaw = readEnv(PROP_ENV_TIMEOUT_MS)
-    const timeoutMs = timeoutRaw === ''
-      ? DEFAULT_API_TIMEOUT_MS
-      : Number.parseInt(timeoutRaw, 10) || DEFAULT_API_TIMEOUT_MS
-    return createApiDataSource<Property>({
-      endpoint,
-      schema: propertyListSchema,
-      source: `api:${PROP_ENV_ENDPOINT}`,
-      timeoutMs,
-    })
-  }
-
-  // rawKind === 'static' — explicit opt-in to the bundled
-  // adapter. Same shape as the unset default.
-  return createStaticDataSource<Property>({
-    data: sampleProperties,
-    schema: propertyListSchema,
-    source: 'app/features/properties/data/properties.ts',
-  })
+  return createServerDataSourceAdapter(propertiesOptions)
 }
 
 /**
- * The in-flight promise for the loader. Coalesces concurrent
- * calls: while a call is resolving, subsequent callers share
- * the same promise. The reference is cleared on settle
- * (success or failure) so the next call constructs a new
- * adapter and performs a new fetch.
- *
- * There is NO permanent process-lifetime cache for the
- * resolved list — a later request observes the latest
- * upstream data. The `pending` reference exists only to
- * collapse simultaneous in-flight calls into a single
- * adapter construction; it is NOT a memoised result.
+ * The per-feature in-flight `pending` closure. Created
+ * once at module load via the shared `createServerLoader`
+ * factory. Concurrent callers share the same in-flight
+ * promise; the reference is cleared on settle so the next
+ * call constructs a fresh adapter and performs a new fetch.
  */
-let pending: Promise<readonly Property[]> | null = null
+const propertiesLoader = createServerLoader<Property>(createPropertiesServerAdapter)
 
 /**
  * Load the resolved property list for the current server.
  *
- * Each call constructs a fresh adapter (driven by
- * `NUXT_PROPERTIES_DATA_SOURCE`) and awaits its `loadAll()`.
- * Concurrent calls are coalesced through the in-flight
- * `pending` promise so a single render produces at most one
- * in-flight fetch; the promise is cleared on settle, so the
- * next call performs a new fetch. A successful API result is
- * NOT retained between calls.
+ * Each call constructs a fresh adapter (via
+ * {@link createPropertiesServerAdapter} → the shared
+ * `createServerDataSourceAdapter`) and awaits its
+ * `loadAll()`. Concurrent calls are coalesced through the
+ * in-flight `pending` promise so a single render produces at
+ * most one in-flight fetch; the promise is cleared on
+ * settle, so the next call performs a new fetch. A
+ * successful API result is NOT retained between calls.
  *
  * The function is safe to call from any server-only context:
  * the Nitro endpoint (`server/api/properties.get.ts`), the
@@ -300,17 +271,7 @@ let pending: Promise<readonly Property[]> | null = null
  * Nuxt composable and does not require a Nuxt app context.
  */
 export async function loadPropertiesServer(): Promise<readonly Property[]> {
-  if (pending) return pending
-  pending = (async () => {
-    try {
-      const adapter = createPropertiesServerAdapter()
-      return await adapter.loadAll()
-    }
-    finally {
-      pending = null
-    }
-  })()
-  return pending
+  return propertiesLoader.load()
 }
 
 /**
@@ -326,5 +287,16 @@ export async function loadPropertiesServer(): Promise<readonly Property[]> {
  * between calls.
  */
 export function _resetPropertiesServerCacheForTests(): void {
-  pending = null
+  propertiesLoader.reset()
 }
+
+/**
+ * Re-export the `DataSourceKind` type so the public surface
+ * for tests that exercise `createPropertiesServerAdapter`
+ * stays unchanged from the pre-consolidation loader (the
+ * prior file imported `DataSourceKind` from the contract
+ * for use in its `SHIPPED_KINDS` literal; the literal is
+ * now local, but the re-export keeps any future test that
+ * imports the type from this module working).
+ */
+export type { DataSourceKind } from '~/core/data-source/data-source'

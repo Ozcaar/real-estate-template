@@ -1,15 +1,12 @@
-import { createApiDataSource } from '~/core/data-source/adapters/api-adapter'
-import { createStaticDataSource } from '~/core/data-source/adapters/static-adapter'
-import {
-  DataSourceMissingConfigError,
-  DataSourceNotImplementedError,
-  isDataSourceKind,
-  type DataSourceAdapter,
-  type DataSourceKind,
-} from '~/core/data-source/data-source'
+import type { DataSourceAdapter, DataSourceKind } from '~/core/data-source/data-source'
 import { agentListSchema } from '~/features/agents/schemas/agent.schema'
 import { sampleAgents } from '~/features/agents/data/agents'
 import type { Agent } from '~/features/agents/types/agent.types'
+import {
+  createServerDataSourceAdapter,
+  createServerLoader,
+  type ServerDataSourceOptions,
+} from './server-data-source'
 
 /**
  * Server-only agent loader (Task 104).
@@ -37,7 +34,23 @@ import type { Agent } from '~/features/agents/types/agent.types'
  * module and the three `NUXT_AGENTS_*` env vars therefore
  * cannot reach the client bundle by code organization, not by
  * tree-shaking — a future change cannot reintroduce the leak
- * without moving this file out of `server/utils/`.
+ * without moving the file out of `server/utils/`.
+ *
+ * **Shared server-side data-source utilities (Task 108).**
+ * The kind-parsing, `isDataSourceKind` dispatch,
+ * missing-config / unsupported-kind error mapping, timeout
+ * parsing, and in-flight `pending` coalescing are NOT
+ * re-implemented here. They live in
+ * `server/utils/server-data-source.ts` and are reused through
+ * {@link createServerDataSourceAdapter} + {@link createServerLoader}.
+ * This file owns ONLY the feature-specific surface: the
+ * `NUXT_AGENTS_*` env var names, the agent Zod schema, and
+ * the bundled `sampleAgents` catalog. The agents loader
+ * intentionally does NOT ship a CMS branch — selecting
+ * `'cms'` raises `DataSourceNotImplementedError('cms',
+ * SHIPPED_KINDS)` from the shared utility because the agents
+ * feature scope is static + api only (CMS support is a future
+ * task).
  *
  * **Why no Nuxt plugin.** A Nuxt plugin would run on EVERY
  * server request and pre-populate shared state, which couples
@@ -56,24 +69,27 @@ import type { Agent } from '~/features/agents/types/agent.types'
  * {@link loadAgentsServer} constructs a fresh adapter and
  * awaits its `loadAll()`; a later request observes the latest
  * upstream data, not a stale snapshot. The only shared state
- * is the `pending` reference, which coalesces concurrent
- * in-flight calls: when a call arrives while a previous call
- * is still resolving, it shares the same promise. The
- * `pending` reference is cleared after settle (success or
- * failure), so the next call constructs a new adapter and
- * performs a new fetch. The api is therefore fetched on every
- * call, not "at most once per server lifetime".
+ * is the `pending` reference captured in the per-feature
+ * loader's `createServerLoader` closure, which coalesces
+ * concurrent in-flight calls: when a call arrives while a
+ * previous call is still resolving, it shares the same
+ * promise. The `pending` reference is cleared after settle
+ * (success or failure), so the next call constructs a new
+ * adapter and performs a new fetch. The api is therefore
+ * fetched on every call, not "at most once per server
+ * lifetime".
  *
  * **Why `process.env` directly (not `useRuntimeConfig`).**
  * `NUXT_AGENTS_API_URL` and `NUXT_AGENTS_API_TIMEOUT_MS` are
  * intentionally NOT declared in `nuxt.config.ts` →
  * `runtimeConfig`. Declaring them in `runtimeConfig` would put
  * them on the `nuxt` runtime config surface (server-only by
- * Nuxt convention, but still a public-sh-shaped surface); the
- * `process.env` read keeps them in the loader module only.
- * `runtimeConfig` is reserved for the `leads*` /
- * `NUXT_LEADS_*` configuration that the lead-capture pipeline
- * consumes through `useRuntimeConfig`.
+ * Nuxt convention, but still a public-ish surface); the
+ * `process.env` read (now via the shared `readEnv` helper)
+ * keeps them in the loader module only. `runtimeConfig` is
+ * reserved for the `leads*` / `NUXT_LEADS_*` configuration
+ * that the lead-capture pipeline consumes through
+ * `useRuntimeConfig`.
  *
  * **Failure modes.**
  *
@@ -115,28 +131,10 @@ import type { Agent } from '~/features/agents/types/agent.types'
  *    does not memoise successes OR failures. The next call
  *    constructs a new adapter and retries from scratch.
  */
+
 const PROP_ENV_KIND = 'NUXT_AGENTS_DATA_SOURCE'
 const PROP_ENV_ENDPOINT = 'NUXT_AGENTS_API_URL'
 const PROP_ENV_TIMEOUT_MS = 'NUXT_AGENTS_API_TIMEOUT_MS'
-
-/**
- * The default request timeout for the api adapter (10
- * seconds). Matches the default inside `createApiDataSource`
- * so a deployment that omits the env var still has a
- * documented upper bound.
- */
-const DEFAULT_API_TIMEOUT_MS = 10_000
-
-/**
- * Read an env var from `process.env`, guarded by
- * `typeof process` so the loader can be evaluated in test
- * environments that do not define `process.env` (older Node,
- * certain bundlers).
- */
-function readEnv(name: string): string {
-  if (typeof process === 'undefined' || !process.env) return ''
-  return process.env[name] ?? ''
-}
 
 /**
  * The kinds the loader ships with.
@@ -153,7 +151,36 @@ function readEnv(name: string): string {
 const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api'] as const
 
 /**
+ * The shared-utilities options for the agents loader. The
+ * `cms` branch is intentionally omitted — the agents feature
+ * does not ship CMS support, so the shared utility raises
+ * `DataSourceNotImplementedError('cms', SHIPPED_KINDS)` for
+ * any `'cms'` request.
+ */
+const agentsOptions: ServerDataSourceOptions<Agent> = {
+  kindEnvName: PROP_ENV_KIND,
+  shippedKinds: SHIPPED_KINDS,
+  static: {
+    data: sampleAgents,
+    schema: agentListSchema,
+    source: 'app/features/agents/data/agents.ts',
+  },
+  api: {
+    endpointEnvName: PROP_ENV_ENDPOINT,
+    timeoutEnvName: PROP_ENV_TIMEOUT_MS,
+    schema: agentListSchema,
+  },
+}
+
+/**
  * Construct the data-source adapter the loader should use.
+ *
+ * Thin wrapper that delegates to the shared
+ * {@link createServerDataSourceAdapter} with the agents
+ * options. The kind parsing, the `isDataSourceKind`
+ * dispatch, the missing-config / unsupported-kind error
+ * mapping, the timeout parsing, and the static / api branch
+ * construction are all handled by the shared utility.
  *
  *  - `NUXT_AGENTS_DATA_SOURCE` unset / empty / whitespace /
  *    `'static'` → the bundled static adapter.
@@ -161,121 +188,37 @@ const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api'] as const
  *    `NUXT_AGENTS_API_URL` → the api adapter.
  *  - `NUXT_AGENTS_DATA_SOURCE=cms` → raises
  *    {@link DataSourceNotImplementedError} (the contract
- *    exists but no CMS adapter ships for the agents feature in
- *    Task 104).
+ *    exists but no CMS adapter ships for the agents feature).
  *  - Any other non-empty value (e.g. `'graphql'`, `'STATIC'`,
- *    `'API'`) → raises {@link DataSourceNotImplementedError}
- *    naming the unknown kind. The type guard
- *    {@link isDataSourceKind} is the source of truth for the
- *    accepted set; everything else is a misconfiguration that
- *    must be fixed, not silently coerced to `'static'`.
+ *    `'API'`) → raises {@link DataSourceNotImplementedError}.
  *
- * The api-adapter module is imported here only — the
- * `server/utils/` location keeps the import server-only by
- * code organization. Exposed for the unit tests that exercise
- * the static default and the api-configured branch.
+ * Exposed for the unit tests that exercise the static default
+ * and the api-configured branch.
  */
 export function createAgentsServerAdapter(): DataSourceAdapter<Agent> {
-  const rawKind = readEnv(PROP_ENV_KIND)
-
-  // Unset / empty / whitespace → default to the bundled
-  // static adapter. This is the documented behavior for a
-  // deployment that does not opt into a non-default source.
-  if (rawKind.trim() === '') {
-    return createStaticDataSource<Agent>({
-      data: sampleAgents,
-      schema: agentListSchema,
-      source: 'app/features/agents/data/agents.ts',
-    })
-  }
-
-  // Use the existing type guard to dispatch on a known
-  // kind. The guard rejects case variants (`'STATIC'`,
-  // `'Api'`) and unknown strings (`'graphql'`, `'sanity'`)
-  // uniformly; we then dispatch on the validated value.
-  if (!isDataSourceKind(rawKind)) {
-    // The value is non-empty but is not a documented kind.
-    // The type guard's narrowed type is `DataSourceKind`,
-    // but the value is genuinely unknown; we cast through
-    // `DataSourceKind` so the error names the literal
-    // env-var value. The error message lists the kinds the
-    // loader actually ships so an operator can fix the
-    // misconfiguration without reading source code.
-    throw new DataSourceNotImplementedError(
-      rawKind as DataSourceKind,
-      SHIPPED_KINDS,
-    )
-  }
-
-  if (rawKind === 'cms') {
-    // The contract defines `'cms'`, but no CMS adapter ships
-    // for the agents feature in Task 104. Throw the
-    // existing not-implemented error so a rebrand that asks
-    // for `'cms'` fails loudly instead of silently falling
-    // back to the bundled static data. The full data-source
-    // contract is documented in `app/core/data-source/data-source.ts`;
-    // the cms path for properties is shipped in the v1.1.0
-    // M20 milestone.
-    throw new DataSourceNotImplementedError('cms', SHIPPED_KINDS)
-  }
-
-  if (rawKind === 'api') {
-    const endpoint = readEnv(PROP_ENV_ENDPOINT)
-    if (endpoint.trim() === '') {
-      // The missing-config error uses `kind: 'api'` to match the
-      // shared data-source contract — `kind` is the data-source
-      // kind (`'static' | 'api' | 'cms'`) per `DataSourceKind`, not
-      // the resource name. The `field` carries the operator-facing
-      // env-var name so a misconfigured rebrand is a hard error
-      // with a precise diagnostic.
-      throw new DataSourceMissingConfigError('api', PROP_ENV_ENDPOINT)
-    }
-    const timeoutRaw = readEnv(PROP_ENV_TIMEOUT_MS)
-    const timeoutMs = timeoutRaw === ''
-      ? DEFAULT_API_TIMEOUT_MS
-      : Number.parseInt(timeoutRaw, 10) || DEFAULT_API_TIMEOUT_MS
-    return createApiDataSource<Agent>({
-      endpoint,
-      schema: agentListSchema,
-      source: `api:${PROP_ENV_ENDPOINT}`,
-      timeoutMs,
-    })
-  }
-
-  // rawKind === 'static' — explicit opt-in to the bundled
-  // adapter. Same shape as the unset default.
-  return createStaticDataSource<Agent>({
-    data: sampleAgents,
-    schema: agentListSchema,
-    source: 'app/features/agents/data/agents.ts',
-  })
+  return createServerDataSourceAdapter(agentsOptions)
 }
 
 /**
- * The in-flight promise for the loader. Coalesces concurrent
- * calls: while a call is resolving, subsequent callers share
- * the same promise. The reference is cleared on settle
- * (success or failure) so the next call constructs a new
- * adapter and performs a new fetch.
- *
- * There is NO permanent process-lifetime cache for the
- * resolved list — a later request observes the latest
- * upstream data. The `pending` reference exists only to
- * collapse simultaneous in-flight calls into a single
- * adapter construction; it is NOT a memoised result.
+ * The per-feature in-flight `pending` closure. Created
+ * once at module load via the shared `createServerLoader`
+ * factory. Concurrent callers share the same in-flight
+ * promise; the reference is cleared on settle so the next
+ * call constructs a fresh adapter and performs a new fetch.
  */
-let pending: Promise<readonly Agent[]> | null = null
+const agentsLoader = createServerLoader<Agent>(createAgentsServerAdapter)
 
 /**
  * Load the resolved agent list for the current server.
  *
- * Each call constructs a fresh adapter (driven by
- * `NUXT_AGENTS_DATA_SOURCE`) and awaits its `loadAll()`.
- * Concurrent calls are coalesced through the in-flight
- * `pending` promise so a single render produces at most one
- * in-flight fetch; the promise is cleared on settle, so the
- * next call performs a new fetch. A successful API result is
- * NOT retained between calls.
+ * Each call constructs a fresh adapter (via
+ * {@link createAgentsServerAdapter} → the shared
+ * `createServerDataSourceAdapter`) and awaits its
+ * `loadAll()`. Concurrent calls are coalesced through the
+ * in-flight `pending` promise so a single render produces at
+ * most one in-flight fetch; the promise is cleared on
+ * settle, so the next call performs a new fetch. A
+ * successful API result is NOT retained between calls.
  *
  * The function is safe to call from any server-only context:
  * the Nitro endpoint (`server/api/agents.get.ts`), the
@@ -284,17 +227,7 @@ let pending: Promise<readonly Agent[]> | null = null
  * and does not require a Nuxt app context.
  */
 export async function loadAgentsServer(): Promise<readonly Agent[]> {
-  if (pending) return pending
-  pending = (async () => {
-    try {
-      const adapter = createAgentsServerAdapter()
-      return await adapter.loadAll()
-    }
-    finally {
-      pending = null
-    }
-  })()
-  return pending
+  return agentsLoader.load()
 }
 
 /**
@@ -310,5 +243,5 @@ export async function loadAgentsServer(): Promise<readonly Agent[]> {
  * between calls.
  */
 export function _resetAgentsServerCacheForTests(): void {
-  pending = null
+  agentsLoader.reset()
 }
