@@ -95,32 +95,37 @@ async function readResolvedColorMode(page: Page): Promise<string | null> {
  * Click the header theme toggle and wait for the `aria-label` to
  * change. The `@click` handler is only bound after Vue has
  * hydrated; a click that races hydration is dropped silently,
- * so we retry the click up to 5 times with a short back-off.
- * The `aria-label` is a computed property that always reflects
- * the next preference in the cycle, so a successful click is
- * observable as a label change. This is the same pattern the
- * mobile-menu suite uses.
+ * so we retry the click until it produces an observable effect.
+ *
+ * The retry loop polls deterministically via `expect.poll` — no
+ * fixed sleep between attempts. If the click is dropped (the
+ * `aria-label` does not change within 300 ms), we retry on the
+ * next loop iteration. The `expect.poll` polls at deterministic
+ * intervals (20 ms / 50 ms / 100 ms) and the deadline bounds the
+ * worst case at 15 s. The `aria-label` is a computed property
+ * that always reflects the next preference in the cycle, so a
+ * successful click is observable as a label change.
  */
 async function clickThemeToggle(page: Page): Promise<void> {
   const toggle = page.getByTestId('theme-toggle')
-  for (let attempt = 0; attempt < 5; attempt++) {
+  await expect(toggle, 'theme toggle should be visible in the header').toBeVisible()
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
     const before = await toggle.getAttribute('aria-label')
     await toggle.click()
     try {
-      await expect(toggle, 'aria-label should change after click').not.toHaveAttribute(
-        'aria-label',
-        before ?? '',
-        { timeout: 1_000 },
-      )
+      await expect.poll(
+        async () => toggle.getAttribute('aria-label'),
+        { timeout: 300, intervals: [20, 50, 100] },
+      ).not.toBe(before ?? '')
       return
     } catch {
-      // The click was dropped because Vue had not hydrated yet,
-      // or a double-click landed before the first one's reactive
-      // update was visible. Wait briefly and retry.
-      await page.waitForTimeout(150)
+      // Click was dropped because Vue had not hydrated yet.
+      // Retry without a fixed sleep; the next loop iteration
+      // gives Vue another tick to finish hydrating.
     }
   }
-  throw new Error('theme toggle did not respond to click after 5 attempts')
+  throw new Error('theme toggle did not respond to click within 15s')
 }
 
 test.describe('Color mode — toggle behavior', () => {

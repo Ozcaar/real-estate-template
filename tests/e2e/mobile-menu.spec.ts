@@ -27,27 +27,27 @@ test.use({ ...devices['Pixel 5'] })
 /**
  * Open the mobile drawer and return the dialog locator. Waits for
  * Vue hydration (the `@click` handler is bound after hydration), then
- * clicks the hamburger. Retries the click if the first one was
- * dropped by the hydration race.
+ * clicks the hamburger. The retry loop polls deterministically via
+ * `expect.poll` — no fixed sleep between attempts. If the click is
+ * dropped (the dialog does not appear within 300 ms), we retry on
+ * the next loop iteration.
  */
 async function openMobileMenu(page: Page) {
   const dialog = page.getByRole('dialog', { name: 'Mobile navigation' })
   const opener = page.getByRole('button', { name: 'Open menu' })
   await expect(opener).toBeVisible()
-  // First, ensure the page is fully loaded and Vue is hydrated.
+  // Ensure the page is fully loaded.
   await page.waitForFunction(() => document.readyState === 'complete')
-  // The hamburger button's @click handler is bound on hydration.
-  // Poll for it: if a click does not open the menu within 1s, the
-  // handler was not yet bound — wait and try again.
-  for (let attempt = 0; attempt < 5; attempt++) {
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
     await opener.click()
     try {
-      await expect(dialog).toBeVisible({ timeout: 1000 })
+      await expect(dialog).toBeVisible({ timeout: 300 })
       return dialog
     } catch {
-      // The click was dropped because Vue had not hydrated yet.
-      // Wait briefly and retry.
-      await page.waitForTimeout(200)
+      // Click was dropped because Vue had not hydrated yet.
+      // Retry without a fixed sleep; the next loop iteration
+      // gives Vue another tick to finish hydrating.
     }
   }
   // Final attempt: let expect throw a clean error if it still fails.

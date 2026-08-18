@@ -169,15 +169,36 @@ test.describe('Property inquiry — accessibility wiring', () => {
     // structural contract is that EVERY input the user sees has
     // a matching label — we assert each visible input by name
     // (the form's stable contract) and resolve its label.
+    //
+    // The for/id read is atomic: the input id and the matching
+    // label lookup happen in a single `page.evaluate` call so
+    // they cannot race Vue's hydration walk (which can briefly
+    // surface inconsistent ids across separate Playwright reads).
+    // The poll retries the atomic read on a deterministic
+    // interval until the pairing resolves or the deadline
+    // expires — no fixed sleep, no race-prone two-call read.
     const inquirySection = page.locator('section[aria-labelledby="inquiry-heading"]')
     const inputs = ['name', 'email', 'phone', 'message']
     for (const fieldName of inputs) {
       const input = inquirySection.locator(`input[name="${fieldName}"], textarea[name="${fieldName}"]`)
       await expect(input, `${fieldName} field should be visible inside the inquiry section`).toBeAttached()
-      const inputId = await input.getAttribute('id')
-      expect(inputId, `${fieldName} field should carry an id (the useId() pairing)`).toBeTruthy()
-      const matchingLabel = inquirySection.locator(`label[for="${inputId}"]`)
-      await expect(matchingLabel, `${fieldName} field's id="${inputId}" should resolve to a real <label for=...>`).toBeAttached()
+      await expect.poll(
+        async () => page.evaluate((fieldName) => {
+          const section = document.querySelector('section[aria-labelledby="inquiry-heading"]')
+          if (!section) return false
+          const el = section.querySelector(
+            `input[name="${fieldName}"], textarea[name="${fieldName}"]`,
+          ) as HTMLInputElement | HTMLTextAreaElement | null
+          if (!el?.id) return false
+          const label = section.querySelector(`label[for="${el.id}"]`)
+          return label !== null
+        }, fieldName),
+        {
+          timeout: 5_000,
+          intervals: [50, 100, 200, 500],
+          message: `${fieldName} field should resolve to a matching <label for=...> inside the inquiry section`,
+        },
+      ).toBe(true)
     }
   })
 })
