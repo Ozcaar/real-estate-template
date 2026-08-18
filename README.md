@@ -70,20 +70,29 @@ pnpm test:e2e:install # playwright install --with-deps chromium (one-time setup)
 
 The template ships two automated test surfaces.
 
-* **`pnpm test`** — Vitest unit-test suite (389 tests across 13 files).
+* **`pnpm test`** — Vitest unit-test suite (1150 tests across 42 files).
   Covers the lead-capture Zod schema, all four delivery adapters,
   the adapter selector, the lead service pipeline (including the
   rate-limit window expiry), the `POST /api/contact` endpoint
-  transport guards, the property service (filter / sort /
-  `isPropertySort`), the `paginate` / `parsePageParam` utilities,
-  the `buildWhatsAppLink` helper, the `agencyPostalAddress`
-  JSON-LD builder, and the agency configuration schema. The
-  primary automated test surface; the contract tests live here.
-* **`pnpm test:e2e`** — Playwright Chromium smoke tests (13 cases).
-  Boot the production build via `pnpm preview` and assert that the
-  public routes render, do not emit uncaught browser errors, and
-  that the default disabled lead form is in its documented
-  disabled state. One-time setup: `pnpm test:e2e:install`.
+  transport guards, the property / agent / development services
+  (filter / sort / `isPropertySort`), the data-source adapter
+  foundation (static / api / cms), the tenant context + multi-tenant
+  leads resolver, the per-tenant sitemap + robots routes, the
+  `paginate` / `parsePageParam` utilities, the `buildWhatsAppLink`
+  helper, the `agencyPostalAddress` JSON-LD builder, the agency
+  configuration schema, and the shared server-side data-source
+  utility. The primary automated test surface; the contract
+  tests live here.
+* **`pnpm test:e2e`** — Playwright Chromium smoke tests (62 cases across
+  8 spec files). Boot the production build via `pnpm preview` and assert that
+  the public routes render, do not emit uncaught browser errors, that the
+  default disabled lead form is in its documented disabled state, that the
+  gallery lightbox + Swiper integration is accessible and key-bindable, that
+  the color-mode toggle persists across reloads, that the mobile menu
+  dialog uses `inert` + focus management, that the property inquiry form is
+  correctly labelled, that the multi-tenant fallback resolves to the
+  default agency, and that the agent / development detail pages render
+  with their JSON-LD payloads. One-time setup: `pnpm test:e2e:install`.
 
 A single-platform GitHub Actions CI workflow (`.github/workflows/ci.yml`)
 runs `pnpm lint`, `pnpm test`, `pnpm build`, and `pnpm test:e2e` on every

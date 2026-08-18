@@ -1,4 +1,4 @@
-# Rebranding Guide
+﻿# Rebranding Guide
 
 This guide walks a new user through adapting the template for a specific real estate agency. Rebranding means changing the agency's identity, branding, content, and locale to match a real agency — without modifying components, pages, layouts, or composables.
 
@@ -993,7 +993,7 @@ pnpm test        # single-shot, CI-friendly (vitest run)
 pnpm test:watch  # interactive watch mode (vitest)
 ```
 
-The current implementation ships **389 tests across 13 files**
+The current implementation ships **1150 tests across 42 files**
 that pass on three consecutive `pnpm test` runs. The
 configuration lives in `vitest.config.ts`; the `#imports`
 alias resolves to a tiny stub at `tests/stubs/imports.ts` so
@@ -1026,3 +1026,64 @@ require a Nitro server or a real network):
 A rebrand that wants to extend the test surface can add a
 `*.test.ts` file under the matching directory and Vitest will
 pick it up automatically — no config change needed.
+
+## 16. Production-Readiness Checklist (Task 112, v1.1.0 M29)
+
+This section is the concise pre-flight checklist the operator runs before pointing the first real client at the deployed site. It complements the rebranding workflow (�1��15) by listing the cross-cutting concerns that are not part of any single rebrand step but must be true before declaring the deployment ready.
+
+The detailed readiness review (blocking items, recommended post-launch improvements, optional future work) is recorded in `docs/ROADMAP.md` M29. This checklist is the actionable summary a rebrand runs in order.
+
+### 16.1 Blocking before the first real client
+
+Every item below MUST be true before the deployment receives real traffic. Each item is a one-line pass/fail check; the failure path is the rebrand step that fixes it.
+
+- [ ] **Production site URL is set.** `NUXT_PUBLIC_SITE_URL` (or the per-tenant `NUXT_PUBLIC_SITE_URL__<TENANT_ID>` override) is set on the deployment. Without it, the sitemap returns 503, `robots.txt` blocks all crawling, and the canonical link / `og:url` are omitted. Fix: �9 Step 7. Verify with `curl https://<host>/sitemap.xml` (200 + URL list) and `curl https://<host>/robots.txt` (no `Disallow: /`).
+- [ ] **Agency identity is the real one.** `app/config/agencies/default.agency.ts` (or the file swapped in via `app/config/site.config.ts`) carries the real `name`, `id`, `contact.phone`, `contact.email`, `contact.address`, `contact.structuredAddress`, `social.*`, `defaultLocale`, `availableLocales`, `currency`, `measurementUnit`, and `modules.*`. The `agencies/default.agency.ts` placeholder "Real Estate Agency" with `example@email.com` / `1-800-555-1234` / `www.example.com` social URLs is NOT publication-ready. Fix: �3 Step 1. Verify with `view-source:https://<host>/` and confirm the footer carries the real name + contact data.
+- [ ] **22 placeholder assets are replaced.** The `public/images/` directory carries the real logo, hero, about, location, property, agent, and development images; the `public/favicon.ico` carries the real browser-tab icon. The 22 placeholder paths listed in �4 Step 2 are the exact files to swap. Fix: �4 Step 2. Verify by opening `/`, `/properties`, `/properties/{slug}`, `/agents`, `/agents/{slug}`, `/developments`, `/developments/{slug}` and confirming the visible images are real assets (not the shipped placeholder SVGs).
+- [ ] **Six sample data files are replaced.** `app/features/{home,properties,agents,developments}/data/*.ts` ships the real catalog. The shipped placeholder content (6 properties, 4 agents, 4 developments, 4 locations, 3 testimonials, 4 stats) is NOT publication-ready. Fix: �5 Step 3. Verify with `view-source:https://<host>/properties` and confirm the visible titles + prices + locations match the real catalog; the same for `/agents`, `/developments`, and the home page.
+- [ ] **Locale copies are reviewed.** `i18n/locales/en.json` and `i18n/locales/es.json` carry the real copy for every active locale. Both files must stay in sync � see �6 Step 4. Verify by switching the language picker to each active locale and confirming the visible pages render the real copy; the placeholder "Find your ideal property" and "Heading" strings are NOT publication-ready. Fix: �6 Step 4.
+- [ ] **Hostname + TLS are correctly configured.** The active hostname resolves to the deployment; TLS is terminated by the edge (CDN, load balancer, or Node server) with a certificate that covers the hostname. The default agency uses `localhost:3000` for `pnpm dev` / `pnpm preview`; the production deploy runs against the real hostname. Fix: �3 Step 1 (registry entry for multi-tenant). Verify with `curl -I https://<host>/` (200 + `Content-Type: text/html`) and `curl -I https://<host>/sitemap.xml` (200 + a `<urlset>` body when `NUXT_PUBLIC_SITE_URL` is set).
+- [ ] **Lead delivery destination is configured (if real leads are expected).** If the agency wants real lead capture, both `agency.leads.enabled = true` AND the matching server-only env vars are set. The endpoint side: `NUXT_LEADS_ADAPTER` (one of `disabled` / `log` / `webhook` / `email`) plus the adapter-specific fields. The webhook adapter needs `NUXT_LEADS_WEBHOOK_URL` + `NUXT_LEADS_WEBHOOK_SECRET`; the email adapter needs `NUXT_LEADS_SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `EMAIL_FROM` / `EMAIL_TO`. The default `disabled` adapter returns 503 on every submission � the visible form is then permanently disabled. Fix: �12.2. Verify with `curl -X POST https://<host>/api/contact -H "Content-Type: application/json" -d "{...}"` (200 / 400 / 502 depending on the data and the adapter) and by submitting a real form on `/contact` end-to-end.
+- [ ] **Validation pipeline is green.** `pnpm lint` (0 errors, 0 warnings), `pnpm test` (1150 tests across 42 files), `pnpm test:e2e` (62 cases across 8 spec files), `pnpm build` (complete), `NUXT_PUBLIC_SITE_URL=https://example.test pnpm generate` (203 prerendered routes), and `git diff --check` (clean). All six are documented in �10 Step 8. These are the automated gates; CI runs the same five (with `pnpm generate` as a manual check).
+
+### 16.2 Recommended soon after launch
+
+These are not blocking but should be on the 30-day roadmap. None are produced by the template � the operator chooses the implementation.
+
+- [ ] **Uptime monitoring.** Wire an external monitor (e.g. UptimeRobot, Better Uptime, or the platform-native check) to `https://<host>/` (returns 200 + `Content-Type: text/html`) and `https://<host>/sitemap.xml` (returns 200 + a `<urlset>` body when `NUXT_PUBLIC_SITE_URL` is set). Both are safe GET routes that do not mutate state and reflect the public surface the agency cares about. The template ships no `/api/health` endpoint � a future v1.x task can add a minimal liveness probe when the operator needs k8s-style health checks or readiness probes. `/api/contact` is POST-only and is NOT a safe uptime probe (a GET returns 405 by design, which does not prove the lead pipeline is healthy).
+- [ ] **Analytics.** The template ships zero analytics. Add the providers the agency prefers (Plausible, Google Analytics, Fathom, Matomo, etc.) at the edge or via a Nuxt module. The integration is outside the template � the operator decides.
+- [ ] **Security headers.** The template ships no CSP, X-Frame-Options, Referrer-Policy, or HSTS middleware. Configure these at the edge (CDN / reverse proxy) or via a Nitro middleware. **CSP and the anti-FOUC inline script.** The anti-FOUC inline script in `nuxt.config.ts` uses `script.innerHTML` and is a static literal (no user input, no dynamic content), so the operator has two strict-CSP-compatible ways to whitelist it: (a) **static hash** `'sha256-<hash>='` added to `script-src` — the script content is build-time-literal and stable, so a single hash computed once at build time is sufficient; no middleware required. (b) **per-request nonce** `'nonce-<value>'` added to `script-src` AND a matching `nonce` attribute on the inline script at runtime — requires a Nitro middleware that generates a per-request nonce, adds it to the `Content-Security-Policy` response header, and rewrites the inline script to include the attribute. Both are scoped exceptions, not broad allowances. The third option, `'unsafe-inline'`, is a permissive fallback that disables the CSP guarantee against inline-script injection; it is NOT compatible with `nonce` or `hash` per CSP Level 2+ (the browser ignores the nonce / hash when `unsafe-inline` is present). The recommended path for strict CSP is the static hash (option a) — no middleware needed.
+- [ ] **Error tracking.** Wire Sentry / GlitchTip / similar to the server output. The `log` adapter writes a single `console.info` line per lead; the webhook + email adapters write `console.warn` / `console.error` on adapter failures. These are the structured-logging hooks an error tracker consumes the most cheaply.
+- [ ] **Distributed rate limiter.** The lead-capture rate limit is per-process (a `Map`-based sliding window). A multi-process deployment (PM2 cluster, Cloudflare Workers isolates, autoscaling) shares no state between instances. Move the limiter to a Nitro storage driver backed by an external KV when the deployment scales beyond one process.
+- [ ] **Pre-commit / pre-push hooks.** Wire `pnpm lint && pnpm test` into a Husky / lefthook hook so a rebrand cannot commit a broken build. The CI workflow catches the same failures but local hooks catch them at the source.
+
+### 16.3 Optional future improvements
+
+Defer beyond the first 30 days. The template does not ship these � they are deliberate future tasks, not gaps that block a real client.
+
+- [ ] **Real CMS provider integrations (Sanity, Contentful, Strapi).** The template ships a generic `createHttpJsonCmsDriver` adapter (`app/core/data-source/adapters/http-json-cms-driver.ts`) that satisfies the provider-agnostic contract. A future v1.x task can add per-provider drivers that map the provider native document shape into `Property` / `Agent` / `Development` without changing the contract (see `docs/DATA_MODELS.md` �X).
+- [ ] **Lead persistence.** The adapter pipeline is intentionally non-persistent � the SMTP server or the webhook endpoint is the only destination. A rebrand that wants a built-in lead archive can add a `persistence` adapter that writes the stamped lead to a database or to a `useStorage()`-backed file; the adapter contract is open by design.
+- [ ] **Multi-region deployment.** The current tenancy model is single-region (one hostname per tenant via the freeze registry). A future v1.x task can extend the registry to carry a `region` or `cluster` field and route per-region via the same env-var dispatch.
+- [ ] **Browser matrix in Playwright.** The current CI runs Chromium only. A future v1.x task can add the Firefox + WebKit projects if the agency needs cross-browser coverage.
+- [ ] **Visual regression testing.** The current Playwright suite is content-only (no screenshot baselines). A future v1.x task can add a visual-regression layer if the agency needs it.
+
+### 16.4 Capability matrix (what the template ships vs. what the operator provides)
+
+A short matrix that maps the deployment concern to the producer (template vs. operator platform). Use it during the first-client planning review to confirm which side owns each item.
+
+| Concern | Template ships | Operator provides |
+| --- | --- | --- |
+| Brand identity, theme, copy, sample data | Editorial defaults (placeholders, `default.theme.ts`, `en.json` / `es.json`) | Real agency config, real theme, real copy, real catalog |
+| Lead capture pipeline | `POST /api/contact` endpoint + 4 pluggable adapters + per-process rate limit + Zod validation + honeypot | Adapter choice (`webhook` / `email` / `log` / `disabled`) + matching environment configuration + destination endpoint / SMTP inbox |
+| Data sources | Static catalog + `static` / `api` / `cms` data-source adapters per feature (Property / Agent / Development) | A CMS backend (for `cms`) or an HTTP API (for `api`) + matching env vars |
+| SEO + sitemap + robots + JSON-LD | Dynamic `/sitemap.xml` and `/robots.txt` Nitro routes + per-page `usePageSeo` + per-page JSON-LD payloads | `NUXT_PUBLIC_SITE_URL` (or per-tenant override) |
+| SSR / static generation | `pnpm build` (Nitro server) and `pnpm generate` (static export) | Hosting target � Node server, serverless preset, or static host |
+| Accessibility | Per-component ARIA wiring, focus management, skip link, single-`<h1>`-per-page, form-label pairing, mobile menu `inert`, lightbox focus trap | None (the template is at parity with WCAG 2.2 AA on the documented public routes; a future audit can extend the matrix to a third-party scanner) |
+| Automated tests + CI | 1150 Vitest unit tests + 62 Playwright cases + GitHub Actions CI (lint + test + build + e2e) | None (the CI is the source of truth) |
+| Uptime monitoring | None | The operator wires an external monitor to safe GET routes (`https://<host>/` and `https://<host>/sitemap.xml`); `/api/contact` is POST-only and is not a safe uptime probe |
+| Analytics | None | The operator adds the provider the agency prefers (Plausible / GA / Fathom / Matomo) |
+| Security headers (CSP, X-Frame-Options, Referrer-Policy, HSTS) | None | The operator configures them at the edge (CDN / reverse proxy) or via a Nitro middleware |
+| Error tracking | None | The operator wires Sentry / GlitchTip / similar; the `log` adapter writes a `console.info` line per lead, the webhook + email adapters write `console.warn` / `console.error` on adapter failures |
+| TLS / DNS | None | The platform terminates TLS and serves the certificate for the active hostname |
+
+The template is the authoritative source for the first column; the operator is the authoritative source for the third column. The second column is the bridge between the two � the rebranding workflow (�1��15) is the operator-facing procedure that closes the gap.
