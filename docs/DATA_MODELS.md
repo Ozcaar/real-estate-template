@@ -607,7 +607,7 @@ type DataSourceKind = 'static' | 'api' | 'cms'
 | --- | --- | --- |
 | `'static'` | `createStaticDataSource<T>({ data, schema? })` — bundles a TypeScript array, validates once at construction. | yes (the bundled default) |
 | `'api'` | `createApiDataSource<T>({ endpoint, schema?, timeoutMs? })` — generic HTTP/JSON adapter; uses the platform `fetch` with an `AbortController`-based timeout. | yes (v1.1.0 M17, properties + agents + developments) |
-| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20, properties + agents — developments CMS is deferred to a future task) |
+| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20, properties + agents + developments) |
 
 ### 10.2 Configuration (per feature)
 
@@ -635,15 +635,17 @@ NUXT_AGENTS_CMS_TIMEOUT_MS=10000                       # optional, default 10 00
 
 The agents loader ships `'static'` + `'api'` + `'cms'` (Task 109). The CMS branch mirrors the property CMS path (v1.1.0 M20): the same `createHttpJsonCmsDriver` + `createCmsDataSource` pair, validated against the `agentListSchema` boundary. The endpoint contract is identical to the api adapter's — the cms path differs only in the boundary shape (cms goes through the `cms-driver.ts` contract). Provider-specific knowledge (Sanity, Contentful, Strapi, …) is intentionally out of scope; a future task can add a per-provider driver without changing this loader's public surface. Adding CMS support for developments follows the same pattern.
 
-#### Developments (`server/utils/developments.ts` — added in v1.1.0 M22)
+  #### Developments (`server/utils/developments.ts` — added in v1.1.0 M22; CMS support added in v1.1.0 M27 / Task 110)
 
-```sh
-NUXT_DEVELOPMENTS_DATA_SOURCE=static|api       # cms is reserved for a future task
-NUXT_DEVELOPMENTS_API_URL=https://api.example.test/developments   # when kind=api
-NUXT_DEVELOPMENTS_API_TIMEOUT_MS=10000                            # optional, default 10 000 ms
-```
+  ```sh
+  NUXT_DEVELOPMENTS_DATA_SOURCE=static|api|cms
+  NUXT_DEVELOPMENTS_API_URL=https://api.example.test/developments   # when kind=api
+  NUXT_DEVELOPMENTS_API_TIMEOUT_MS=10000                            # optional, default 10 000 ms
+  NUXT_DEVELOPMENTS_CMS_URL=https://cms.example.test/developments   # when kind=cms
+  NUXT_DEVELOPMENTS_CMS_TIMEOUT_MS=10000                            # optional, default 10 000 ms
+  ```
 
-The developments loader ships `'static'` + `'api'` only; `'cms'` raises `DataSourceNotImplementedError` with the loader's actual `SHIPPED_KINDS` list (`['static', 'api']`). Adding a CMS source for developments follows the same pattern as the property CMS source path (v1.1.0 M20). The developments / agents / property loaders follow the same template; per-task shared extraction is intentionally avoided to keep each loader self-contained and the property data-source code unchanged.
+  The developments loader ships `'static'` + `'api'` + `'cms'` (Task 110). The CMS branch mirrors the property CMS path (v1.1.0 M20) and the agents CMS path (v1.1.0 M26): the same `createHttpJsonCmsDriver` + `createCmsDataSource` pair, validated against the `developmentListSchema` boundary. The endpoint contract is identical to the api adapter's — the cms path differs only in the boundary shape (cms goes through the `cms-driver.ts` contract). Provider-specific knowledge (Sanity, Contentful, Strapi, …) is intentionally out of scope; a future task can add a per-provider driver without changing this loader's public surface. The kind-parsing, `isDataSourceKind` dispatch, missing-config / unsupported-kind error mapping, timeout parsing, and in-flight `pending` coalescing are shared with `properties.ts` and `agents.ts` via `server/utils/server-data-source.ts` (Task 108 / M25 consolidation); each feature loader owns only its own env-var name constants, Zod schema, bundled data, and the CMS branch's `build` callback (the only feature-specific piece).
 
 ### 10.3 Validation boundary
 

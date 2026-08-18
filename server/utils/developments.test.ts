@@ -39,6 +39,8 @@ import {
 const ENV_KIND = 'NUXT_DEVELOPMENTS_DATA_SOURCE'
 const ENV_ENDPOINT = 'NUXT_DEVELOPMENTS_API_URL'
 const ENV_TIMEOUT = 'NUXT_DEVELOPMENTS_API_TIMEOUT_MS'
+const ENV_CMS_URL = 'NUXT_DEVELOPMENTS_CMS_URL'
+const ENV_CMS_TIMEOUT = 'NUXT_DEVELOPMENTS_CMS_TIMEOUT_MS'
 
 /**
  * Snapshot the process env vars the loader reads and restore
@@ -52,11 +54,13 @@ beforeEach(() => {
   Reflect.deleteProperty(process.env, ENV_KIND)
   Reflect.deleteProperty(process.env, ENV_ENDPOINT)
   Reflect.deleteProperty(process.env, ENV_TIMEOUT)
+  Reflect.deleteProperty(process.env, ENV_CMS_URL)
+  Reflect.deleteProperty(process.env, ENV_CMS_TIMEOUT)
 })
 
 afterEach(() => {
   _resetDevelopmentsServerCacheForTests()
-  for (const key of [ENV_KIND, ENV_ENDPOINT, ENV_TIMEOUT]) {
+  for (const key of [ENV_KIND, ENV_ENDPOINT, ENV_TIMEOUT, ENV_CMS_URL, ENV_CMS_TIMEOUT]) {
     Reflect.deleteProperty(process.env, key)
   }
   for (const [key, value] of Object.entries(originalEnv)) {
@@ -126,39 +130,41 @@ describe('server/utils/developments — server-only development loader', () => {
       expect(adapter.id).toBe('static')
     })
 
-    it('throws DataSourceNotImplementedError when NUXT_DEVELOPMENTS_DATA_SOURCE=cms', () => {
-      // The contract defines 'cms', but no CMS adapter ships
-      // for the developments feature in this milestone. The
-      // loader must fail loudly rather than silently fall
-      // back to the bundled static data so the
-      // misconfiguration is fixed at server startup.
+    it('returns the cms adapter when NUXT_DEVELOPMENTS_DATA_SOURCE=cms with a valid URL (Task 110)', () => {
+      // Task 110 mirrors the property CMS path (v1.1.0 M20)
+      // and the agents CMS path (v1.1.0 M26). The
+      // developments loader now ships a CMS branch backed by
+      // the same `createHttpJsonCmsDriver` +
+      // `createCmsDataSource` pair, validated against the
+      // `developmentListSchema` boundary.
       process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+      const adapter = createDevelopmentsServerAdapter()
+      expect(adapter.id).toBe('cms')
+    })
+
+    it('throws DataSourceMissingConfigError when NUXT_DEVELOPMENTS_DATA_SOURCE=cms with an empty URL', () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = ''
       expect(() => createDevelopmentsServerAdapter()).toThrow(
         expect.objectContaining({
-          name: 'DataSourceNotImplementedError',
+          name: 'DataSourceMissingConfigError',
           kind: 'cms',
+          field: 'NUXT_DEVELOPMENTS_CMS_URL',
         }),
       )
     })
 
-    it('the cms error message lists the kinds the loader actually ships (static + api, no cms)', () => {
-      // The error's "Supported kinds" line must reflect the
-      // loader's runtime reality — static + api — not the
-      // full contract kind set (which would falsely
-      // advertise 'cms' as supported). A future task that
-      // ships a CMS adapter updates the list at the loader.
+    it('throws DataSourceMissingConfigError when NUXT_DEVELOPMENTS_DATA_SOURCE=cms with a whitespace URL', () => {
       process.env[ENV_KIND] = 'cms'
-      try {
-        createDevelopmentsServerAdapter()
-        throw new Error('expected createDevelopmentsServerAdapter to throw')
-      }
-      catch (error) {
-        const message = (error as Error).message
-        expect(message).toContain('"cms"')
-        expect(message).toContain('not implemented')
-        expect(message).toContain('"static"')
-        expect(message).toContain('"api"')
-      }
+      process.env[ENV_CMS_URL] = '   '
+      expect(() => createDevelopmentsServerAdapter()).toThrow(
+        expect.objectContaining({
+          name: 'DataSourceMissingConfigError',
+          kind: 'cms',
+          field: 'NUXT_DEVELOPMENTS_CMS_URL',
+        }),
+      )
     })
 
     it('throws DataSourceNotImplementedError for an unknown kind such as "graphql"', () => {
@@ -404,6 +410,165 @@ describe('server/utils/developments — server-only development loader', () => {
       await expect(loadDevelopmentsServer()).rejects.toBeInstanceOf(Error)
       const loaded = await loadDevelopmentsServer()
       expect(loaded).toHaveLength(1)
+      expect(callCount).toBe(2)
+    })
+  })
+
+  describe('loadDevelopmentsServer — cms mode (Task 110)', () => {
+    it('fetches the remote list via the cms adapter when NUXT_DEVELOPMENTS_DATA_SOURCE=cms', async () => {
+      // The developments CMS path (Task 110) mirrors the
+      // property CMS path (v1.1.0 M20) and the agents CMS
+      // path (v1.1.0 M26) — the same
+      // `createHttpJsonCmsDriver` + `createCmsDataSource`
+      // pair, validated against the `developmentListSchema`
+      // boundary. The endpoint contract is identical to the
+      // api adapter's — the cms path differs only in the
+      // boundary shape (cms goes through the
+      // `cms-driver.ts` contract).
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+
+      const cmsResponse = [makeApiRecord({ id: 'cms-001', slug: 'cms-only-development' })]
+      const fetchMock = vi.fn(async (_input: string, _init?: unknown) => {
+        return new Response(JSON.stringify(cmsResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const loaded = await loadDevelopmentsServer()
+      expect(loaded).toHaveLength(1)
+      expect(loaded[0]?.slug).toBe('cms-only-development')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('re-throws DataSourceHttpError on a non-2xx response from the CMS endpoint', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+      vi.stubGlobal('fetch', async () => new Response('{}', { status: 502 }))
+
+      await expect(loadDevelopmentsServer()).rejects.toMatchObject({
+        name: 'DataSourceHttpError',
+        status: 502,
+        endpoint: 'https://cms.example.test/developments',
+      })
+    })
+
+    it('re-throws DataSourceInvalidPayloadError when the CMS response fails Zod validation', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+      // The cms returns a 200 with a body that does NOT
+      // match the `developmentListSchema` (missing required
+      // fields). The cms adapter's `safeParse` rejects the
+      // payload and raises `DataSourceInvalidPayloadError`.
+      vi.stubGlobal('fetch', async () => new Response(
+        JSON.stringify([{ id: 'broken' }]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+
+      await expect(loadDevelopmentsServer()).rejects.toMatchObject({
+        name: 'DataSourceInvalidPayloadError',
+        endpoint: 'cms:NUXT_DEVELOPMENTS_CMS_URL',
+      })
+    })
+
+    it('re-throws DataSourceInvalidPayloadError when the CMS response is not a JSON array', async () => {
+      // The cms driver checks the structural shape BEFORE
+      // the schema runs — a non-array body is a hard
+      // error at the boundary, not a misleading Zod issue.
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+      vi.stubGlobal('fetch', async () => new Response(
+        JSON.stringify({ not: 'an array' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+
+      await expect(loadDevelopmentsServer()).rejects.toMatchObject({
+        name: 'DataSourceInvalidPayloadError',
+        endpoint: 'https://cms.example.test/developments',
+      })
+    })
+
+    it('honors NUXT_DEVELOPMENTS_CMS_TIMEOUT_MS as the request timeout', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+      process.env[ENV_CMS_TIMEOUT] = '5000'
+
+      vi.stubGlobal('fetch', async (_input: string, init?: { signal?: AbortSignal }) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal)
+        return new Response(JSON.stringify([
+          makeApiRecord({ id: 'cms-001', slug: 'cms-001' }),
+        ]), { status: 200 })
+      })
+
+      const loaded = await loadDevelopmentsServer()
+      expect(loaded).toHaveLength(1)
+    })
+
+    it('falls back to the documented 10 000 ms default when NUXT_DEVELOPMENTS_CMS_TIMEOUT_MS is unset', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+
+      vi.stubGlobal('fetch', async (_input: string, init?: { signal?: AbortSignal }) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal)
+        return new Response(JSON.stringify([
+          makeApiRecord({ id: 'cms-001', slug: 'cms-001' }),
+        ]), { status: 200 })
+      })
+
+      const loaded = await loadDevelopmentsServer()
+      expect(loaded).toHaveLength(1)
+    })
+
+    it('does not memoise a failed CMS load (a retry can run)', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+      let callCount = 0
+      vi.stubGlobal('fetch', async () => {
+        callCount++
+        if (callCount === 1) {
+          return new Response('{}', { status: 500 })
+        }
+        return new Response(JSON.stringify([
+          makeApiRecord({ id: 'cms-001', slug: 'cms-001' }),
+        ]), { status: 200 })
+      })
+
+      await expect(loadDevelopmentsServer()).rejects.toBeInstanceOf(Error)
+      const loaded = await loadDevelopmentsServer()
+      expect(loaded).toHaveLength(1)
+      expect(callCount).toBe(2)
+    })
+
+    it('two sequential CMS loads observe different upstream responses (no permanent cache)', async () => {
+      // The loader does not memoise successes OR failures —
+      // the CMS path follows the same no-permanent-cache
+      // contract as the api path. Mirrors the property
+      // CMS regression test (M20) and the agents CMS
+      // regression test (M26).
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/developments'
+
+      const firstCatalog = [
+        makeApiRecord({ id: 'cms-001', slug: 'first-cms-only-development', name: 'First' }),
+      ]
+      const secondCatalog = [
+        makeApiRecord({ id: 'cms-002', slug: 'second-cms-only-development', name: 'Second' }),
+      ]
+      let callCount = 0
+      vi.stubGlobal('fetch', async () => {
+        callCount++
+        return new Response(
+          JSON.stringify(callCount === 1 ? firstCatalog : secondCatalog),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      })
+
+      const first = await loadDevelopmentsServer()
+      const second = await loadDevelopmentsServer()
+      expect(first[0]?.slug).toBe('first-cms-only-development')
+      expect(second[0]?.slug).toBe('second-cms-only-development')
       expect(callCount).toBe(2)
     })
   })
