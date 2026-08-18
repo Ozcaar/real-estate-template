@@ -607,7 +607,7 @@ type DataSourceKind = 'static' | 'api' | 'cms'
 | --- | --- | --- |
 | `'static'` | `createStaticDataSource<T>({ data, schema? })` — bundles a TypeScript array, validates once at construction. | yes (the bundled default) |
 | `'api'` | `createApiDataSource<T>({ endpoint, schema?, timeoutMs? })` — generic HTTP/JSON adapter; uses the platform `fetch` with an `AbortController`-based timeout. | yes (v1.1.0 M17, properties + agents + developments) |
-| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20, properties only — agents CMS and developments CMS are deferred to a future task) |
+| `'cms'` | `createCmsDataSource<T>({ driver, schema, source? })` wrapping a `CmsDriver<T>` provider driver. The shipped provider is `createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? })` (simple HTTP/JSON). | yes (v1.1.0 M20, properties + agents — developments CMS is deferred to a future task) |
 
 ### 10.2 Configuration (per feature)
 
@@ -623,15 +623,17 @@ NUXT_PROPERTIES_CMS_URL=https://cms.example.test/properties   # when kind=cms
 NUXT_PROPERTIES_CMS_TIMEOUT_MS=10000                          # optional, default 10 000 ms
 ```
 
-#### Agents (`server/utils/agents.ts` — added in v1.1.0 M21)
+#### Agents (`server/utils/agents.ts` — added in v1.1.0 M21; CMS support added in v1.1.0 M26 / Task 109)
 
 ```sh
-NUXT_AGENTS_DATA_SOURCE=static|api               # cms is reserved for a future task
+NUXT_AGENTS_DATA_SOURCE=static|api|cms
 NUXT_AGENTS_API_URL=https://api.example.test/agents   # when kind=api
 NUXT_AGENTS_API_TIMEOUT_MS=10000                       # optional, default 10 000 ms
+NUXT_AGENTS_CMS_URL=https://cms.example.test/agents   # when kind=cms
+NUXT_AGENTS_CMS_TIMEOUT_MS=10000                       # optional, default 10 000 ms
 ```
 
-The agents loader ships `'static'` + `'api` only; `'cms'` raises `DataSourceNotImplementedError` with the loader's actual `SHIPPED_KINDS` list (`['static', 'api']`). Adding a CMS source for agents follows the same pattern as the property CMS source path (v1.1.0 M20).
+The agents loader ships `'static'` + `'api'` + `'cms'` (Task 109). The CMS branch mirrors the property CMS path (v1.1.0 M20): the same `createHttpJsonCmsDriver` + `createCmsDataSource` pair, validated against the `agentListSchema` boundary. The endpoint contract is identical to the api adapter's — the cms path differs only in the boundary shape (cms goes through the `cms-driver.ts` contract). Provider-specific knowledge (Sanity, Contentful, Strapi, …) is intentionally out of scope; a future task can add a per-provider driver without changing this loader's public surface. Adding CMS support for developments follows the same pattern.
 
 #### Developments (`server/utils/developments.ts` — added in v1.1.0 M22)
 
@@ -645,7 +647,7 @@ The developments loader ships `'static'` + `'api'` only; `'cms'` raises `DataSou
 
 ### 10.3 Validation boundary
 
-Every source path — static, api, cms — passes the resolved data through `propertyListSchema`. A malformed record is a hard error at the boundary; the loader does NOT silently fall back to the bundled static catalog when a remote source misbehaves. The five boundary error classes:
+Every source path — static, api, cms — passes the resolved data through the feature's boundary Zod schema (`propertyListSchema` for properties, `agentListSchema` for agents, `developmentListSchema` for developments). A malformed record is a hard error at the boundary; the loader does NOT silently fall back to the bundled static catalog when a remote source misbehaves. The five boundary error classes:
 
 - `DataSourceMissingConfigError` — `kind + field`. Raised at construction when the configured kind has a missing required env var (`NUXT_PROPERTIES_API_URL`, `NUXT_PROPERTIES_CMS_URL`).
 - `DataSourceHttpError` — non-2xx response. Carries status + endpoint URL.

@@ -36,6 +36,8 @@ import {
 const ENV_KIND = 'NUXT_AGENTS_DATA_SOURCE'
 const ENV_ENDPOINT = 'NUXT_AGENTS_API_URL'
 const ENV_TIMEOUT = 'NUXT_AGENTS_API_TIMEOUT_MS'
+const ENV_CMS_URL = 'NUXT_AGENTS_CMS_URL'
+const ENV_CMS_TIMEOUT = 'NUXT_AGENTS_CMS_TIMEOUT_MS'
 
 /**
  * Snapshot the process env vars the loader reads and restore them
@@ -48,11 +50,13 @@ beforeEach(() => {
   Reflect.deleteProperty(process.env, ENV_KIND)
   Reflect.deleteProperty(process.env, ENV_ENDPOINT)
   Reflect.deleteProperty(process.env, ENV_TIMEOUT)
+  Reflect.deleteProperty(process.env, ENV_CMS_URL)
+  Reflect.deleteProperty(process.env, ENV_CMS_TIMEOUT)
 })
 
 afterEach(() => {
   _resetAgentsServerCacheForTests()
-  for (const key of [ENV_KIND, ENV_ENDPOINT, ENV_TIMEOUT]) {
+  for (const key of [ENV_KIND, ENV_ENDPOINT, ENV_TIMEOUT, ENV_CMS_URL, ENV_CMS_TIMEOUT]) {
     Reflect.deleteProperty(process.env, key)
   }
   for (const [key, value] of Object.entries(originalEnv)) {
@@ -111,32 +115,40 @@ describe('server/utils/agents — server-only agent loader', () => {
       const adapter = createAgentsServerAdapter()
       expect(adapter.id).toBe('static')
     })
-    it('throws DataSourceNotImplementedError when NUXT_AGENTS_DATA_SOURCE=cms', () => {
-      // Task 104 intentionally does NOT ship a CMS adapter
-      // for agents. A rebrand that asks for `'cms'` fails
-      // loudly rather than silently shipping the bundled
-      // static data.
+    it('returns the cms adapter when NUXT_AGENTS_DATA_SOURCE=cms with a valid URL (Task 109)', () => {
+      // Task 109 mirrors the property CMS path (v1.1.0 M20).
+      // The agents loader now ships a CMS branch backed by
+      // the same `createHttpJsonCmsDriver` +
+      // `createCmsDataSource` pair, validated against the
+      // `agentListSchema` boundary.
       process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+      const adapter = createAgentsServerAdapter()
+      expect(adapter.id).toBe('cms')
+    })
+
+    it('throws DataSourceMissingConfigError when NUXT_AGENTS_DATA_SOURCE=cms with an empty URL', () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = ''
       expect(() => createAgentsServerAdapter()).toThrow(
         expect.objectContaining({
-          name: 'DataSourceNotImplementedError',
+          name: 'DataSourceMissingConfigError',
           kind: 'cms',
+          field: 'NUXT_AGENTS_CMS_URL',
         }),
       )
     })
-    it('the cms error message lists the kinds the loader actually ships (static + api, no cms)', () => {
+
+    it('throws DataSourceMissingConfigError when NUXT_AGENTS_DATA_SOURCE=cms with a whitespace URL', () => {
       process.env[ENV_KIND] = 'cms'
-      try {
-        createAgentsServerAdapter()
-        throw new Error('expected createAgentsServerAdapter to throw')
-      }
-      catch (error) {
-        const message = (error as Error).message
-        expect(message).toContain('"cms"')
-        expect(message).toContain('not implemented')
-        expect(message).toContain('"static"')
-        expect(message).toContain('"api"')
-      }
+      process.env[ENV_CMS_URL] = '   '
+      expect(() => createAgentsServerAdapter()).toThrow(
+        expect.objectContaining({
+          name: 'DataSourceMissingConfigError',
+          kind: 'cms',
+          field: 'NUXT_AGENTS_CMS_URL',
+        }),
+      )
     })
     it('throws DataSourceNotImplementedError for an unknown kind such as "graphql"', () => {
       process.env[ENV_KIND] = 'graphql'
@@ -398,6 +410,162 @@ describe('server/utils/agents — server-only agent loader', () => {
       const second = await loadAgentsServer()
       expect(second).not.toBe(first)
       expect(second).toHaveLength(first.length)
+    })
+  })
+
+  describe('loadAgentsServer — cms mode (Task 109)', () => {
+    it('fetches the remote list via the cms adapter when NUXT_AGENTS_DATA_SOURCE=cms', async () => {
+      // The agents CMS path (Task 109) mirrors the property
+      // CMS path (v1.1.0 M20) — the same `createHttpJsonCmsDriver`
+      // + `createCmsDataSource` pair, validated against the
+      // `agentListSchema` boundary. The endpoint contract is
+      // identical to the api adapter's — the cms path differs
+      // only in the boundary shape (cms goes through the
+      // `cms-driver.ts` contract).
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+
+      const cmsResponse = [makeApiRecord({ id: 'cms-001', slug: 'cms-only-agent' })]
+      const fetchMock = vi.fn(async (_input: string, _init?: unknown) => {
+        return new Response(JSON.stringify(cmsResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const loaded = await loadAgentsServer()
+      expect(loaded).toHaveLength(1)
+      expect(loaded[0]?.slug).toBe('cms-only-agent')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('re-throws DataSourceHttpError on a non-2xx response from the CMS endpoint', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+      vi.stubGlobal('fetch', async () => new Response('{}', { status: 502 }))
+
+      await expect(loadAgentsServer()).rejects.toMatchObject({
+        name: 'DataSourceHttpError',
+        status: 502,
+        endpoint: 'https://cms.example.test/agents',
+      })
+    })
+
+    it('re-throws DataSourceInvalidPayloadError when the CMS response fails Zod validation', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+      // The cms returns a 200 with a body that does NOT
+      // match the `agentListSchema` (missing required
+      // fields). The cms adapter's `safeParse` rejects the
+      // payload and raises `DataSourceInvalidPayloadError`.
+      vi.stubGlobal('fetch', async () => new Response(
+        JSON.stringify([{ id: 'broken' }]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+
+      await expect(loadAgentsServer()).rejects.toMatchObject({
+        name: 'DataSourceInvalidPayloadError',
+        endpoint: 'cms:NUXT_AGENTS_CMS_URL',
+      })
+    })
+
+    it('re-throws DataSourceInvalidPayloadError when the CMS response is not a JSON array', async () => {
+      // The cms driver checks the structural shape BEFORE
+      // the schema runs — a non-array body is a hard
+      // error at the boundary, not a misleading Zod issue.
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+      vi.stubGlobal('fetch', async () => new Response(
+        JSON.stringify({ not: 'an array' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ))
+
+      await expect(loadAgentsServer()).rejects.toMatchObject({
+        name: 'DataSourceInvalidPayloadError',
+        endpoint: 'https://cms.example.test/agents',
+      })
+    })
+
+    it('honors NUXT_AGENTS_CMS_TIMEOUT_MS as the request timeout', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+      process.env[ENV_CMS_TIMEOUT] = '5000'
+
+      vi.stubGlobal('fetch', async (_input: string, init?: { signal?: AbortSignal }) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal)
+        return new Response(JSON.stringify([
+          makeApiRecord({ id: 'cms-001', slug: 'cms-001' }),
+        ]), { status: 200 })
+      })
+
+      const loaded = await loadAgentsServer()
+      expect(loaded).toHaveLength(1)
+    })
+
+    it('falls back to the documented 10 000 ms default when NUXT_AGENTS_CMS_TIMEOUT_MS is unset', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+
+      vi.stubGlobal('fetch', async (_input: string, init?: { signal?: AbortSignal }) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal)
+        return new Response(JSON.stringify([
+          makeApiRecord({ id: 'cms-001', slug: 'cms-001' }),
+        ]), { status: 200 })
+      })
+
+      const loaded = await loadAgentsServer()
+      expect(loaded).toHaveLength(1)
+    })
+
+    it('does not memoise a failed CMS load (a retry can run)', async () => {
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+      let callCount = 0
+      vi.stubGlobal('fetch', async () => {
+        callCount++
+        if (callCount === 1) {
+          return new Response('{}', { status: 500 })
+        }
+        return new Response(JSON.stringify([
+          makeApiRecord({ id: 'cms-001', slug: 'cms-001' }),
+        ]), { status: 200 })
+      })
+
+      await expect(loadAgentsServer()).rejects.toBeInstanceOf(Error)
+      const loaded = await loadAgentsServer()
+      expect(loaded).toHaveLength(1)
+      expect(callCount).toBe(2)
+    })
+
+    it('two sequential CMS loads observe different upstream responses (no permanent cache)', async () => {
+      // The loader does not memoise successes OR failures —
+      // the CMS path follows the same no-permanent-cache
+      // contract as the api path. Mirrors the property
+      // CMS regression test (M20).
+      process.env[ENV_KIND] = 'cms'
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/agents'
+
+      const firstCatalog = [
+        makeApiRecord({ id: 'cms-001', slug: 'first-cms-only-agent', name: 'First' }),
+      ]
+      const secondCatalog = [
+        makeApiRecord({ id: 'cms-002', slug: 'second-cms-only-agent', name: 'Second' }),
+      ]
+      let callCount = 0
+      vi.stubGlobal('fetch', async () => {
+        callCount++
+        return new Response(
+          JSON.stringify(callCount === 1 ? firstCatalog : secondCatalog),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      })
+
+      const first = await loadAgentsServer()
+      const second = await loadAgentsServer()
+      expect(first[0]?.slug).toBe('first-cms-only-agent')
+      expect(second[0]?.slug).toBe('second-cms-only-agent')
+      expect(callCount).toBe(2)
     })
   })
 

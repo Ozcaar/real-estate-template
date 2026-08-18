@@ -1,3 +1,5 @@
+import { createCmsDataSource } from '~/core/data-source/cms-driver'
+import { createHttpJsonCmsDriver } from '~/core/data-source/adapters/http-json-cms-driver'
 import type { DataSourceAdapter, DataSourceKind } from '~/core/data-source/data-source'
 import { agentListSchema } from '~/features/agents/schemas/agent.schema'
 import { sampleAgents } from '~/features/agents/data/agents'
@@ -9,12 +11,12 @@ import {
 } from './server-data-source'
 
 /**
- * Server-only agent loader (Task 104).
+ * Server-only agent loader (Task 104 + Task 109).
  *
  * Mirrors `server/utils/properties.ts` for the agents feature:
  * owns the `NUXT_AGENTS_*` private configuration and the
- * static / api source selection, and exposes the resolved
- * data through two public surfaces:
+ * static / api / cms source selection, and exposes the
+ * resolved data through two public surfaces:
  *
  *  - {@link loadAgentsServer} — async, returns the validated
  *    list. Used by the same-origin Nitro endpoint at
@@ -24,17 +26,19 @@ import {
  *    directly without going through the Nitro endpoint).
  *  - {@link createAgentsServerAdapter} — lower-level factory
  *    that returns a {@link DataSourceAdapter}. Exposed for the
- *    unit tests that exercise the static-default and
- *    api-configured branches without booting a Nitro server.
+ *    unit tests that exercise the static-default,
+ *    api-configured, and cms-configured branches without
+ *    booting a Nitro server.
  *
  * **Why a `server/utils/` module.** `server/utils/` is the
  * canonical Nuxt 4 location for server-only utilities: the
  * files are auto-imported by Nitro and bundled exclusively to
- * the server output, never to the client. The api-adapter
- * module and the three `NUXT_AGENTS_*` env vars therefore
- * cannot reach the client bundle by code organization, not by
- * tree-shaking — a future change cannot reintroduce the leak
- * without moving the file out of `server/utils/`.
+ * the server output, never to the client. The api-adapter +
+ * cms-driver modules and the five `NUXT_AGENTS_*` env vars
+ * therefore cannot reach the client bundle by code
+ * organization, not by tree-shaking — a future change cannot
+ * reintroduce the leak without moving the file out of
+ * `server/utils/`.
  *
  * **Shared server-side data-source utilities (Task 108).**
  * The kind-parsing, `isDataSourceKind` dispatch,
@@ -44,13 +48,21 @@ import {
  * `server/utils/server-data-source.ts` and are reused through
  * {@link createServerDataSourceAdapter} + {@link createServerLoader}.
  * This file owns ONLY the feature-specific surface: the
- * `NUXT_AGENTS_*` env var names, the agent Zod schema, and
- * the bundled `sampleAgents` catalog. The agents loader
- * intentionally does NOT ship a CMS branch — selecting
- * `'cms'` raises `DataSourceNotImplementedError('cms',
- * SHIPPED_KINDS)` from the shared utility because the agents
- * feature scope is static + api only (CMS support is a future
- * task).
+ * `NUXT_AGENTS_*` env var names, the agent Zod schema, the
+ * bundled `sampleAgents` catalog, and the CMS branch's
+ * `createHttpJsonCmsDriver` + `createCmsDataSource` wiring.
+ *
+ * **CMS support (Task 109).** The agents loader now ships a
+ * CMS branch that mirrors the property CMS path (v1.1.0 M20):
+ * `NUXT_AGENTS_DATA_SOURCE=cms` + `NUXT_AGENTS_CMS_URL` selects
+ * the simple HTTP/JSON CMS driver + `agentListSchema`
+ * boundary. The provider-driver boundary is unchanged — the
+ * shipped driver is the same `createHttpJsonCmsDriver` the
+ * property CMS path uses, and the adapter is the same
+ * `createCmsDataSource`. Provider-specific knowledge (Sanity,
+ * Contentful, Strapi, …) is intentionally out of scope; a
+ * future task can add a per-provider driver without changing
+ * this file's public surface or the shared utility.
  *
  * **Why no Nuxt plugin.** A Nuxt plugin would run on EVERY
  * server request and pre-populate shared state, which couples
@@ -62,10 +74,10 @@ import {
  * endpoint or the sitemap). The `loadAll()` on the agent
  * service is invoked only by the agents listing, the agent
  * detail page, and the sitemap — three call sites — so the
- * api fetch happens on demand, not on every request.
+ * api / cms fetch happens on demand, not on every request.
  *
  * **No permanent process-lifetime cache.** A successful
- * API result is NOT retained between calls. Each call to
+ * API / CMS result is NOT retained between calls. Each call to
  * {@link loadAgentsServer} constructs a fresh adapter and
  * awaits its `loadAll()`; a later request observes the latest
  * upstream data, not a stale snapshot. The only shared state
@@ -75,13 +87,14 @@ import {
  * previous call is still resolving, it shares the same
  * promise. The `pending` reference is cleared after settle
  * (success or failure), so the next call constructs a new
- * adapter and performs a new fetch. The api is therefore
+ * adapter and performs a new fetch. The api / cms is therefore
  * fetched on every call, not "at most once per server
  * lifetime".
  *
  * **Why `process.env` directly (not `useRuntimeConfig`).**
- * `NUXT_AGENTS_API_URL` and `NUXT_AGENTS_API_TIMEOUT_MS` are
- * intentionally NOT declared in `nuxt.config.ts` →
+ * `NUXT_AGENTS_API_URL`, `NUXT_AGENTS_API_TIMEOUT_MS`,
+ * `NUXT_AGENTS_CMS_URL`, and `NUXT_AGENTS_CMS_TIMEOUT_MS`
+ * are intentionally NOT declared in `nuxt.config.ts` →
  * `runtimeConfig`. Declaring them in `runtimeConfig` would put
  * them on the `nuxt` runtime config surface (server-only by
  * Nuxt convention, but still a public-ish surface); the
@@ -103,12 +116,11 @@ import {
  *    {@link DataSourceMissingConfigError} at the first loader
  *    call so the misconfiguration is fixed at server startup
  *    rather than at first request.
- *  - `NUXT_AGENTS_DATA_SOURCE=cms` raises
- *    {@link DataSourceNotImplementedError}: the contract
- *    defines `'cms'` for the data-source kind set, but the
- *    agents feature intentionally does NOT ship a CMS adapter
- *    (Task 104 scope is static + api only — CMS support is a
- *    future task).
+ *  - `NUXT_AGENTS_DATA_SOURCE=cms` with an empty / whitespace
+ *    `NUXT_AGENTS_CMS_URL` raises
+ *    {@link DataSourceMissingConfigError}; with a non-empty
+ *    endpoint, the loader constructs the CMS adapter (the
+ *    simple HTTP/JSON driver + `agentListSchema` boundary).
  *  - Any other non-empty value (e.g. `'graphql'`, `'STATIC'`,
  *    `'Api'`, `'sanity'`) raises
  *    {@link DataSourceNotImplementedError} naming the literal
@@ -116,11 +128,12 @@ import {
  *    the source of truth for the accepted set; case variants
  *    and unknown strings are misconfigurations, not
  *    silently-coerced defaults.
- *  - A non-integer `NUXT_AGENTS_API_TIMEOUT_MS` falls back to
- *    the documented default (10 000 ms). The fallback is silent
- *    (no log line) — a malformed timeout is a deployment
+ *  - A non-integer `NUXT_AGENTS_API_TIMEOUT_MS` or
+ *    `NUXT_AGENTS_CMS_TIMEOUT_MS` falls back to the documented
+ *    default (10 000 ms). The fallback is silent (no log
+ *    line) — a malformed timeout is a deployment
  *    misconfiguration, not an operator-facing condition.
- *  - The remote API returning a non-2xx response, a JSON
+ *  - The remote API / CMS returning a non-2xx response, a JSON
  *    parse failure, a timeout, or a payload that fails
  *    {@link agentListSchema} re-throws the matching
  *    `DataSourceHttpError` / `DataSourceTimeoutError` /
@@ -135,27 +148,32 @@ import {
 const PROP_ENV_KIND = 'NUXT_AGENTS_DATA_SOURCE'
 const PROP_ENV_ENDPOINT = 'NUXT_AGENTS_API_URL'
 const PROP_ENV_TIMEOUT_MS = 'NUXT_AGENTS_API_TIMEOUT_MS'
+const PROP_ENV_CMS_URL = 'NUXT_AGENTS_CMS_URL'
+const PROP_ENV_CMS_TIMEOUT_MS = 'NUXT_AGENTS_CMS_TIMEOUT_MS'
 
 /**
- * The kinds the loader ships with.
+ * The kinds the loader ships with (Task 109).
  *
  * `'static'` is the bundled default; `'api'` is the real
- * HTTP adapter. `'cms'` is intentionally NOT in the list: the
- * contract is defined but no CMS adapter ships for the agents
- * feature in Task 104. A rebrand that asks for `'cms'` (or any
- * other unknown value such as `'graphql'` or `'STATIC'`) fails
- * loudly via {@link DataSourceNotImplementedError} so the
+ * HTTP adapter; `'cms'` is the simple HTTP/JSON CMS provider
+ * adapter (Task 103). A rebrand that asks for any other value
+ * (e.g. `'graphql'`, `'STATIC'`, `'sanity'`) fails loudly via
+ * {@link DataSourceNotImplementedError} so the
  * misconfiguration is fixed at server startup rather than
  * silently shipping the bundled static data.
  */
-const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api'] as const
+const SHIPPED_KINDS: readonly DataSourceKind[] = ['static', 'api', 'cms'] as const
 
 /**
- * The shared-utilities options for the agents loader. The
- * `cms` branch is intentionally omitted — the agents feature
- * does not ship CMS support, so the shared utility raises
- * `DataSourceNotImplementedError('cms', SHIPPED_KINDS)` for
- * any `'cms'` request.
+ * The shared-utilities options for the agents loader.
+ *
+ * The `cms` branch (Task 109) supplies the agents' CMS
+ * configuration: the endpoint / timeout env-var names, the
+ * boundary Zod schema (the same `agentListSchema` the api +
+ * static paths use), and the `build` callback that wires
+ * `createHttpJsonCmsDriver` + `createCmsDataSource` —
+ * identical to the property CMS path, scoped to the agents
+ * feature.
  */
 const agentsOptions: ServerDataSourceOptions<Agent> = {
   kindEnvName: PROP_ENV_KIND,
@@ -170,6 +188,32 @@ const agentsOptions: ServerDataSourceOptions<Agent> = {
     timeoutEnvName: PROP_ENV_TIMEOUT_MS,
     schema: agentListSchema,
   },
+  cms: {
+    endpointEnvName: PROP_ENV_CMS_URL,
+    timeoutEnvName: PROP_ENV_CMS_TIMEOUT_MS,
+    schema: agentListSchema,
+    /**
+     * Construct the CMS adapter from the resolved endpoint
+     * + timeout + schema + source. Mirrors the property CMS
+     * `build` callback byte-identically (same driver, same
+     * adapter, same `agentListSchema` boundary in place of
+     * `propertyListSchema`). The provider-driver boundary
+     * is unchanged — the shipped driver is the simple
+     * HTTP/JSON driver, not Sanity / Contentful / Strapi.
+     */
+    build: ({ endpoint, timeoutMs, schema, source }) => {
+      const driver = createHttpJsonCmsDriver<Agent>({
+        endpoint,
+        source,
+        timeoutMs,
+      })
+      return createCmsDataSource<Agent>({
+        driver,
+        schema,
+        source,
+      })
+    },
+  },
 }
 
 /**
@@ -179,21 +223,28 @@ const agentsOptions: ServerDataSourceOptions<Agent> = {
  * {@link createServerDataSourceAdapter} with the agents
  * options. The kind parsing, the `isDataSourceKind`
  * dispatch, the missing-config / unsupported-kind error
- * mapping, the timeout parsing, and the static / api branch
- * construction are all handled by the shared utility.
+ * mapping, the timeout parsing, and the static / api / cms
+ * branch construction are all handled by the shared utility
+ * — this wrapper exists so the public surface stays a
+ * `createAgentsServerAdapter()` call site (the property
+ * loader follows the same pattern).
  *
  *  - `NUXT_AGENTS_DATA_SOURCE` unset / empty / whitespace /
  *    `'static'` → the bundled static adapter.
  *  - `NUXT_AGENTS_DATA_SOURCE=api` + a non-empty
  *    `NUXT_AGENTS_API_URL` → the api adapter.
- *  - `NUXT_AGENTS_DATA_SOURCE=cms` → raises
- *    {@link DataSourceNotImplementedError} (the contract
- *    exists but no CMS adapter ships for the agents feature).
+ *  - `NUXT_AGENTS_DATA_SOURCE=cms` + a non-empty
+ *    `NUXT_AGENTS_CMS_URL` → the CMS adapter (Task 109).
+ *  - `NUXT_AGENTS_DATA_SOURCE=cms` + an empty / whitespace
+ *    endpoint → {@link DataSourceMissingConfigError}.
  *  - Any other non-empty value (e.g. `'graphql'`, `'STATIC'`,
- *    `'API'`) → raises {@link DataSourceNotImplementedError}.
+ *    `'API'`) → raises
+ *    {@link DataSourceNotImplementedError} naming the
+ *    unknown kind.
  *
- * Exposed for the unit tests that exercise the static default
- * and the api-configured branch.
+ * Exposed for the unit tests that exercise the static
+ * default, the api-configured branch, and the
+ * cms-configured branch.
  */
 export function createAgentsServerAdapter(): DataSourceAdapter<Agent> {
   return createServerDataSourceAdapter(agentsOptions)
@@ -218,7 +269,7 @@ const agentsLoader = createServerLoader<Agent>(createAgentsServerAdapter)
  * in-flight `pending` promise so a single render produces at
  * most one in-flight fetch; the promise is cleared on
  * settle, so the next call performs a new fetch. A
- * successful API result is NOT retained between calls.
+ * successful API / CMS result is NOT retained between calls.
  *
  * The function is safe to call from any server-only context:
  * the Nitro endpoint (`server/api/agents.get.ts`), the
@@ -232,14 +283,15 @@ export async function loadAgentsServer(): Promise<readonly Agent[]> {
 
 /**
  * Reset the in-flight promise. Exposed for the unit tests
- * that exercise the static-default → api-configured
- * transition (each test starts with a clean in-flight state
- * so a test that left a pending promise in flight does not
- * pollute the next). Not part of the production API.
+ * that exercise the static-default → api-configured →
+ * cms-configured transition (each test starts with a clean
+ * in-flight state so a test that left a pending promise in
+ * flight does not pollute the next). Not part of the
+ * production API.
  *
  * Note: there is no permanent cache to reset. The
  * process-lifetime cache that previously lived here was
- * removed so the api source reflects upstream changes
+ * removed so the api / cms source reflects upstream changes
  * between calls.
  */
 export function _resetAgentsServerCacheForTests(): void {
