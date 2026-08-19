@@ -30,7 +30,10 @@ infrastructure lives outside features:
 
 See `docs/` for the full specification (`ARCHITECTURE.md`, `THEMING.md`,
 `COMPONENTS.md`, `DATA_MODELS.md`, `I18N.md`, `DESIGN.md`, `ROADMAP.md`) and
-`AGENTS.md` for contributor conventions.
+`AGENTS.md` for contributor conventions. For taking a rebranded instance from
+the repository to a real production deployment, see `docs/DEPLOYMENT.md` (the
+8-step flow, the env-var checklist, the static-vs-Nitro decision, the
+post-deployment smoke checks, and the rollback).
 
 ## Customization
 
@@ -107,3 +110,5 @@ The template supports two deployment targets.
 * **`pnpm build`** produces a Nitro server build under `.output/server/`. The same dynamic routes are served at request time, gated by the same env var. The v1.1.0 lead-capture pipeline (`POST /api/contact` with the `disabled`, `log`, `webhook`, and `email` adapters) requires this target — a pure static host cannot serve server endpoints. An agency that ships static-only builds keeps the placeholder form behavior and the contact-methods column is the canonical completion path.
 
 v1.0.0 (tag `v1.0.0` on `release/v1.0.0` at `456284c`) does **not** ship any Nitro-only API endpoints; both targets are equivalent in scope at v1.0.0. v1.1.0 ships the `POST /api/contact` endpoint and requires the Nitro server build or a serverless preset that ships a Nitro server runtime.
+
+The provider-agnostic operational procedure for taking a rebranded instance to a real production deployment (env-var checklist, static-vs-Nitro decision, hostname + TLS, lead-delivery configuration, smoke checks, and rollback) is in `docs/DEPLOYMENT.md`.

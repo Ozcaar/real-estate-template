@@ -2,7 +2,7 @@
 
 This document summarizes the current implementation state of the Real Estate Website Template, the active task, and the upcoming sequence. It is the canonical entry point for resuming work in a new OpenCode session.
 
-For architecture, theming, data models, i18n rules, and component conventions, see the topic-specific docs in `docs/`. For per-implementation details and the rationale behind individual decisions, see the JSDoc on the corresponding source file. This file is intentionally short and summarises state; it does not duplicate larger docs.
+For architecture, theming, data models, i18n rules, and component conventions, see the topic-specific docs in `docs/`. For per-implementation details and the rationale behind individual decisions, see the JSDoc on the corresponding source file. This file is intentionally short and summarises state; it does not duplicate larger docs. For the operational procedure of taking a rebranded instance from the repository to a real production deployment (env-var checklist, static vs Node/Nitro, hostname + TLS, lead delivery, smoke checks, rollback), see `docs/DEPLOYMENT.md`.
 
 ## 1. Project Purpose
 
