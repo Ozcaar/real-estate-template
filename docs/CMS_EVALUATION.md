@@ -225,15 +225,32 @@ The pilot is scoped to minimise surprises. The implementation task still has to 
 - **Sanity plan tier.** The Free plan is sufficient for the pilot's two-role model (agency Administrator + Viewer). The Growth plan is required when the agency needs a non-admin content editor (Editor, Developer, or Contributor). The implementer confirms the role shape with the agency at onboarding time. The pricing conversation is part of `docs/CLIENT_ONBOARDING.md` §2.2.
 - **Sanity API version pin.** The default `NUXT_SANITY_API_VERSION` is the documented current Sanity API version at the time of writing. The implementation task may update the default when the pilot ships. The version is pinned to keep the GROQ query result shape stable across Sanity upgrades.
 - **Read token rotation.** The agency owns the Sanity project. The read token rotation cadence is part of the handoff (`docs/CLIENT_ONBOARDING.md` §4.7). The implementer does not rotate the token in production.
-- **Sanity Studio schema.** The schema is defined in the Sanity Studio (a separate repo / sub-repository owned by the agency). The boundary schema in `app/features/properties/schemas/property.schema.ts` is the source of truth for the runtime contract. The two schemas can drift; a CI / contract test that runs the Sanity Studio schema against the boundary schema is a future task.
+- **Sanity Studio schema.** The Studio is shipped under `studio/` at the repo root as a separate npm project (its own `package.json`, `pnpm-lock.yaml`, `node_modules/`, and `tsconfig.json`). The Studio ships the three document schemas (`Property`, `Agent`, `Development`) that match the GROQ projection in `server/utils/sanity-mappings.ts` and the runtime Zod boundary schemas in `app/features/*/schemas/`. The Studio is the **editor contract**; the Nuxt Zod schemas are the **runtime contract**. The two are matched by hand — changing one without the other is a deliberate decision (the commit + PR review catches the drift). A future task can add a CI contract test that asserts the Studio schema output matches the boundary schema shape (a `pnpm studio:contract` step that runs the Studio schema against the boundary schema). The Studio's `pnpm typecheck` and `pnpm test` scripts verify the schema structure locally.
 - **Image strategy.** The pilot uses direct projected asset URLs (`asset->url`). When the agency needs hotspot / crop-aware transforms, the implementation adds `@sanity/image-url` as a justified dependency. The current pilot does not depend on it.
 - **Locale handling.** `availableLocales` is a single array on the agency config. The Sanity model carries per-locale fields. The boundary schema receives a single shape; the implementer confirms the pilot's locale strategy before the integration runs against a real dataset.
 - **Multi-tenant.** The v1.2 pilot is single-tenant. The `agency.id` is the Sanity project name. A multi-tenant deployment that hosts multiple Sanity projects behind one build is a future task.
 - **Custom SDK dependencies.** The pilot introduces `@sanity/client` as the only new runtime dependency. The implementer confirms the dependency is acceptable (`docs/AGENTS.md` "do not add dependencies without a strong reason" — the Sanity SDK is the canonical way to talk to Sanity, so the dependency is justified). `@sanity/image-url` is **not** a pilot dependency.
 - **Studio customisation.** The default Sanity Studio is sufficient for the pilot. A custom Studio (e.g. for the agency's brand colors or a custom desk structure) is a future task that demands its own design pass.
 
+## 7.1 Sanity Studio structure (Task 117)
+
+The Sanity Studio is shipped under `studio/` at the repo root as a **separate npm project**. The Studio is intentionally isolated from the Nuxt app:
+
+- **Own `package.json`** declares the Studio dependencies (`sanity`, `react`, `react-dom`, `styled-components`, `@sanity/vision`, `vitest`, `typescript`).
+- **Own `pnpm-lock.yaml`** is independent of the root's lockfile. `cd studio && pnpm install --frozen-lockfile` succeeds on a clean checkout.
+- **Own `node_modules`** is isolated to `studio/node_modules/`. The root's `pnpm install` does NOT install the Studio's dependencies.
+- **Own `tsconfig.json`** extends the root's `tsconfig.json` for the shared `compilerOptions` and includes the Studio's `schemas/`, `sanity.config.ts`, and `sanity.cli.ts`.
+- **Own `vitest.config.ts`** runs the Studio's schema tests (23 cases).
+
+The Studio is the **editor contract**; the Nuxt Zod schemas are the **runtime contract**. The two are matched by hand and the schema tests verify the field names, enum values, and reference types match the GROQ projection in `server/utils/sanity-mappings.ts`.
+
+The Studio's deployment is a single command: `cd studio && pnpm deploy`. The `sanity deploy` step builds the Studio and publishes it to `<projectId>.sanity.studio`. The agency owns the Sanity project and revokes the implementer's access after the handoff.
+
+The Studio's setup / deploy / access workflow is documented in `studio/README.md`. The root `package.json` adds a `studio:typecheck` script that runs the Studio's `pnpm install --frozen-lockfile && pnpm typecheck && pnpm test` end-to-end.
+
 ## 8. References
 
+- `studio/README.md` — the Sanity Studio setup, deploy, and access workflow (Task 117).
 - `docs/CLIENT_ONBOARDING.md` — the first-client onboarding workflow (§2.1 CMS project, §4.7 CMS handoff).
 - `docs/DATA_MODELS.md` — the per-feature data models and the existing CMS path (`server/utils/properties.ts`, `server/utils/agents.ts`, `server/utils/developments.ts`).
 - `app/core/data-source/cms-driver.ts` — the `CmsDriver<T>` contract and the `createCmsDataSource<T>` adapter.

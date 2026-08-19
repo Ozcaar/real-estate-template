@@ -1,0 +1,30 @@
+{
+  "name": "inmoviliaria-studio",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Sanity Studio workspace for the Real Estate Website Template. The Studio is the source of truth for the agency-owned Property / Agent / Development content model. The Nuxt app reads the published dataset via the `@sanity/client` driver.",
+  "type": "module",
+  "scripts": {
+    "dev": "sanity dev",
+    "start": "sanity start",
+    "build": "sanity build",
+    "deploy": "sanity deploy",
+    "deploy-graphql": "sanity graphql deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sanity": "^3.62.0",
+    "styled-components": "^6.1.13"
+  },
+  "devDependencies": {
+    "@sanity/vision": "^3.62.0",
+    "@types/node": "^20",
+    "@types/react": "^18.3.12",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.5"
+  }
+}
