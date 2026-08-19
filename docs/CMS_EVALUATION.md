@@ -126,6 +126,8 @@ The v1.2 pilot is the smallest realistic end-to-end integration that exercises t
 
 The integration is a single new file under `app/core/data-source/adapters/` that implements the `CmsDriver<T>` contract. The contract requires `id` and `dispatch()`. The driver is constructed for a specific target shape (the loader constructs `CmsDriver<Property>` / `CmsDriver<Agent>` / `CmsDriver<Development>`). The boundary Zod schema is supplied to the adapter separately.
 
+**Implementation status (Task 116).** The Sanity pilot is implemented. The driver file is `server/utils/sanity-driver.ts` (server-only location; Task 115B originally placed it at `app/core/data-source/adapters/sanity-driver.ts` and Task 116 moved it to `server/utils/` so the `@sanity/client` import is bundled exclusively to the Nitro server output). The driver test file is `server/utils/sanity-driver.test.ts`. A new boundary regression test at `server/utils/sanity-boundary.test.ts` asserts no `app/` file imports `@sanity/client`, references `NUXT_SANITY_TOKEN`, or re-exports `createSanityDriver` / `createSanityClientConfig`, plus the file-location and `nuxt.config.ts` image.domains assertions. The Sanity client / config layer is at `server/utils/sanity-config.ts`. The per-feature GROQ queries + mapping functions are at `server/utils/sanity-mappings.ts`. The three feature loaders (`server/utils/properties.ts`, `server/utils/agents.ts`, `server/utils/developments.ts`) wire the Sanity driver through the existing CRUD path with a per-feature `NUXT_<FEATURE>_CMS_PROVIDER` env var. The shared `server-data-source.ts` `cms` branch was extended to make `endpointEnvName` and `timeoutEnvName` optional so the Sanity path does not require a `NUXT_<FEATURE>_CMS_URL`. The Nuxt Image config adds `image.domains: ['cdn.sanity.io']` so the IPX provider accepts the Sanity asset URLs. The HTTP/JSON path is unchanged. The `pnpm-lock.yaml` is updated to pin `@sanity/client@6.29.1` so `pnpm install --frozen-lockfile` succeeds on a clean checkout. See `docs/DATA_MODELS.md` §10.4.1 for the canonical documentation.
+
 ### 6.1 Configuration model (one agency-owned project)
 
 The v1.2 pilot is intentionally simple: a single Sanity project owned by the agency, with one dataset for the agency's content. The configuration is shared across the Property / Agent / Development drivers, not duplicated per feature.
@@ -144,8 +146,9 @@ The existing `NUXT_*_CMS_URL` env vars (per-feature) are still read by the loade
 ### 6.2 File structure
 
 ```text
-app/core/data-source/adapters/sanity-driver.ts
-app/core/data-source/adapters/sanity-driver.test.ts
+server/utils/sanity-driver.ts
+server/utils/sanity-driver.test.ts
+server/utils/sanity-boundary.test.ts
 ```
 
 The driver module:

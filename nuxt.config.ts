@@ -89,6 +89,20 @@ export default defineNuxtConfig({
     leadsEmailTo: process.env.NUXT_LEADS_EMAIL_TO || '',
   },
 
+  // Nuxt Image (Task 116). The v1.2 CMS pilots (Sanity) project image
+  // asset URLs directly via `asset->url` in the GROQ projection. The
+  // projected URLs are Sanity CDN URLs (`cdn.sanity.io/images/...`) and
+  // pass through the existing `<ResponsiveImage>` wrapper (which uses
+  // `NuxtImg`). Without an entry in `image.domains`, the IPX provider
+  // rejects the remote URL. The list is intentionally minimal — only
+  // the Sanity asset CDN — so a future CMS that projects from a
+  // different host adds one explicit entry. The boundary regression
+  // test in `server/utils/sanity-boundary.test.ts` asserts the entry
+  // is present so a future refactor cannot accidentally remove it.
+  image: {
+    domains: ['cdn.sanity.io'],
+  },
+
   app: {
     head: {
       htmlAttrs: { lang: 'en' },

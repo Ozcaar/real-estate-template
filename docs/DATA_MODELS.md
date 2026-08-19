@@ -655,7 +655,7 @@ Every source path — static, api, cms — passes the resolved data through the 
 - `DataSourceHttpError` — non-2xx response. Carries status + endpoint URL.
 - `DataSourceTimeoutError` — request exceeded the configured timeout. Carries endpoint + `timeoutMs`; the original `AbortError` is NOT chained.
 - `DataSourceInvalidPayloadError` — 2xx response that fails Zod validation. Carries endpoint + underlying `ZodError` as `cause`.
-- `DataSourceNotImplementedError` — selected kind has no registered adapter. No longer raised for `'cms'` (M20 ships the adapter); still raised for unknown kinds (`'graphql'`, `'sanity'`, case variants like `'STATIC'`).
+- `DataSourceNotImplementedError` — selected kind has no registered adapter. No longer raised for `'cms'` (M20 ships the adapter); still raised for unknown kinds (`'graphql'`, `'sanity'`, case variants like `'STATIC'`). Note that `'sanity'` is not a valid `DataSourceKind`; the Sanity driver is selected via the `'cms'` kind + the `NUXT_<FEATURE>_CMS_PROVIDER=sanity` provider selector.
 
 ### 10.4 CMS driver boundary (v1.1.0 M20)
 
@@ -670,11 +670,46 @@ interface CmsDriver<T> {
 
 // app/core/data-source/adapters/http-json-cms-driver.ts (one concrete provider)
 createHttpJsonCmsDriver<T>({ endpoint, source?, timeoutMs?, fetchImpl? }): CmsDriver<T>
+
+// server/utils/sanity-driver.ts (v1.2 pilot, Task 116)
+createSanityDriver<T>({ client, query, mapRecord, source?, timeoutMs? }): CmsDriver<T>
 ```
 
-The contract is "load + map". Provider-specific HTTP calls, pagination, auth, and per-record mapping all live inside the driver's `dispatch()` method; the adapter (`createCmsDataSource`) only validates the result with the supplied boundary Zod schema and memoise the array. The simple HTTP/JSON provider performs identity mapping — it expects the upstream endpoint to return records already in the `T` shape (or in a shape the boundary schema accepts after no transformation).
+The contract is "load + map". Provider-specific HTTP calls, pagination, auth, and per-record mapping all live inside the driver's `dispatch()` method; the adapter (`createCmsDataSource`) only validates the result with the supplied boundary Zod schema and memoise the array. The simple HTTP/JSON provider performs identity mapping — it expects the upstream endpoint to return records already in the `T` shape (or in a shape the boundary schema accepts after no transformation). The Sanity driver carries a `mapRecord` step that converts the GROQ-projected Sanity document into the `Property` / `Agent` / `Development` shape.
 
-A future Sanity / Contentful / Strapi driver would carry a per-record `mapRecord` step that converts the provider's native document shape into `Property`. The contract stays the same; only the driver changes. CMS preview mode, draft / publish workflow, auth tokens (Sanity read tokens, Contentful CDA tokens, etc.), webhook-driven revalidation, and retry / cache layers are intentionally deferred — the cms path is a thin transport + boundary validation, matching the api path's documented constraints.
+### 10.4.1 Sanity provider (v1.2 pilot, Task 116)
+
+The Sanity driver is the first provider-specific `CmsDriver<T>` implementation. It uses the official `@sanity/client` SDK to execute a GROQ projection against the agency's Sanity project + dataset. The configuration is shared across the three features (one agency-owned project, one dataset, one optional read token); the GROQ query and the per-record `mapRecord` function are the only feature-specific pieces.
+
+**Configuration model.** The configuration is **shared across the three features** — `NUXT_SANITY_PROJECT_ID`, `NUXT_SANITY_DATASET`, `NUXT_SANITY_API_VERSION`, optional `NUXT_SANITY_TOKEN`. The driver is selected with `NUXT_<FEATURE>_DATA_SOURCE=cms` + `NUXT_<FEATURE>_CMS_PROVIDER=sanity`. The provider selector defaults to `http-json` (the existing path) for backward compatibility.
+
+| Env var | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `NUXT_SANITY_PROJECT_ID` | yes when `sanity` is in use | — | The Sanity project ID. The agency owns the project. |
+| `NUXT_SANITY_DATASET` | yes when `sanity` is in use | `production` | The dataset name. The pilot reads the published dataset. |
+| `NUXT_SANITY_API_VERSION` | no | `2024-01-01` | Pinned at build time so the GROQ query result shape is stable across Sanity upgrades. |
+| `NUXT_SANITY_TOKEN` | no (server-only) | `''` | Optional read token. Required for a private dataset; for a public dataset the token is empty. |
+| `NUXT_PROPERTIES_CMS_PROVIDER` | no | `http-json` | Select the Sanity driver for properties. |
+| `NUXT_AGENTS_CMS_PROVIDER` | no | `http-json` | Select the Sanity driver for agents. |
+| `NUXT_DEVELOPMENTS_CMS_PROVIDER` | no | `http-json` | Select the Sanity driver for developments. |
+
+**Image strategy.** The pilot projects image asset URLs directly via `asset->url` in the GROQ projection. The pilot does NOT depend on `@sanity/image-url` (a separate package) — hotspot / crop-aware URL building is deferred. The direct projected URLs are the Sanity CDN URLs and work directly with the existing `<ResponsiveImage>` wrapper.
+
+**Reference resolution.** The pilot resolves `Property.agentId` and `Property.developmentId` by projecting `agent._ref` and `development._ref` in the GROQ query. The mapping reads the `_ref` string and stores it as the boundary shape's `agentId` / `developmentId`. The agents and developments lists are loaded independently by their own loaders; the per-property reference is resolved at the per-record mapping step.
+
+**Published content only.** The driver queries the published dataset (`useCdn: true` in `@sanity/client`). The `drafts` perspective is not consumed in the pilot. A future task can add a preview driver.
+
+**No retries, no pagination, no permanent caching.** The driver is a thin transport + per-record mapper. The adapter memoises the resolved value; the per-feature loader's `createServerLoader` coalesces concurrent in-flight calls. Distributed caching, retries, and pagination are documented future concerns.
+
+**Server-only by file location (Task 116).** The driver lives at `server/utils/sanity-driver.ts` (the canonical Nuxt 4 server-only location — Task 115B originally placed it at `app/core/data-source/adapters/sanity-driver.ts` and Task 116 moved it to `server/utils/` so the `@sanity/client` import is bundled exclusively to the Nitro server output). The shared `CmsDriver<T>` contract stays in `app/core/data-source/cms-driver.ts`; only the provider-specific implementation moved. The driver is constructed inside the server-only feature loaders (`server/utils/properties.ts`, `server/utils/agents.ts`, `server/utils/developments.ts`). The Sanity client (constructed with the agency-owned read token) is never bundled into the client. The driver module itself has no client-only imports. A boundary regression test at `server/utils/sanity-boundary.test.ts` asserts no file under `app/` imports `@sanity/client`, references `NUXT_SANITY_TOKEN`, or re-exports `createSanityDriver` / `createSanityClientConfig`, and that `nuxt.config.ts` keeps `cdn.sanity.io` in `image.domains`. The Nuxt Image config adds `image.domains: ['cdn.sanity.io']` so the IPX provider accepts the projected Sanity asset URLs.
+
+**No new dependencies beyond `@sanity/client`.** The driver imports the SDK directly. The `@sanity/image-url` builder is a separate package and is intentionally deferred.
+
+**Smallest clear change to the shared utility.** The Sanity path does not require `NUXT_<FEATURE>_CMS_URL`. The shared `server-data-source.ts` `cms` branch was extended to make `endpointEnvName` and `timeoutEnvName` optional. When omitted, the shared utility skips the endpoint validation and passes empty/default values to the build callback. The HTTP/JSON path retains both env vars (backward-compatible); the Sanity path omits them and reads the Sanity env vars directly inside the build callback. The two paths are isolated and the change is additive.
+
+### 10.4.2 Future providers
+
+A future Contentful or Strapi driver would follow the same `CmsDriver<T>` contract. The shared utility's optional `endpointEnvName` / `timeoutEnvName` pattern would extend to per-provider env-var dispatch. Each provider-specific driver would carry its own `mapRecord` step. The page components, the service layer, and the boundary schemas are unchanged.
 
 ### 10.5 Cache and concurrency
 

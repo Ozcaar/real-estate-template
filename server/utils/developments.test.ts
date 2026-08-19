@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createClient } from '@sanity/client'
 import { sampleDevelopments } from '~/features/developments/data/developments'
 import { DataSourceMissingConfigError } from '~/core/data-source/data-source'
 import {
@@ -6,6 +7,24 @@ import {
   loadDevelopmentsServer,
   _resetDevelopmentsServerCacheForTests,
 } from './developments'
+
+/**
+ * Mock the `@sanity/client` SDK at the module level. See the
+ * matching block in `properties.test.ts` for the rationale.
+ * `vi.mock` is hoisted by Vitest's transform so it runs
+ * before any of the imports below.
+ */
+vi.mock('@sanity/client', () => ({
+  createClient: vi.fn(() => ({
+    fetch: vi.fn(),
+  })),
+}))
+
+const mockCreateClient = vi.mocked(createClient)
+const mockFetch = vi.fn()
+mockCreateClient.mockImplementation(() => ({
+  fetch: mockFetch,
+}) as never)
 
 /**
  * Tests for the server-only development loader at
@@ -570,6 +589,77 @@ describe('server/utils/developments — server-only development loader', () => {
       expect(first[0]?.slug).toBe('first-cms-only-development')
       expect(second[0]?.slug).toBe('second-cms-only-development')
       expect(callCount).toBe(2)
+    })
+  })
+
+  describe('loadDevelopmentsServer — sanity mode (Task 115)', () => {
+    const ENV_SANITY_PROJECT_ID = 'NUXT_SANITY_PROJECT_ID'
+    const ENV_SANITY_DATASET = 'NUXT_SANITY_DATASET'
+    const ENV_PROVIDER = 'NUXT_DEVELOPMENTS_CMS_PROVIDER'
+
+    beforeEach(() => {
+      mockFetch.mockReset()
+      mockCreateClient.mockClear()
+      process.env[ENV_SANITY_PROJECT_ID] = 'abc123'
+      process.env[ENV_SANITY_DATASET] = 'production'
+      process.env[ENV_PROVIDER] = 'sanity'
+      process.env[ENV_KIND] = 'cms'
+    })
+
+    it('throws DataSourceMissingConfigError when NUXT_SANITY_PROJECT_ID is unset', () => {
+      Reflect.deleteProperty(process.env, ENV_SANITY_PROJECT_ID)
+      expect(() => createDevelopmentsServerAdapter()).toThrow(
+        expect.objectContaining({
+          name: 'DataSourceMissingConfigError',
+          kind: 'cms',
+          field: 'NUXT_SANITY_PROJECT_ID',
+        }),
+      )
+    })
+
+    it('executes the development GROQ query and maps the result', async () => {
+      const sanityDocs = [
+        {
+          _id: 'd-sanity-1',
+          name: 'Sanity Development 1',
+          slug: 'sanity-development-1',
+          status: 'under-construction',
+          location: 'Sanity City',
+          description: 'A development from Sanity.',
+          image: 'https://cdn.sanity.io/images/xxx/d-1.jpg',
+          priceFrom: 100_000,
+          priceTo: 500_000,
+          currency: 'USD',
+          sizeUnit: 'metric',
+          units: 50,
+          bedrooms: 2,
+          areaFrom: 50,
+          areaTo: 150,
+          deliveryDate: '2025-12-01',
+          featured: true,
+        },
+      ]
+      mockFetch.mockResolvedValueOnce(sanityDocs)
+      const loaded = await loadDevelopmentsServer()
+      expect(loaded).toHaveLength(1)
+      expect(loaded[0]?.id).toBe('d-sanity-1')
+      expect(loaded[0]?.slug).toBe('sanity-development-1')
+      expect(loaded[0]?.status).toBe('under-construction')
+      expect(loaded[0]?.image).toBe('https://cdn.sanity.io/images/xxx/d-1.jpg')
+      expect(loaded[0]?.priceFrom).toBe(100_000)
+      expect(loaded[0]?.priceTo).toBe(500_000)
+      expect(loaded[0]?.units).toBe(50)
+      expect(loaded[0]?.featured).toBe(true)
+    })
+
+    it('re-throws DataSourceHttpError when the Sanity client throws a statusCode-tagged error', async () => {
+      const err = new Error('Upstream 500') as Error & { statusCode: number }
+      err.statusCode = 500
+      mockFetch.mockRejectedValueOnce(err)
+      await expect(loadDevelopmentsServer()).rejects.toMatchObject({
+        name: 'DataSourceHttpError',
+        status: 500,
+      })
     })
   })
 

@@ -1,14 +1,18 @@
-import { createCmsDataSource } from '~/core/data-source/cms-driver'
+﻿import { createCmsDataSource } from '~/core/data-source/cms-driver'
 import { createHttpJsonCmsDriver } from '~/core/data-source/adapters/http-json-cms-driver'
-import type { DataSourceAdapter, DataSourceKind } from '~/core/data-source/data-source'
+import { DataSourceMissingConfigError, type DataSourceAdapter, type DataSourceKind } from '~/core/data-source/data-source'
 import { developmentListSchema } from '~/features/developments/schemas/development.schema'
 import { sampleDevelopments } from '~/features/developments/data/developments'
 import type { Development } from '~/features/developments/types/development.types'
 import {
   createServerDataSourceAdapter,
   createServerLoader,
+  parseTimeoutMs,
   type ServerDataSourceOptions,
 } from './server-data-source'
+import { createSanityClientConfig } from './sanity-config'
+import { createSanityDriver } from './sanity-driver'
+import { mapSanityDevelopment, sanityDevelopmentQuery } from './sanity-mappings'
 
 /**
  * Server-only development loader (Task 105 + Task 110).
@@ -155,6 +159,26 @@ const PROP_ENV_CMS_URL = 'NUXT_DEVELOPMENTS_CMS_URL'
 const PROP_ENV_CMS_TIMEOUT_MS = 'NUXT_DEVELOPMENTS_CMS_TIMEOUT_MS'
 
 /**
+ * Local helper: read the optional `NUXT_DEVELOPMENTS_CMS_PROVIDER`
+ * env var. See `properties.ts` for the canonical version.
+ */
+function readSanityProvider(envName: string, fallback: 'http-json' | 'sanity'): 'http-json' | 'sanity' {
+  const raw = readEnvSanity(envName).trim()
+  if (raw === '') return fallback
+  if (raw === 'http-json' || raw === 'sanity') return raw
+  return fallback
+}
+
+/**
+ * Local copy of the shared `readEnv` helper. See
+ * `properties.ts` for the rationale.
+ */
+function readEnvSanity(name: string): string {
+  if (typeof process === 'undefined' || !process.env) return ''
+  return process.env[name] ?? ''
+}
+
+/**
  * The kinds the loader ships with (Task 110).
  *
  * `'static'` is the bundled default; `'api'` is the real
@@ -192,20 +216,47 @@ const developmentsOptions: ServerDataSourceOptions<Development> = {
     schema: developmentListSchema,
   },
   cms: {
-    endpointEnvName: PROP_ENV_CMS_URL,
-    timeoutEnvName: PROP_ENV_CMS_TIMEOUT_MS,
+    // The CMS branch in `server-data-source.ts` accepts
+    // optional `endpointEnvName` + `timeoutEnvName`. The
+    // provider-specific CMS path (Sanity) does not need
+    // these env vars — the Sanity driver reads
+    // `NUXT_SANITY_*` directly inside the build callback —
+    // so the branch omits both. The HTTP/JSON path inside
+    // the build callback reads `NUXT_DEVELOPMENTS_CMS_URL` +
+    // `NUXT_DEVELOPMENTS_CMS_TIMEOUT_MS` directly.
     schema: developmentListSchema,
     /**
-     * Construct the CMS adapter from the resolved endpoint
-     * + timeout + schema + source. Mirrors the property and
-     * agents CMS `build` callback byte-identically (same
-     * driver, same adapter, same `developmentListSchema`
-     * boundary in place of `propertyListSchema` /
-     * `agentListSchema`). The provider-driver boundary is
-     * unchanged — the shipped driver is the simple HTTP/JSON
-     * driver, not Sanity / Contentful / Strapi.
+     * Construct the CMS adapter. Mirrors the property and
+     * agents loaders (same two providers, same dispatcher).
+     * The provider selector is `NUXT_DEVELOPMENTS_CMS_PROVIDER`
+     * (default `http-json`).
      */
-    build: ({ endpoint, timeoutMs, schema, source }) => {
+    build: ({ schema }) => {
+      const provider = readSanityProvider(
+        'NUXT_DEVELOPMENTS_CMS_PROVIDER',
+        'http-json',
+      )
+      if (provider === 'sanity') {
+        const sanity = createSanityClientConfig()
+        const driver = createSanityDriver<Development>({
+          client: sanity.client,
+          query: sanityDevelopmentQuery,
+          mapRecord: mapSanityDevelopment,
+          source: 'sanity:development',
+          timeoutMs: parseTimeoutMs(PROP_ENV_CMS_TIMEOUT_MS, 10_000),
+        })
+        return createCmsDataSource<Development>({
+          driver,
+          schema,
+          source: 'sanity:development',
+        })
+      }
+      const endpoint = readEnvSanity(PROP_ENV_CMS_URL)
+      if (endpoint.trim() === '') {
+        throw new DataSourceMissingConfigError('cms', PROP_ENV_CMS_URL)
+      }
+      const timeoutMs = parseTimeoutMs(PROP_ENV_CMS_TIMEOUT_MS, 10_000)
+      const source = `cms:${PROP_ENV_CMS_URL}`
       const driver = createHttpJsonCmsDriver<Development>({
         endpoint,
         source,

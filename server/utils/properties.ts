@@ -1,14 +1,18 @@
 import { createCmsDataSource } from '~/core/data-source/cms-driver'
 import { createHttpJsonCmsDriver } from '~/core/data-source/adapters/http-json-cms-driver'
-import type { DataSourceAdapter, DataSourceKind } from '~/core/data-source/data-source'
+import { DataSourceMissingConfigError, type DataSourceAdapter, type DataSourceKind } from '~/core/data-source/data-source'
 import { propertyListSchema } from '~/features/properties/schemas/property.schema'
 import { sampleProperties } from '~/features/properties/data/properties'
 import type { Property } from '~/features/properties/types/property.types'
 import {
   createServerDataSourceAdapter,
   createServerLoader,
+  parseTimeoutMs,
   type ServerDataSourceOptions,
 } from './server-data-source'
+import { createSanityClientConfig } from './sanity-config'
+import { createSanityDriver } from './sanity-driver'
+import { mapSanityProperty, sanityPropertyQuery } from './sanity-mappings'
 
 /**
  * Server-only property loader.
@@ -146,6 +150,35 @@ const PROP_ENV_CMS_URL = 'NUXT_PROPERTIES_CMS_URL'
 const PROP_ENV_CMS_TIMEOUT_MS = 'NUXT_PROPERTIES_CMS_TIMEOUT_MS'
 
 /**
+ * Helper: read the optional `NUXT_PROPERTIES_CMS_PROVIDER`
+ * env var and normalize to one of the supported provider
+ * ids. An empty / unset / unknown value returns the supplied
+ * default. The set of supported providers is closed for the
+ * pilot; the helper exists so the dispatch is local to the
+ * loader and the shared utility does not need to know about
+ * provider-specific env vars.
+ */
+function readSanityProvider(envName: string, fallback: 'http-json' | 'sanity'): 'http-json' | 'sanity' {
+  const raw = readEnvSanity(envName).trim()
+  if (raw === '') return fallback
+  if (raw === 'http-json' || raw === 'sanity') return raw
+  return fallback
+}
+
+/**
+ * Local copy of the shared `readEnv` helper. The shared
+ * utility is the canonical reader; this local copy avoids
+ * a module-order coupling at the top of the file.
+ *
+ * Identical behaviour to `server/utils/server-data-source.ts`
+ * → `readEnv`.
+ */
+function readEnvSanity(name: string): string {
+  if (typeof process === 'undefined' || !process.env) return ''
+  return process.env[name] ?? ''
+}
+
+/**
  * The kinds the loader ships with.
  *
  * `'static'` is the bundled default; `'api'` is the real
@@ -184,17 +217,67 @@ const propertiesOptions: ServerDataSourceOptions<Property> = {
     schema: propertyListSchema,
   },
   cms: {
-    endpointEnvName: PROP_ENV_CMS_URL,
-    timeoutEnvName: PROP_ENV_CMS_TIMEOUT_MS,
+    // The CMS branch in `server-data-source.ts` accepts
+    // optional `endpointEnvName` + `timeoutEnvName`. The
+    // provider-specific CMS path (Sanity) does not need
+    // these env vars — the Sanity driver reads
+    // `NUXT_SANITY_*` directly inside the build callback —
+    // so the branch omits both. The HTTP/JSON path inside
+    // the build callback reads `NUXT_PROPERTIES_CMS_URL` +
+    // `NUXT_PROPERTIES_CMS_TIMEOUT_MS` directly with the
+    // shared `readEnv` / `parseTimeoutMs` helpers.
     schema: propertyListSchema,
     /**
-     * Construct the CMS adapter from the resolved endpoint
-     * + timeout + schema + source. This is the only
-     * feature-specific piece of the CMS branch — the agents
-     * and developments loaders do not supply a `build`
-     * because they intentionally do not ship CMS support.
+     * Construct the CMS adapter. The pilot supports two
+     * CMS providers:
+     *
+     *  - `http-json` (default): the simple HTTP/JSON driver
+     *    that fetches a JSON array from the endpoint. The
+     *    endpoint is the `NUXT_PROPERTIES_CMS_URL` env var.
+     *  - `sanity`: the Sanity `CmsDriver<T>` implementation
+     *    that executes a GROQ projection against the agency's
+     *    Sanity project. The provider-specific env vars
+     *    (`NUXT_SANITY_PROJECT_ID` / `NUXT_SANITY_DATASET` /
+     *    `NUXT_SANITY_API_VERSION` / optional
+     *    `NUXT_SANITY_TOKEN`) are read inside the build
+     *    callback; the shared utility does not need to know
+     *    about them.
+     *
+     * The provider selector is the env var
+     * `NUXT_PROPERTIES_CMS_PROVIDER`. An empty / unset /
+     * unknown value defaults to `http-json` so an existing
+     * deployment that ships the generic HTTP/JSON CMS path
+     * is unchanged.
      */
-    build: ({ endpoint, timeoutMs, schema, source }) => {
+    build: ({ schema }) => {
+      const provider = readSanityProvider(
+        'NUXT_PROPERTIES_CMS_PROVIDER',
+        'http-json',
+      )
+      if (provider === 'sanity') {
+        const sanity = createSanityClientConfig()
+        const driver = createSanityDriver<Property>({
+          client: sanity.client,
+          query: sanityPropertyQuery,
+          mapRecord: mapSanityProperty,
+          source: 'sanity:property',
+          timeoutMs: parseTimeoutMs(PROP_ENV_CMS_TIMEOUT_MS, 10_000),
+        })
+        return createCmsDataSource<Property>({
+          driver,
+          schema,
+          source: 'sanity:property',
+        })
+      }
+      // HTTP/JSON path: read the endpoint + timeout env vars
+      // directly. The shared utility does not pre-validate
+      // them because the branch omitted `endpointEnvName`.
+      const endpoint = readEnvSanity(PROP_ENV_CMS_URL)
+      if (endpoint.trim() === '') {
+        throw new DataSourceMissingConfigError('cms', PROP_ENV_CMS_URL)
+      }
+      const timeoutMs = parseTimeoutMs(PROP_ENV_CMS_TIMEOUT_MS, 10_000)
+      const source = `cms:${PROP_ENV_CMS_URL}`
       const driver = createHttpJsonCmsDriver<Property>({
         endpoint,
         source,

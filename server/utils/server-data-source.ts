@@ -128,23 +128,47 @@ export interface ServerDataSourceApiBranch<T> {
 }
 
 /**
- * Options for the cms branch. ONLY the properties loader
- * supplies this; the agents and developments loaders omit
- * it, and the shared utility falls back to
- * `DataSourceNotImplementedError('cms', shippedKinds)` for
- * them.
+ * Options for the cms branch. Every feature loader that ships
+ * CMS support supplies this; the agents and developments
+ * loaders that omit CMS support also omit the `cms` branch
+ * (the shared utility raises `DataSourceNotImplementedError`
+ * for them at the `cms` dispatch).
  *
  * The `build` callback constructs the CMS adapter from the
  * resolved endpoint + timeout + schema + source. The callback
  * is the only feature-specific piece of the cms branch — it
- * is where the properties loader wires the
+ * is where the property loader wires the
  * `createHttpJsonCmsDriver` + `createCmsDataSource` pair
- * (the agents and developments loaders do not need a `build`
- * because they do not ship CMS support).
+ * (for the generic HTTP/JSON driver) and where the Sanity
+ * driver is wired (for the provider-specific Sanity driver).
+ *
+ * **Provider-specific CMS configuration.** The `endpointEnvName`
+ * and `timeoutEnvName` env vars are optional. The shared
+ * HTTP/JSON CMS path supplies them (the endpoint is the
+ * documented `NUXT_*_CMS_URL`). The provider-specific Sanity
+ * path omits them — the Sanity driver reads its own env vars
+ * (`NUXT_SANITY_PROJECT_ID` / `NUXT_SANITY_DATASET` / etc.)
+ * inside the `build` callback. When `endpointEnvName` is
+ * omitted, the shared utility skips the endpoint validation
+ * and passes `endpoint: ''` + a `cms:provider` source to the
+ * callback. The `build` callback decides what to do with the
+ * empty endpoint (the Sanity build ignores it and reads the
+ * Sanity-specific env vars).
+ *
+ * **Why `endpointEnvName` and `timeoutEnvName` are optional.**
+ * The smallest clear change to support provider-specific CMS
+ * configuration without weakening the existing HTTP/JSON CMS
+ * path. The HTTP/JSON path still supplies both env vars; the
+ * shared utility still validates the endpoint (an empty
+ * `NUXT_*_CMS_URL` raises `DataSourceMissingConfigError`).
+ * The Sanity path does not supply them; the shared utility
+ * skips the endpoint validation and the build callback
+ * reads the Sanity env vars. The two paths are isolated and
+ * the change is additive.
  */
 export interface ServerDataSourceCmsBranch<T> {
-  readonly endpointEnvName: string
-  readonly timeoutEnvName: string
+  readonly endpointEnvName?: string
+  readonly timeoutEnvName?: string
   readonly schema: DataSourceSchema<T>
   readonly defaultTimeoutMs?: number
   readonly build: (cfg: {
@@ -254,13 +278,25 @@ export function createServerDataSourceAdapter<T>(
       // to the bundled static data.
       throw new DataSourceNotImplementedError('cms', options.shippedKinds)
     }
-    const endpoint = readEnv(options.cms.endpointEnvName)
-    if (endpoint.trim() === '') {
+    // Provider-specific CMS drivers (e.g. Sanity) may omit
+    // `endpointEnvName` and `timeoutEnvName` — the shared
+    // utility skips the endpoint validation and passes
+    // empty/default values to the build callback. The HTTP/JSON
+    // driver path supplies both, so the existing validation
+    // behaviour is preserved.
+    const endpoint = options.cms.endpointEnvName
+      ? readEnv(options.cms.endpointEnvName)
+      : ''
+    if (options.cms.endpointEnvName && endpoint.trim() === '') {
       throw new DataSourceMissingConfigError('cms', options.cms.endpointEnvName)
     }
     const defaultMs = options.cms.defaultTimeoutMs ?? DEFAULT_API_TIMEOUT_MS
-    const timeoutMs = parseTimeoutMs(options.cms.timeoutEnvName, defaultMs)
-    const source = `cms:${options.cms.endpointEnvName}`
+    const timeoutMs = options.cms.timeoutEnvName
+      ? parseTimeoutMs(options.cms.timeoutEnvName, defaultMs)
+      : defaultMs
+    const source = options.cms.endpointEnvName
+      ? `cms:${options.cms.endpointEnvName}`
+      : 'cms:provider'
     return options.cms.build({
       endpoint,
       timeoutMs,

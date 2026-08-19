@@ -1,10 +1,38 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createClient } from '@sanity/client'
 import { sampleProperties } from '~/features/properties/data/properties'
 import {
   createPropertiesServerAdapter,
   loadPropertiesServer,
   _resetPropertiesServerCacheForTests,
 } from './properties'
+
+/**
+ * Mock the `@sanity/client` SDK at the module level. The
+ * Sanity driver imports the SDK directly; the real client
+ * would attempt a network request during `createClient()`.
+ * The tests replace the SDK with a factory that returns a
+ * mock client whose `fetch` method is a `vi.fn()`. The
+ * per-test setup configures the mock's resolved value or
+ * rejected value.
+ *
+ * `vi.mock` is hoisted by Vitest's transform so it runs
+ * before any of the imports below — placing it after the
+ * imports here is the cleanest way to satisfy the
+ * `import/first` ESLint rule without losing the mock.
+ */
+vi.mock('@sanity/client', () => ({
+  createClient: vi.fn(() => ({
+    fetch: vi.fn(),
+  })),
+}))
+
+// The SDK mock is shared across the Sanity-mode tests.
+const mockCreateClient = vi.mocked(createClient)
+const mockFetch = vi.fn()
+mockCreateClient.mockImplementation(() => ({
+  fetch: mockFetch,
+}) as never)
 
 /**
  * Tests for the server-only property loader at
@@ -202,10 +230,14 @@ describe('server/utils/properties — server-only property loader', () => {
     })
 
     it('throws DataSourceNotImplementedError for an unknown kind with a future-looking name', () => {
-      // A rebrand that anticipates a future kind (e.g. a
-      // Sanity-backed CMS) must not be silently coerced to
-      // static. The loader fails loudly; the future kind
-      // ships as a separate task.
+      // The Sanity driver is selected via the `'cms'` kind +
+      // the `NUXT_PROPERTIES_CMS_PROVIDER=sanity` provider
+      // selector, NOT via a `'sanity'` kind value. The literal
+      // `'sanity'` is not in the documented `DataSourceKind`
+      // set (`'static' | 'api' | 'cms'`) and is rejected by
+      // the type guard. A rebrand that mistakenly uses
+      // `NUXT_PROPERTIES_DATA_SOURCE=sanity` directly fails
+      // loudly rather than being silently coerced to static.
       process.env[ENV_KIND] = 'sanity'
       expect(() => createPropertiesServerAdapter()).toThrow(
         expect.objectContaining({
@@ -569,6 +601,153 @@ describe('server/utils/properties — server-only property loader', () => {
       expect(first[0]?.slug).toBe('first-cms-only-property')
       expect(second[0]?.slug).toBe('second-cms-only-property')
       expect(callCount).toBe(2)
+    })
+  })
+
+  describe('loadPropertiesServer — sanity mode (Task 115)', () => {
+    /**
+     * Sanity-specific env vars the loaders read when the
+     * provider is `sanity`. The shared-project / shared-dataset
+     * model means these are not duplicated per feature.
+     */
+    const ENV_SANITY_PROJECT_ID = 'NUXT_SANITY_PROJECT_ID'
+    const ENV_SANITY_DATASET = 'NUXT_SANITY_DATASET'
+    const ENV_SANITY_API_VERSION = 'NUXT_SANITY_API_VERSION'
+    const ENV_SANITY_TOKEN = 'NUXT_SANITY_TOKEN'
+    const ENV_PROVIDER = 'NUXT_PROPERTIES_CMS_PROVIDER'
+
+    beforeEach(() => {
+      // Reset the mock state before each Sanity test.
+      mockFetch.mockReset()
+      mockCreateClient.mockClear()
+      // Set the minimum required env vars (the project ID).
+      // The dataset and API version have documented defaults.
+      process.env[ENV_SANITY_PROJECT_ID] = 'abc123'
+      process.env[ENV_SANITY_DATASET] = 'production'
+      process.env[ENV_SANITY_API_VERSION] = '2024-01-01'
+      process.env[ENV_PROVIDER] = 'sanity'
+      process.env[ENV_KIND] = 'cms'
+    })
+
+    it('requires NUXT_PROPERTIES_CMS_PROVIDER=sanity to wire the Sanity driver', () => {
+      // When the provider is the default `http-json`, the
+      // existing CMS path requires a URL; the Sanity path
+      // is not used.
+      Reflect.deleteProperty(process.env, ENV_PROVIDER)
+      process.env[ENV_CMS_URL] = 'https://cms.example.test/properties'
+      const adapter = createPropertiesServerAdapter()
+      expect(adapter.id).toBe('cms')
+    })
+
+    it('throws DataSourceMissingConfigError when NUXT_SANITY_PROJECT_ID is unset', () => {
+      Reflect.deleteProperty(process.env, ENV_SANITY_PROJECT_ID)
+      expect(() => createPropertiesServerAdapter()).toThrow(
+        expect.objectContaining({
+          name: 'DataSourceMissingConfigError',
+          kind: 'cms',
+          field: 'NUXT_SANITY_PROJECT_ID',
+        }),
+      )
+    })
+
+    it('constructs a Sanity client with the resolved configuration', async () => {
+      mockFetch.mockResolvedValueOnce([])
+      await loadPropertiesServer()
+      expect(mockCreateClient).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 'abc123',
+          dataset: 'production',
+          apiVersion: '2024-01-01',
+          useCdn: true,
+        }),
+      )
+    })
+
+    it('falls back to the default dataset when NUXT_SANITY_DATASET is unset', async () => {
+      Reflect.deleteProperty(process.env, ENV_SANITY_DATASET)
+      mockFetch.mockResolvedValueOnce([])
+      await loadPropertiesServer()
+      expect(mockCreateClient).toHaveBeenCalledWith(
+        expect.objectContaining({ dataset: 'production' }),
+      )
+    })
+
+    it('falls back to the default API version when NUXT_SANITY_API_VERSION is unset', async () => {
+      Reflect.deleteProperty(process.env, ENV_SANITY_API_VERSION)
+      mockFetch.mockResolvedValueOnce([])
+      await loadPropertiesServer()
+      expect(mockCreateClient).toHaveBeenCalledWith(
+        expect.objectContaining({ apiVersion: '2024-01-01' }),
+      )
+    })
+
+    it('does not pass the token when NUXT_SANITY_TOKEN is unset', async () => {
+      Reflect.deleteProperty(process.env, ENV_SANITY_TOKEN)
+      mockFetch.mockResolvedValueOnce([])
+      await loadPropertiesServer()
+      const cfg = mockCreateClient.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(Object.prototype.hasOwnProperty.call(cfg, 'token')).toBe(false)
+    })
+
+    it('passes the token when NUXT_SANITY_TOKEN is set', async () => {
+      process.env[ENV_SANITY_TOKEN] = 'read-token-xyz'
+      mockFetch.mockResolvedValueOnce([])
+      await loadPropertiesServer()
+      expect(mockCreateClient).toHaveBeenCalledWith(
+        expect.objectContaining({ token: 'read-token-xyz' }),
+      )
+    })
+
+    it('executes the property GROQ query and maps the result', async () => {
+      const sanityDocs = [
+        {
+          _id: 'p-sanity-1',
+          title: 'Sanity Property 1',
+          slug: 'sanity-property-1',
+          description: 'A property from Sanity.',
+          operationType: 'sale',
+          propertyType: 'house',
+          price: 1_200_000,
+          currency: 'USD',
+          location: 'Sanity City',
+          city: 'Sanity City',
+          state: 'Sanity State',
+          country: 'Sanity Country',
+          images: ['https://cdn.sanity.io/images/xxx/p-1.jpg'],
+          coverImage: 'https://cdn.sanity.io/images/xxx/p-1-cover.jpg',
+          amenities: ['Pool'],
+          agentId: 'agent-1',
+          developmentId: 'dev-1',
+          coordinates: { lat: 19.4, lng: -99.1 },
+          status: 'available',
+          featured: true,
+        },
+      ]
+      mockFetch.mockResolvedValueOnce(sanityDocs)
+      const loaded = await loadPropertiesServer()
+      expect(loaded).toHaveLength(1)
+      expect(loaded[0]?.id).toBe('p-sanity-1')
+      expect(loaded[0]?.slug).toBe('sanity-property-1')
+      expect(loaded[0]?.images).toEqual([
+        'https://cdn.sanity.io/images/xxx/p-1.jpg',
+      ])
+      expect(loaded[0]?.coverImage).toBe(
+        'https://cdn.sanity.io/images/xxx/p-1-cover.jpg',
+      )
+      expect(loaded[0]?.agentId).toBe('agent-1')
+      expect(loaded[0]?.developmentId).toBe('dev-1')
+      expect(loaded[0]?.status).toBe('available')
+      expect(loaded[0]?.featured).toBe(true)
+    })
+
+    it('re-throws DataSourceHttpError when the Sanity client throws a statusCode-tagged error', async () => {
+      const err = new Error('Upstream 500') as Error & { statusCode: number }
+      err.statusCode = 500
+      mockFetch.mockRejectedValueOnce(err)
+      await expect(loadPropertiesServer()).rejects.toMatchObject({
+        name: 'DataSourceHttpError',
+        status: 500,
+      })
     })
   })
 
