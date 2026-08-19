@@ -33,7 +33,10 @@ See `docs/` for the full specification (`ARCHITECTURE.md`, `THEMING.md`,
 `AGENTS.md` for contributor conventions. For taking a rebranded instance from
 the repository to a real production deployment, see `docs/DEPLOYMENT.md` (the
 8-step flow, the env-var checklist, the static-vs-Nitro decision, the
-post-deployment smoke checks, and the rollback).
+post-deployment smoke checks, and the rollback). For the information the
+implementer needs to collect from the agency before development starts and the
+handoff checklist to capture at the end of the engagement, see
+`docs/CLIENT_ONBOARDING.md`.
 
 ## Customization
 
