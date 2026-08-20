@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
+    "test:e2e:sanity": "node -e \"process.env.SANITY_REAL_E2E='1';require('child_process').execSync('pnpm exec playwright test tests/e2e/sanity-real-validation.spec.ts',{stdio:'inherit'})\"",
     "studio:typecheck": "cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test",
     "postinstall": "nuxt prepare"
   },
@@ -23,8 +24,10 @@
     "@pinia/nuxt": "^0.11",
     "@sanity/client": "^6.29.1",
     "@vueuse/nuxt": "^13",
+    "ipx": "^2.1.1",
     "nodemailer": "^9.0.3",
     "nuxt": "^4.4.8",
+    "sharp": "^0.32.6",
     "swiper": "^12",
     "vue": "^3.5.38",
     "zod": "^4"
