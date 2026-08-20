@@ -1,7 +1,7 @@
 import { defineField, defineType } from 'sanity'
 
 /**
- * Sanity Studio — Development document schema (Task 117).
+ * Sanity Studio — Development document schema (Task 117 + Task 119).
  *
  * The Studio schema is the source of truth for the agency
  * editor's content model. The Nuxt integration
@@ -19,11 +19,13 @@ import { defineField, defineType } from 'sanity'
  * **Required fields.** The runtime Zod schema requires
  * `id`, `name`, `slug`, `status`, `location`, `description`,
  * `image` (all non-empty). The Studio schema mirrors the
- * same rule: `Rule.required()` on every required field.
- * The `priceFrom`, `priceTo`, `currency`, `sizeUnit`,
- * `units`, `bedrooms`, `areaFrom`, `areaTo`, `deliveryDate`,
- * and `featured` fields are optional at the Studio level
- * and at the runtime boundary.
+ * same rule: `Rule.required()` on every required field,
+ * with a human-readable `.error(...)` message so the
+ * editor sees the failing field name. The `priceFrom`,
+ * `priceTo`, `currency`, `sizeUnit`, `units`, `bedrooms`,
+ * `areaFrom`, `areaTo`, `deliveryDate`, and `featured`
+ * fields are optional at the Studio level and at the
+ * runtime boundary.
  *
  * **Status enum.** The `status` field is the operational
  * status the development detail page uses for the
@@ -47,7 +49,9 @@ import { defineField, defineType } from 'sanity'
  * The `units` and `bedrooms` fields are non-negative
  * integers. The Studio's `Rule.min(0)` / `Rule.integer()`
  * validations match the runtime Zod schema's
- * `.nonnegative()` / `.int().nonnegative()` rules.
+ * `.nonnegative()` / `.int().nonnegative()` rules. Each
+ * numeric rule chains a human-readable `.error(...)`
+ * message so the editor sees the failing field name.
  *
  * **Delivery date.** The `deliveryDate` field is a free
  * string. The runtime Zod schema treats it as an opaque
@@ -63,9 +67,13 @@ import { defineField, defineType } from 'sanity'
  * and location first.
  *
  * **Preview.** The Studio preview shows the name
- * (subtitle = the location + status) for the document
- * list. The selection projection is the same shape the
- * GROQ query uses for the runtime mapping.
+ * (subtitle = the human-readable location + status) for
+ * the document list. The status value is translated to
+ * its human-readable form ("Pre-sale" instead of
+ * "pre-sale") so a non-technical editor can scan the
+ * document list at a glance. The selection projection is
+ * the same shape the GROQ query uses for the runtime
+ * mapping.
  */
 export const developmentType = defineType({
   name: 'development',
@@ -83,19 +91,27 @@ export const developmentType = defineType({
       title: 'Name',
       type: 'string',
       group: 'about',
-      validation: (Rule) => Rule.required().min(1).max(200),
+      description: 'The development\'s display name (e.g. "Mirador del Valle").',
+      validation: (Rule) =>
+        Rule.required()
+          .error('Name is required.')
+          .min(1)
+          .error('Name cannot be empty.')
+          .max(200)
+          .error('Name must be 200 characters or fewer.'),
     }),
     defineField({
       name: 'slug',
       title: 'Slug',
       type: 'slug',
       group: 'about',
+      description: 'The URL of the development page. Leave blank to generate from the name.',
       options: {
         source: 'name',
         maxLength: 96,
         isUnique: () => true,
       },
-      validation: (Rule) => Rule.required(),
+      validation: (Rule) => Rule.required().error('Slug is required.'),
     }),
     defineField({
       name: 'description',
@@ -103,51 +119,70 @@ export const developmentType = defineType({
       type: 'text',
       group: 'about',
       rows: 6,
-      validation: (Rule) => Rule.required().min(1),
+      description: 'A free-form paragraph shown on the development detail page. Plain text only (no markdown).',
+      validation: (Rule) =>
+        Rule.required()
+          .error('Description is required.')
+          .min(1)
+          .error('Description cannot be empty.'),
     }),
     defineField({
       name: 'location',
       title: 'Location',
       type: 'string',
       group: 'about',
-      validation: (Rule) => Rule.required().min(1).max(200),
+      description: 'City and neighborhood (e.g. "Monterrey, Nuevo León").',
+      validation: (Rule) =>
+        Rule.required()
+          .error('Location is required.')
+          .min(1)
+          .error('Location cannot be empty.')
+          .max(200)
+          .error('Location must be 200 characters or fewer.'),
     }),
     defineField({
       name: 'image',
       title: 'Cover image',
       type: 'image',
       group: 'media',
+      description: 'The primary visual on the development card and the detail page. Use a landscape image (16:9) for best results.',
       options: { hotspot: true },
-      validation: (Rule) => Rule.required(),
+      validation: (Rule) => Rule.required().error('A cover image is required.'),
     }),
     defineField({
       name: 'priceFrom',
-      title: 'Price from',
+      title: 'Starting price',
       type: 'number',
       group: 'pricing',
-      validation: (Rule) => Rule.min(0),
+      description: 'The lowest price across units in the chosen currency. Omit for a price-on-application development.',
+      validation: (Rule) => Rule.min(0).error('Starting price must be 0 or greater.'),
     }),
     defineField({
       name: 'priceTo',
-      title: 'Price to',
+      title: 'Top price',
       type: 'number',
       group: 'pricing',
-      description: 'Optional. Omit when the development has a single price (same as `priceFrom`).',
-      validation: (Rule) => Rule.min(0),
+      description: 'The highest price across units. Omit when the development has a single price (the same as the starting price).',
+      validation: (Rule) => Rule.min(0).error('Top price must be 0 or greater.'),
     }),
     defineField({
       name: 'currency',
-      title: 'Currency (ISO 4217)',
+      title: 'Currency',
       type: 'string',
       group: 'pricing',
-      description: 'Optional. Three-letter ISO 4217 currency code (e.g. USD, EUR, MXN).',
-      validation: (Rule) => Rule.min(1).max(8),
+      description: 'The three-letter ISO 4217 code (e.g. USD, EUR, MXN). Optional — shown next to the prices above.',
+      validation: (Rule) =>
+        Rule.min(1)
+          .error('Currency cannot be empty.')
+          .max(8)
+          .error('Currency code must be 8 characters or fewer.'),
     }),
     defineField({
       name: 'sizeUnit',
       title: 'Size unit',
       type: 'string',
       group: 'pricing',
+      description: 'The unit of measure for the smallest / largest unit areas below.',
       options: {
         list: [
           { title: 'Metric (m²)', value: 'metric' },
@@ -158,47 +193,57 @@ export const developmentType = defineType({
     }),
     defineField({
       name: 'units',
-      title: 'Units',
+      title: 'Total units',
       type: 'number',
       group: 'pricing',
-      validation: (Rule) => Rule.min(0).integer(),
+      description: 'The total number of units in the development.',
+      validation: (Rule) =>
+        Rule.min(0)
+          .error('Total units must be 0 or greater.')
+          .integer()
+          .error('Total units must be a whole number.'),
     }),
     defineField({
       name: 'bedrooms',
-      title: 'Bedrooms',
+      title: 'Typical bedrooms',
       type: 'number',
       group: 'pricing',
-      description: 'Optional. The typical bedroom count per unit.',
-      validation: (Rule) => Rule.min(0).integer(),
+      description: 'The typical bedroom count per unit (e.g. 2 for a 2-bedroom development). Optional.',
+      validation: (Rule) =>
+        Rule.min(0)
+          .error('Bedrooms must be 0 or greater.')
+          .integer()
+          .error('Bedrooms must be a whole number.'),
     }),
     defineField({
       name: 'areaFrom',
-      title: 'Area from',
+      title: 'Smallest unit area',
       type: 'number',
       group: 'pricing',
-      description: 'Optional. The smallest unit area (in the selected size unit).',
-      validation: (Rule) => Rule.min(0),
+      description: 'The smallest unit area in the selected size unit. Optional.',
+      validation: (Rule) => Rule.min(0).error('Smallest unit area must be 0 or greater.'),
     }),
     defineField({
       name: 'areaTo',
-      title: 'Area to',
+      title: 'Largest unit area',
       type: 'number',
       group: 'pricing',
-      description: 'Optional. The largest unit area (in the selected size unit).',
-      validation: (Rule) => Rule.min(0),
+      description: 'The largest unit area in the selected size unit. Optional.',
+      validation: (Rule) => Rule.min(0).error('Largest unit area must be 0 or greater.'),
     }),
     defineField({
       name: 'deliveryDate',
       title: 'Delivery date',
       type: 'string',
       group: 'pricing',
-      description: 'Optional. Free-form text (e.g. "Q4 2026" or "2026-12"). The runtime model treats it as opaque text.',
+      description: 'Free-form text (e.g. "Q4 2026" or "2026-12"). The runtime treats this as opaque text. Optional.',
     }),
     defineField({
       name: 'status',
       title: 'Status',
       type: 'string',
       group: 'status',
+      description: 'The current development phase. Drives the "Delivery" pill on the detail page.',
       options: {
         list: [
           { title: 'Pre-sale', value: 'pre-sale' },
@@ -208,13 +253,14 @@ export const developmentType = defineType({
         ],
       },
       initialValue: 'pre-sale',
-      validation: (Rule) => Rule.required(),
+      validation: (Rule) => Rule.required().error('Status is required.'),
     }),
     defineField({
       name: 'featured',
       title: 'Featured',
       type: 'boolean',
       group: 'status',
+      description: 'Featured developments appear on the home page and the catalog hero.',
       initialValue: false,
     }),
   ],
@@ -226,9 +272,20 @@ export const developmentType = defineType({
       media: 'image',
     },
     prepare({ title, location, status, media }) {
+      const statusLabel
+        = status === 'pre-sale'
+          ? 'Pre-sale'
+          : status === 'under-construction'
+            ? 'Under construction'
+            : status === 'ready-to-deliver'
+              ? 'Ready to deliver'
+              : status === 'sold-out'
+                ? 'Sold out'
+                : null
+      const subtitle = [location, statusLabel].filter(Boolean).join(' · ')
       return {
         title: title ?? 'Untitled development',
-        subtitle: [location, status].filter(Boolean).join(' · '),
+        subtitle,
         media,
       }
     },

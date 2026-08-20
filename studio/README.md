@@ -93,7 +93,13 @@ The dataset name (`production`) is the default value the Nuxt driver reads via `
 
 ## 6. Populate the dataset
 
-The editor opens the Studio, picks **Property** in the sidebar, and clicks **Create new**. The Studio groups the fields into **Content**, **Media**, **Location**, and **Status** tabs. The editor fills in the required fields (the Studio blocks publish on missing required fields) and clicks **Publish**.
+The editor opens the Studio, picks **Property** in the sidebar, and clicks **Create new**. The Studio groups the Property fields into **Content** (title, slug, description, listing type, property type, amenities), **Pricing** (price, currency), **Details** (bedrooms, bathrooms, parking spaces, size unit, construction size, land size), **Media** (cover image, gallery), **Location** (street address, city, state/region, country, coordinates), **References** (agent, development), and **Status** (status, featured) tabs. When the property type is **Land**, the Details tab hides bedrooms, bathrooms, parking spaces, and construction size — those fields only apply to built properties. The editor fills in the required fields (the Studio blocks publish on missing required fields) and clicks **Publish**.
+
+The **Agent** document groups into **About** (name, slug, role, biography, specialties), **Media** (portrait), and **Contact** (phone, email, WhatsApp) tabs.
+
+The **Development** document groups into **About** (name, slug, description, location), **Media** (cover image), **Pricing** (starting price, top price, currency, size unit, total units, typical bedrooms, smallest / largest unit area, delivery date), and **Status** (status, featured) tabs.
+
+Every editor-facing field carries a short in-line description with format guidance (e.g. "Three-letter ISO 4217 code (e.g. USD, EUR, MXN)") so a non-technical agency user does not have to leave the Studio for the schema contract. Required rules chain a human-readable `.error(...)` message ("Title is required." instead of "Field is required"). The document list preview uses the same human-readable labels the editor sees on the field — Property previews show "For sale · Monterrey · Available", not the raw enum values.
 
 Documents are stored in the published dataset. The Nuxt driver reads the published dataset (`useCdn: true` in `@sanity/client`) — the draft perspective is **not** consumed in the pilot.
 
@@ -206,6 +212,7 @@ The `slug` field is the only place the Studio's runtime shape differs from the b
 - **No Vision plugin in production.** Vision is a developer tool; the deployed Studio at `<projectId>.sanity.studio` does NOT include it. The Studio's `sanity.config.ts` bundles Vision only when `NODE_ENV !== 'production'`, so the local dev Studio (`pnpm dev`) carries Vision and the deployed Studio carries only the editor essentials. The agency editors do not need the GROQ playground.
 - **No map picker for the `coordinates` field.** The default Studio editing surface for the Property's `coordinates` field is two numeric inputs (latitude / longitude). Adding a visual map input would require a custom input component (with a map provider such as Mapbox) and is a deferred future task.
 - **No Studio schemas for SiteSettings / Page / Testimonial / Category.** The pilot is Property / Agent / Development only. A future task can add the additional content types.
+- **No conditional relevance beyond "Land" property type.** The Property schema hides bedrooms, bathrooms, parking spaces, and construction size when the property type is `"land"` (the only field-level conditional the pilot ships). All other fields stay visible across every property kind — the editor's mental model is simpler when the field count matches the property kind they chose, and the runtime does not filter on these fields. Future tasks can add more conditional rules without changing the runtime boundary schema.
 
 ## 14. References
 
