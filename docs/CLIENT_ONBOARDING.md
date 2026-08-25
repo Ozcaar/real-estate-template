@@ -321,12 +321,31 @@ A more durable fix — extracting the sample-data slugs into a small fixture fil
 The complete rebranding workflow, in order, from a clean clone to a branded deployment:
 
 **Step 1 — Configuration (no code change).**
+
+There are **two distinct agency surfaces** in the rebranding workflow, and they are **not interchangeable**:
+
+- `app/config/site.config.ts` exports the **`siteConfig` constant** that is bundled into the **fallback** seed value for `useState('site-config')`. This constant is what a `pnpm generate` static export, a client-only navigation, or a unit test that bypasses the Nitro server sees.
+- `app/config/agencies/registry.ts` exports the **`agencyRegistry`** — the **runtime** tenant selector. On every Nitro request the server-only plugin `app/plugins/tenancy.server.ts` reads `useRequestURL().hostname`, calls `selectAgencyByHost(registry, host)`, and seeds `useState('site-config')` with the entry's pre-resolved `SiteConfig`. A Node / SSR deployment selects the active agency from the **request hostname** through this resolver — **not** through the `site.config.ts` import.
+
+Changing `app/config/site.config.ts` alone does **not** select the agency for an SSR request when the tenancy plugin runs. The static-export path and the unit-test path read the `siteConfig` constant; the SSR path reads the `agencyRegistry` and the request hostname. Both paths must agree on the same agency for a clean deployment.
+
+With that distinction explicit, the configuration steps are:
+
 1. Create `app/config/agencies/<your-agency>.agency.ts` (copy `default.agency.ts` as a template; fill in every field).
-2. Add a new entry to the `agencyRegistry` in `app/config/agencies/registry.ts` with the agency's production hostnames (`example.com`, `www.example.com`).
-3. Swap the active agency in `app/config/site.config.ts` (the import from `default.agency` to your new agency).
+2. Add a new entry to the `agencyRegistry` in `app/config/agencies/registry.ts` with the agency's production hostnames (`example.com`, `www.example.com`). This is the **runtime** entry — a Node / SSR deployment reads it per request.
+3. Update `app/config/site.config.ts` so its `siteConfig` constant uses the new agency as the **fallback** (one-line import swap from `default.agency` to your new agency). This is the surface that `pnpm generate` and any non-server-rendered context consume; it must agree with the registry's default-tenant entry so the static export and the SSR rendering show the same agency.
 4. Create `app/themes/<your-theme>.theme.ts` (copy `default.theme.ts`; fill in colors / fonts / radii / shadows / layout).
 5. Register the theme in `app/themes/index.ts` (1 import + 1 registry entry).
 6. Set `agency.theme` to the new theme id in the agency config.
+
+**Step 1a — Hostname configuration (client onboarding, no code change).**
+
+Hostname configuration is a separate, **explicit** step in the client onboarding workflow. The implementer collects the production hostnames from the agency (see `§2.2 "Domain / hostname ownership"`) before the deployment, and the rebrand commits the matching `hosts` list to the registry entry. The development hostname is a local-test concern; the production hostnames are a deployment concern. Both belong in the same registry entry.
+
+1. **Register the agency in `agencyRegistry`.** The new entry's `id` is the tenant id (unique across the registry). The id is the same value the implementer will use later for the per-tenant env-var dispatch convention (`NUXT_PUBLIC_SITE_URL__<TENANT_ID>`).
+2. **Configure the production hostnames.** Add the agency's production apex and `www.` subdomain to the entry's `hosts` array (`example.com`, `www.example.com`). The hostname is the lookup key the per-request resolver matches; the operator's DNS is the source of truth for which hostname resolves to the deployment.
+3. **Configure an appropriate development hostname for local testing.** Add a development hostname (`localhost`, `127.0.0.1`, or a project-specific hostname like `bahia-del-mar.local`) to the entry's `hosts` array. This is what `pnpm dev` and `pnpm preview` use; without it, a request to the development hostname resolves to the registry's `default` tenant (the documented single-agency fallback). The development hostname is **not** a recommended production configuration; it is a local-test convenience.
+4. **Verify the resolved agency id and theme id match the expected tenant.** Hit the dev server with the development hostname (e.g. `curl -H 'Host: <dev-hostname>' http://localhost:3000/`) and confirm the rendered HTML carries the new agency's name and brand colors. The runtime resolver is `app/plugins/tenancy.server.ts` → `app/config/agencies/registry.ts` → `selectAgencyByHost(registry, host)`; the resolved `SiteConfig.agency.id` and `SiteConfig.theme.id` are the canonical tenant identifiers. A request to a hostname that does not match any `hosts` list resolves to the `default` tenant via the fallback (see `docs/MULTI_TENANT.md` §5 "Unknown-host fallback").
 
 **Step 2 — Asset replacement (no code change).**
 7. Replace `public/images/logo.svg` and `public/favicon.ico` with the agency's real assets.
@@ -374,6 +393,29 @@ The dry-run validates clean at every step:
 - `pnpm lint` — **0 errors / 0 warnings**.
 - `pnpm build` — completes (Nitro preset `node-server`, 246 s wall clock, no `sharp` warning).
 - `git diff --check` — exit 0.
+
+#### 6.5.1 Dry-run hostname / tenant-resolution verification (Task 123 follow-up)
+
+The original Task 123 dry-run swapped `site.config.ts` to the Bahía del Mar fallback and registered the new entry in `agencyRegistry` with the production hostnames `bahia-del-mar.test` and `www.bahia-del-mar.test`. The first local validation pass against `pnpm dev` / `pnpm preview` on `localhost:3000` did **not** render the Bahía theme; the rendered agency was the registry's `default` tenant. The discrepancy was investigated through the runtime resolver and recorded as follows:
+
+- **Initial state.** A request to `localhost:3000` (and to `localhost:3000` with no `Host` override) was normalized to `localhost`, walked the registry's `hosts` lists, and resolved to the `default` tenant via `selectAgencyByHost`'s fallback. The `default` tenant's `agency.theme` is `'default'`, so the bundled default palette rendered. The Bahía del Mar identity was correct in the static `siteConfig` constant but invisible to the SSR request because the SSR path reads the `agencyRegistry` + the request hostname, not the `site.config.ts` import.
+- **Temporary dry-run configuration.** `localhost` was added to the Bahía del Mar entry's `hosts` list as a **temporary dry-run-only** mapping (alongside the production `bahia-del-mar.test` and `www.bahia-del-mar.test`). This is the local-test convenience described in `Step 1a` §3.
+- **Re-test.** With the temporary mapping in place, the same `localhost:3000` request resolved to the `bahia-del-mar` entry; the pre-resolved `SiteConfig.theme.id` was `'bahia'`; the rendered HTML carried the Bahía identity (name, slogan, brand colors, MXN currency, metric measurement, Spanish locale). Removing the temporary `localhost` mapping and restoring the registry to its production state caused the same request to resolve back to the `default` tenant.
+- **Conclusion.** The theme system is **working**: the same theme token resolution path that renders the default theme on the default tenant also renders the Bahía theme on the Bahía tenant when the per-request resolver selects the right entry. The original issue was **not** a theme-resolution bug. The issue was **tenant hostname selection** — the `agencyRegistry`'s `hosts` list for the Bahía entry did not include `localhost`, so the per-request resolver fell through to the `default` tenant. The fix is configuration (add the development hostname to the registry entry per `Step 1a` §3), not code.
+- **Important.** The `localhost` mapping is **temporary dry-run configuration**, not a recommended production configuration. A real first-client rebrand registers the agency's production hostnames only; a development hostname (if used) belongs in the operator's local environment or in a project-specific development registry, not in the production registry. The production registry continues to ship with `localhost` absent from every tenant's `hosts` list, so an out-of-the-box `pnpm dev` on `localhost:3000` resolves to the `default` tenant — the documented single-agency behavior is preserved.
+
+#### 6.5.2 Step-by-step hostname / tenant-resolution dry-run sequence
+
+For reproducibility, the dry-run followed this exact sequence:
+
+1. `pnpm dev` on `localhost:3000` with the registry shipping the production state (no `localhost` mapping) — request to `localhost` resolves to `default`, default theme renders.
+2. Edit `app/config/agencies/registry.ts`: add `localhost` to the `bahia-del-mar` entry's `hosts` array (temporary, dry-run-only).
+3. Re-test `pnpm dev` on `localhost:3000` — request to `localhost` resolves to `bahia-del-mar`, Bahía theme renders.
+4. Revert `app/config/agencies/registry.ts` to the production state (no `localhost` mapping) — request to `localhost` resolves back to `default`, default theme renders.
+5. Run `pnpm test` — 1230 / 1230 across 47 files (no test changes; the registry's hostname tests in `app/config/agencies/registry.test.ts` cover the fallback path byte-identically).
+6. Run `pnpm lint` — 0 errors / 0 warnings.
+7. Run `pnpm build` — completes.
+8. Run `git diff --check` — exit 0.
 
 ### 6.6 Rebrand dry-run — repeatability of the workflow
 
