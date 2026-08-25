@@ -1,6 +1,6 @@
 import type { AgencyConfig } from '~/types/agency.types'
 import type { SiteConfig } from '~/types/site.types'
-import { defaultAgencyConfig } from './agencies/default.agency'
+import { bahiaDelMarAgencyConfig } from './agencies/bahia-del-mar.agency'
 import { validateAgencyConfig } from './agencies/agency.schema'
 import { defaultI18nLocales } from '~/config/i18n'
 import { resolveTheme, themes } from '~/themes'
@@ -48,8 +48,18 @@ export function buildSiteConfig(agency: AgencyConfig): SiteConfig {
  * constant is only the **fallback**, not the runtime source of
  * truth.
  *
+ * **Task 122 dry-run.** The first-client rebrand audit swaps the
+ * fallback to the fictional `bahiaDelMarAgencyConfig` so
+ * `pnpm generate` (and any non-server-rendered context) renders
+ * the Bahía del Mar identity. The dev-server / production-server
+ * path resolves the active agency per request via the tenancy
+ * plugin + multi-tenant registry. The default tenant
+ * (`defaultAgencyConfig`) is preserved as the registry's
+ * fallback so unknown hostnames continue to render the original
+ * template identity.
+ *
  * @see docs/REBRANDING.md for the step-by-step rebranding workflow.
  * @see app/config/agencies/registry.ts for the multi-tenant
  *   registry and the hostname-to-agency resolver.
  */
-export const siteConfig: SiteConfig = buildSiteConfig(defaultAgencyConfig)
+export const siteConfig: SiteConfig = buildSiteConfig(bahiaDelMarAgencyConfig)

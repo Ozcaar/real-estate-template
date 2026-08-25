@@ -1,5 +1,6 @@
 import type { ThemeConfig } from '~/types/theme.types'
 import { defaultTheme } from './default.theme'
+import { bahiaTheme } from './bahia.theme'
 
 /**
  * Theme registry. Register additional themes (luxury, modern, minimal, …) here
@@ -7,6 +8,7 @@ import { defaultTheme } from './default.theme'
  */
 export const themes: Record<string, ThemeConfig> = {
   [defaultTheme.id]: defaultTheme,
+  [bahiaTheme.id]: bahiaTheme,
 }
 
 /** Resolve a theme by id, falling back to the default theme. */

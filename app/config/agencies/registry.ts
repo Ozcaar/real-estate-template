@@ -1,5 +1,6 @@
 import type { SiteConfig } from '~/types/site.types'
 import { defaultAgencyConfig } from './default.agency'
+import { bahiaDelMarAgencyConfig } from './bahia-del-mar.agency'
 import { validateAgencyConfig } from './agency.schema'
 import { defaultI18nLocales } from '../i18n'
 import { resolveTheme, themes } from '../../themes'
@@ -157,6 +158,10 @@ function buildEntry(
  */
 export const agencyRegistry: AgencyRegistry = Object.freeze({
   [DEFAULT_TENANT_ID]: buildEntry(defaultAgencyConfig, []),
+  'bahia-del-mar': buildEntry(bahiaDelMarAgencyConfig, [
+    'bahia-del-mar.test',
+    'www.bahia-del-mar.test',
+  ]),
 })
 
 /**

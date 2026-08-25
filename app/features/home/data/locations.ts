@@ -1,36 +1,39 @@
 import type { HomeLocation } from '../types/home.types'
 
 /**
- * Sample areas served, shown in the homepage "locations" section. Names are
- * agency content (raw strings); images point to local SVG placeholders.
+ * Bahía del Mar fictional rebrand locations (Task 122 dry-run).
+ *
+ * Four fictional Pacific-coast locations served by the agency.
+ * Names are fictional / common Mexican Pacific coast place names;
+ * property counts are placeholder values.
  */
 export const homeLocations: HomeLocation[] = [
   {
-    id: 'loc-monterrey',
-    name: 'Monterrey',
-    slug: 'monterrey',
+    id: 'bdm-loc-sayulita',
+    name: 'Sayulita',
+    slug: 'sayulita',
     image: '/images/locations/location-01.svg',
-    propertyCount: 48,
+    propertyCount: 18,
   },
   {
-    id: 'loc-guadalajara',
-    name: 'Guadalajara',
-    slug: 'guadalajara',
+    id: 'bdm-loc-san-pancho',
+    name: 'San Pancho',
+    slug: 'san-pancho',
     image: '/images/locations/location-02.svg',
-    propertyCount: 36,
+    propertyCount: 11,
   },
   {
-    id: 'loc-mexico-city',
-    name: 'Mexico City',
-    slug: 'mexico-city',
+    id: 'bdm-loc-punta-mita',
+    name: 'Punta Mita',
+    slug: 'punta-mita',
     image: '/images/locations/location-03.svg',
-    propertyCount: 62,
+    propertyCount: 24,
   },
   {
-    id: 'loc-mazatlan',
-    name: 'Mazatlán',
-    slug: 'mazatlan',
+    id: 'bdm-loc-bucerias',
+    name: 'Bucerías',
+    slug: 'bucerias',
     image: '/images/locations/location-04.svg',
-    propertyCount: 21,
+    propertyCount: 14,
   },
 ]

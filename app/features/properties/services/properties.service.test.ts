@@ -383,7 +383,7 @@ describe('propertiesService.filter — combined operation + type', () => {
 
 describe('propertiesService.filter — location filter', () => {
   it('matches a substring against city (case-insensitive)', () => {
-    const result = propertiesService.filter(properties, { location: 'monterrey' })
+    const result = propertiesService.filter(properties, { location: 'sayulita' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       const city = property.city.toLowerCase()
@@ -391,42 +391,48 @@ describe('propertiesService.filter — location filter', () => {
       const country = property.country.toLowerCase()
       const loc = property.location.toLowerCase()
       expect(
-        city.includes('monterrey')
-        || state.includes('monterrey')
-        || country.includes('monterrey')
-        || loc.includes('monterrey'),
+        city.includes('sayulita')
+        || state.includes('sayulita')
+        || country.includes('sayulita')
+        || loc.includes('sayulita'),
       ).toBe(true)
     }
   })
 
-  it('matches a substring against country', () => {
+  it('matches a substring against country (accent-insensitive equality)', () => {
     const result = propertiesService.filter(properties, { location: 'mexico' })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
-      expect(property.country.toLowerCase()).toBe('mexico')
+      // The filter is accent-insensitive (NFD-normalized), so the catalog's
+      // "México" and the search's "mexico" both normalise to the same string.
+      const normalized = property.country
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+      expect(normalized).toBe('mexico')
     }
   })
 
   it('is accent-insensitive (Mexico matches México)', () => {
     const noAccent = propertiesService.filter(properties, { location: 'Mexico' })
     const withAccent = propertiesService.filter(properties, { location: 'México' })
-    // The catalog is 'Mexico' (no accent). Searching 'México' should
-    // still return the same set thanks to NFD normalization.
+    // The catalog uses 'México' (with accent). Searching 'Mexico' (no
+    // accent) returns the same set thanks to NFD normalization.
     expect(withAccent.length).toBeGreaterThan(0)
     expect(withAccent.length).toBe(noAccent.length)
   })
 
-  it('is accent-insensitive on the city (Queretaro matches Querétaro)', () => {
-    const noAccent = propertiesService.filter(properties, { location: 'Queretaro' })
-    const withAccent = propertiesService.filter(properties, { location: 'Querétaro' })
+  it('is accent-insensitive on the city (bucerias matches Bucerías)', () => {
+    const noAccent = propertiesService.filter(properties, { location: 'bucerias' })
+    const withAccent = propertiesService.filter(properties, { location: 'Bucerías' })
     expect(withAccent.length).toBeGreaterThan(0)
     expect(withAccent.length).toBe(noAccent.length)
   })
 
   it('matches across the slugified haystack (street/slug normalization)', () => {
     // The haystack concatenates slugified city/state/country/location.
-    // A search for "nuevo" should match the state "Nuevo León".
-    const result = propertiesService.filter(properties, { location: 'nuevo' })
+    // A search for "punta" should match the city "Punta Mita".
+    const result = propertiesService.filter(properties, { location: 'punta' })
     expect(result.length).toBeGreaterThan(0)
   })
 

@@ -1,94 +1,54 @@
 import type { Development } from '../types/development.types'
 
 /**
- * Sample developments for the MVP showcase page.
+ * Bahía del Mar fictional rebrand development portfolio
+ * (Task 122 dry-run).
  *
- * This is placeholder agency content (names, locations, descriptions,
- * delivery dates are intentionally raw strings, not i18n keys). In a
- * later phase a service can fetch the same shape from an API without
- * changing components. Images point to local SVG placeholders under
- * `public/images` so the template renders offline; agencies replace them
- * with real renderings.
+ * Two fictional developments on the Mexican Pacific coast. The
+ * status, location, price range, and delivery-date values are
+ * fictional placeholder content. The shape matches the
+ * `Development` model exactly so the runtime Zod validation
+ * passes at module load.
  */
 export const sampleDevelopments: Development[] = [
   {
-    id: 'dev-001',
-    name: 'Mirador del Valle',
-    slug: 'mirador-del-valle',
+    id: 'bdm-dev-001',
+    name: 'Residencial Costa Banderas',
+    slug: 'residencial-costa-banderas',
     status: 'pre-sale',
-    location: 'Valle Oriente, Monterrey',
+    location: 'Nuevo Vallarta, Nayarit',
     description:
-      'A boutique pre-sale of 24 apartments with panoramic views, two-bedroom layouts and shared rooftop amenities.',
+      'Conjunto de 32 condominios de dos y tres recámaras con vista al mar, alberca infinity y acceso controlado. Preventa con descuentos por etapa.',
     image: '/images/developments/development-01.svg',
-    priceFrom: 285000,
-    priceTo: 420000,
-    currency: 'USD',
-    units: 24,
-    bedrooms: 2,
-    sizeUnit: 'metric',
-    areaFrom: 78,
-    areaTo: 112,
-    deliveryDate: '2026-06',
-    featured: true,
-  },
-  {
-    id: 'dev-002',
-    name: 'Parque Residencial Lomas',
-    slug: 'parque-residencial-lomas',
-    status: 'under-construction',
-    location: 'Las Lomas, Guadalajara',
-    description:
-      'Three-bedroom family homes arranged around a central park, with private gardens and community pool.',
-    image: '/images/developments/development-02.svg',
-    priceFrom: 195000,
-    priceTo: 310000,
-    currency: 'USD',
-    units: 48,
+    priceFrom: 4800000,
+    priceTo: 8900000,
+    currency: 'MXN',
+    units: 32,
     bedrooms: 3,
     sizeUnit: 'metric',
-    areaFrom: 120,
+    areaFrom: 95,
     areaTo: 165,
-    deliveryDate: '2025-12',
+    deliveryDate: '2026-09',
     featured: true,
   },
   {
-    id: 'dev-003',
-    name: 'CostaMar Towers',
-    slug: 'costamar-towers',
-    status: 'ready-to-deliver',
-    location: 'Costa Azul, Mazatlán',
+    id: 'bdm-dev-002',
+    name: 'Villas Punta Sayulita',
+    slug: 'villas-punta-sayulita',
+    status: 'under-construction',
+    location: 'Sayulita, Nayarit',
     description:
-      'Two beachfront towers with one- and two-bedroom units, ready for immediate move-in.',
-    image: '/images/developments/development-03.svg',
-    priceFrom: 165000,
-    priceTo: 285000,
-    currency: 'USD',
-    units: 60,
-    bedrooms: 2,
+      'Ocho villas privadas con jardín, roof garden y acceso a la playa a pie. Construcción en etapa final; entrega programada para finales del próximo año.',
+    image: '/images/developments/development-02.svg',
+    priceFrom: 9500000,
+    priceTo: 14200000,
+    currency: 'MXN',
+    units: 8,
+    bedrooms: 3,
     sizeUnit: 'metric',
-    areaFrom: 65,
-    areaTo: 98,
-    deliveryDate: '2025-03',
-    featured: false,
-  },
-  {
-    id: 'dev-004',
-    name: 'Quinta Industrial Lofts',
-    slug: 'quinta-industrial-lofts',
-    status: 'sold-out',
-    location: 'Distrito Empresarial, Monterrey',
-    description:
-      'Adaptive-reuse lofts in a converted warehouse. All units sold; waiting list open for the next phase.',
-    image: '/images/developments/development-04.svg',
-    priceFrom: 145000,
-    priceTo: 240000,
-    currency: 'USD',
-    units: 32,
-    bedrooms: 1,
-    sizeUnit: 'metric',
-    areaFrom: 55,
-    areaTo: 90,
-    deliveryDate: '2024-09',
+    areaFrom: 180,
+    areaTo: 260,
+    deliveryDate: '2026-04',
     featured: false,
   },
 ]

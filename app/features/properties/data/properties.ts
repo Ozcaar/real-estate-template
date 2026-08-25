@@ -2,190 +2,168 @@ import type { Property } from '../types/property.types'
 import { propertyListSchema } from '../schemas/property.schema'
 
 /**
- * Static sample properties for the MVP.
+ * Bahía del Mar fictional rebrand catalog (Task 122 dry-run).
  *
- * This is placeholder agency content (titles, descriptions and locations are
- * intentionally raw strings, not i18n keys). In a later phase the
- * `properties.service` can fetch this same shape from an API without changing
- * any component. Images point to local SVG placeholders under `public/images`
- * so the template renders offline; agencies replace them with real photos.
+ * This is the rebranded sample data for the fictional Bahía del
+ * Mar Propiedades agency (a Mexican Pacific coast boutique
+ * agency). Every title, description, address, currency value, and
+ * price is fictional placeholder content. The shape matches the
+ * `Property` model exactly so the runtime Zod validation passes
+ * at module load (and so the service layer, the page components,
+ * and the JSON-LD builder consume the catalog without any code
+ * change).
+ *
+ * The catalog intentionally mixes operation types (sale + rent),
+ * property types (house / apartment / land / commercial /
+ * office), and statuses (available / reserved) so the
+ * `/properties` listing exercises every filter and sort branch.
  */
 const rawProperties: Property[] = [
   {
-    id: 'prop-001',
-    title: 'Modern Hillside Villa',
-    slug: 'modern-hillside-villa',
+    id: 'bdm-prop-001',
+    title: 'Casa Vista al Mar en Sayulita',
+    slug: 'casa-vista-al-mar-sayulita',
     description:
-      'A bright, contemporary villa with floor-to-ceiling windows, an open-plan living area and panoramic views over the valley.',
+      'Casa de dos plantas con vista directa al océano, terraza cubierta y piscina privada. A cinco minutos del centro de Sayulita y de la playa principal.',
     operationType: 'sale',
     propertyType: 'house',
-    price: 685000,
-    currency: 'USD',
-    location: 'Las Lomas',
-    city: 'Monterrey',
-    state: 'Nuevo León',
-    country: 'Mexico',
-    bedrooms: 4,
+    price: 12500000,
+    currency: 'MXN',
+    location: 'Camino a Playa Los Muertos 12',
+    city: 'Sayulita',
+    state: 'Nayarit',
+    country: 'México',
+    bedrooms: 3,
     bathrooms: 3,
     parkingSpaces: 2,
     sizeUnit: 'metric',
-    constructionSize: 320,
-    landSize: 480,
+    constructionSize: 240,
+    landSize: 380,
     images: [
       '/images/properties/property-01.svg',
       '/images/properties/property-02.svg',
       '/images/properties/property-03.svg',
     ],
     coverImage: '/images/properties/property-01.svg',
-    amenities: ['garden', 'terrace', 'security'],
+    amenities: ['alberca', 'terraza', 'vista-al-mar'],
     status: 'available',
     featured: true,
   },
   {
-    id: 'prop-002',
-    title: 'Downtown Skyline Apartment',
-    slug: 'downtown-skyline-apartment',
+    id: 'bdm-prop-002',
+    title: 'Departamento en Renta — Punta Mita',
+    slug: 'departamento-renta-punta-mita',
     description:
-      'A stylish two-bedroom apartment in the heart of the city, steps away from restaurants, parks and public transit.',
+      'Departamento amueblado de dos recámaras con acceso a club de playa, gimnasio y seguridad 24 horas. Renta mensual con mantenimiento incluido.',
     operationType: 'rent',
     propertyType: 'apartment',
-    price: 1850,
-    currency: 'USD',
-    location: 'Centro',
-    city: 'Guadalajara',
-    state: 'Jalisco',
-    country: 'Mexico',
+    price: 38000,
+    currency: 'MXN',
+    location: 'Condominio Pacífico, Lote 4',
+    city: 'Punta Mita',
+    state: 'Nayarit',
+    country: 'México',
     bedrooms: 2,
     bathrooms: 2,
     parkingSpaces: 1,
     sizeUnit: 'metric',
-    constructionSize: 96,
+    constructionSize: 110,
     images: [
       '/images/properties/property-02.svg',
       '/images/properties/property-03.svg',
       '/images/properties/property-04.svg',
     ],
     coverImage: '/images/properties/property-02.svg',
-    amenities: ['gym', 'pool', 'elevator'],
+    amenities: ['amueblado', 'gimnasio', 'club-de-playa'],
     status: 'available',
     featured: true,
   },
   {
-    id: 'prop-003',
-    title: 'Coastal Family Home',
-    slug: 'coastal-family-home',
+    id: 'bdm-prop-003',
+    title: 'Terreno Residencial en San Pancho',
+    slug: 'terreno-residencial-san-pancho',
     description:
-      'Spacious family home a short walk from the beach, with a generous backyard, covered patio and plenty of natural light.',
+      'Lote plano con servicios subterráneos instalados, dentro de comunidad cerrada con acceso controlado. Ideal para construir casa de descanso.',
     operationType: 'sale',
-    propertyType: 'house',
-    price: 432000,
-    currency: 'USD',
-    location: 'Costa Azul',
-    city: 'Mazatlán',
-    state: 'Sinaloa',
-    country: 'Mexico',
-    bedrooms: 3,
-    bathrooms: 2,
-    parkingSpaces: 2,
+    propertyType: 'land',
+    price: 3200000,
+    currency: 'MXN',
+    location: 'Av. Las Palmas, Lote 18',
+    city: 'San Francisco (San Pancho)',
+    state: 'Nayarit',
+    country: 'México',
     sizeUnit: 'metric',
-    constructionSize: 210,
-    landSize: 300,
+    landSize: 540,
     images: [
       '/images/properties/property-03.svg',
       '/images/properties/property-04.svg',
       '/images/properties/property-05.svg',
     ],
     coverImage: '/images/properties/property-03.svg',
-    amenities: ['garden', 'patio'],
+    amenities: ['servicios-subterraneos', 'acceso-controlado'],
     status: 'available',
-    featured: true,
+    featured: false,
   },
   {
-    id: 'prop-004',
-    title: 'Prime Commercial Space',
-    slug: 'prime-commercial-space',
+    id: 'bdm-prop-004',
+    title: 'Local Comercial sobre Boulevard Riviera',
+    slug: 'local-comercial-boulevard-riviera',
     description:
-      'High-visibility commercial unit on a busy avenue, ideal for retail or a flagship showroom with large display windows.',
+      'Local comercial en planta baja con gran visibilidad sobre el boulevard principal. Apto para restaurante, boutique o tienda de surf.',
     operationType: 'rent',
     propertyType: 'commercial',
-    price: 4200,
-    currency: 'USD',
-    location: 'Av. Reforma',
-    city: 'Mexico City',
-    state: 'CDMX',
-    country: 'Mexico',
-    parkingSpaces: 4,
+    price: 65000,
+    currency: 'MXN',
+    location: 'Blvd. Riviera Nayarit 245',
+    city: 'Bucerías',
+    state: 'Nayarit',
+    country: 'México',
     sizeUnit: 'metric',
-    constructionSize: 180,
+    constructionSize: 95,
     images: [
       '/images/properties/property-04.svg',
       '/images/properties/property-05.svg',
       '/images/properties/property-06.svg',
     ],
     coverImage: '/images/properties/property-04.svg',
-    amenities: ['street-front', 'storage'],
-    status: 'available',
-    featured: true,
+    amenities: ['planta-baja', 'frente-a-boulevard'],
+    status: 'reserved',
+    featured: false,
   },
   {
-    id: 'prop-005',
-    title: 'Garden View Building Lot',
-    slug: 'garden-view-building-lot',
+    id: 'bdm-prop-005',
+    title: 'Oficina Corporativa en Centro Financiero',
+    slug: 'oficina-corporativa-centro-financiero',
     description:
-      'A flat, ready-to-build residential lot in a gated community with services in place and easy highway access.',
-    operationType: 'sale',
-    propertyType: 'land',
-    price: 158000,
-    currency: 'USD',
-    location: 'Valle Verde',
-    city: 'Querétaro',
-    state: 'Querétaro',
-    country: 'Mexico',
+      'Oficina amueblada en piso alto con sala de juntas, recepción y vista panorámica al mar. Estacionamiento y vigilancia 24 horas.',
+    operationType: 'rent',
+    propertyType: 'office',
+    price: 48000,
+    currency: 'MXN',
+    location: 'Torre Pacífico, Piso 12',
+    city: 'Punta Mita',
+    state: 'Nayarit',
+    country: 'México',
+    parkingSpaces: 2,
     sizeUnit: 'metric',
-    landSize: 600,
+    constructionSize: 120,
     images: [
       '/images/properties/property-05.svg',
       '/images/properties/property-06.svg',
       '/images/properties/property-01.svg',
     ],
     coverImage: '/images/properties/property-05.svg',
-    amenities: ['gated', 'utilities'],
-    status: 'reserved',
-    featured: false,
-  },
-  {
-    id: 'prop-006',
-    title: 'Executive Office Suite',
-    slug: 'executive-office-suite',
-    description:
-      'Move-in ready office suite with meeting rooms, a reception area and abundant natural light in a premier business tower.',
-    operationType: 'rent',
-    propertyType: 'office',
-    price: 3100,
-    currency: 'USD',
-    location: 'Distrito Empresarial',
-    city: 'Monterrey',
-    state: 'Nuevo León',
-    country: 'Mexico',
-    parkingSpaces: 3,
-    sizeUnit: 'metric',
-    constructionSize: 145,
-    images: [
-      '/images/properties/property-06.svg',
-      '/images/properties/property-01.svg',
-      '/images/properties/property-02.svg',
-    ],
-    coverImage: '/images/properties/property-06.svg',
-    amenities: ['meeting-rooms', 'reception', 'parking'],
+    amenities: ['amueblada', 'sala-de-juntas', 'estacionamiento'],
     status: 'available',
-    featured: true,
+    featured: false,
   },
 ]
 
 /**
- * Validated sample data. Parsing at module load guarantees the static content
- * always matches the property model (the build fails fast on a malformed entry)
- * and mirrors exactly how a future API/CMS response would be validated before
- * being consumed by services and components.
+ * Validated sample data. Parsing at module load guarantees the
+ * static content always matches the property model (the build
+ * fails fast on a malformed entry) and mirrors exactly how a
+ * future API / CMS response would be validated before being
+ * consumed by services and components.
  */
 export const sampleProperties: Property[] = propertyListSchema.parse(rawProperties)

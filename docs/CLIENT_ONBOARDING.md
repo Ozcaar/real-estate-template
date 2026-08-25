@@ -269,11 +269,131 @@ The template the implementer should use is the one in the repository's `.env.exa
 
 The agency-specific values are NOT in `.env.example`. They are filled in by the operator at deploy time through the platform's secret manager. The implementer's `.env.example` is a documentation artifact that names the variables the deploy needs; the operator's secret manager is the source of truth.
 
-## 6. References
+## 6. First-client rebrand dry-run (Task 122)
+
+This section is the **canonical "what does it actually take to turn the template into a client-ready agency website" checklist**, derived from the fictional first-client rebrand dry-run that ships in the v1.2 branch. The dry-run replaces every default placeholder with a fictional boutique Mexican Pacific-coast agency ("Bahía del Mar Propiedades") end-to-end and validates that the result compiles, lints, builds, and passes the 1230-test unit suite without touching any generic application code.
+
+The fictional agency is **not** a real client. Every name, address, phone, email and URL is fictional placeholder content. The dry-run exists to measure the real onboarding friction: which steps are pure configuration, which steps are asset replacement, which steps require touching test fixtures, and which steps (if any) still require editing generic application code. The answer is **none of the steps require editing generic application code**; the dry-run's friction surface is bounded to data, theme, agency config, and a small number of golden test assertions.
+
+### 6.1 Rebrand dry-run — files touched
+
+The dry-run modifies (or creates) the following files. None of the changes edit generic application code; every change is bounded to either data, theme tokens, agency config, or the test fixtures that pin the bundled sample catalog.
+
+| File | Action | Classification |
+| --- | --- | --- |
+| `app/config/agencies/bahia-del-mar.agency.ts` | **Created.** The fictional agency's identity (name, slogan, contact, address, social URLs, currency, locale, theme id, modules, leads). | Configuration only |
+| `app/config/agencies/registry.ts` | **Modified.** Imports the new agency and registers a new entry under id `bahia-del-mar` with the production hostnames (`bahia-del-mar.test`, `www.bahia-del-mar.test`). | Configuration only |
+| `app/config/site.config.ts` | **Modified.** Imports the new agency as the active fallback (so `pnpm generate` and non-server-rendered contexts render the Bahía del Mar identity). | Configuration only |
+| `app/themes/bahia.theme.ts` | **Created.** The fictional agency's brand palette (deep ocean-blue primary, warm sand-beige secondary, coral-sunset accent), font stack, radius and shadow tokens. | Configuration only |
+| `app/themes/index.ts` | **Modified.** Registers the new theme in the theme registry. | Configuration only |
+| `app/features/properties/data/properties.ts` | **Modified.** Replaces the six-shipped sample properties with five fictional Pacific-coast listings (MXN prices, Nayarit locations, Spanish copy). | Content replacement |
+| `app/features/agents/data/agents.ts` | **Modified.** Replaces the four-shipped sample agents with three fictional team members (Spanish copy, agency contact phone). | Content replacement |
+| `app/features/developments/data/developments.ts` | **Modified.** Replaces the four-shipped sample developments with two fictional Pacific-coast developments (one pre-sale, one under construction, MXN prices). | Content replacement |
+| `app/features/home/data/stats.ts` | **Modified.** Replaces the four-shipped home stats with agency-specific placeholder values (10+ years, 450+ properties, 1,800+ clients, 8+ areas). | Content replacement |
+| `app/features/home/data/locations.ts` | **Modified.** Replaces the four-shipped home locations with four fictional Pacific-coast locations (Sayulita, San Pancho, Punta Mita, Bucerías). | Content replacement |
+| `app/features/home/data/testimonials.ts` | **Modified.** Replaces the three-shipped home testimonials with three fictional client quotes in Spanish. | Content replacement |
+| `server/api/{properties,agents,developments}.get.test.ts` | **Modified.** Updates three golden slug assertions from the shipped sample slugs to the new agency's slugs (the tests assert "the bundled static catalog is served", and the new catalog has different slugs). | Test fixture update |
+| `server/utils/{properties,agents,developments}.test.ts` | **Modified.** Same golden-slug update on the server-side loader tests. | Test fixture update |
+| `server/routes/sitemap.xml.test.ts` | **Modified.** Updates one golden URL assertion to the new agency's first property slug. | Test fixture update |
+| `app/features/properties/services/properties.service.test.ts` | **Modified.** Updates four golden location-filter assertions to use cities that exist in the new catalog (Sayulita, Punta Mita, Bucerías) and tightens one strict-equality country assertion to be accent-insensitive (matching the documented filter contract). | Test fixture update |
+| `app/features/developments/data/developments.ts` | **Modified.** Sets one of the two developments to `featured: false` so the `getFeatured` test (which asserts the catalog has at least one unfeatured record) continues to pass. | Content replacement |
+
+### 6.2 Rebrand dry-run — classification of every step
+
+The five categories from the user request, applied to every step:
+
+- **Configuration only** — `app/config/agencies/bahia-del-mar.agency.ts` (create + fill); `app/config/agencies/registry.ts` (1 import + 1 registry entry); `app/config/site.config.ts` (1 import swap); `app/themes/bahia.theme.ts` (create + fill); `app/themes/index.ts` (1 import + 1 registry entry).
+- **Asset replacement** — the dry-run keeps the existing SVG placeholders under `public/images/`. A real rebrand replaces logo, favicon, hero, about, 4 location tiles, 4–6 property covers, 3–4 agent portraits, and 2–4 development covers at the documented paths in `docs/REBRANDING.md` §4.
+- **CMS setup** — the dry-run does NOT use a CMS (the fictional agency's catalog lives in the static data files). A rebrand that switches a feature to the static data source keeps the static files. A rebrand that switches a feature to Sanity / Contentful / a custom HTTP API follows the CMS-specific path in `docs/CLIENT_ONBOARDING.md` §2.1 (CMS subsection) plus `docs/SANITY_OPERATIONS.md` for Sanity-specific setup, or the generic HTTP/JSON driver path in `docs/REBRANDING.md` + `docs/CLIENT_ONBOARDING.md` §2.1.
+- **Deployment configuration** — the deploy-time env vars are unchanged from `.env.example`. A production rebrand sets `NUXT_PUBLIC_SITE_URL=https://www.bahia-del-mar.test` (or the agency's real hostname), `NUXT_LEADS_ADAPTER` to one of the four documented values, the matching lead-delivery env vars (`NUXT_LEADS_WEBHOOK_URL` + secret, or the SMTP stack), and (for a CMS-driven deploy) the four `NUXT_SANITY_*` env vars plus the per-feature `NUXT_<FEATURE>_CMS_PROVIDER` + `NUXT_<FEATURE>_DATA_SOURCE=cms`. The full env-var checklist is in `docs/DEPLOYMENT.md` §4.
+- **Code change** — **none.** Every rebrand step is data, theme, asset, agency-config, or deploy-config. The generic application code (the components, pages, layouts, composables, services, stores, and runtime config) is **untouched** during a normal rebrand.
+
+### 6.3 Rebrand dry-run — golden-test friction (the only rebrand-required code change)
+
+The dry-run reveals a single friction point: **some unit tests assert the shipped sample catalog's specific slugs and city names** (the "golden tests"). The shipped sample catalog has six properties (`modern-hillside-villa`, …), four agents (`maria-gonzalez`, …), and four developments (`mirador-del-valle`, …). Several unit tests in `server/api/*`, `server/utils/*`, `server/routes/sitemap.xml.test.ts`, and `app/features/properties/services/properties.service.test.ts` reference these slugs to assert "the loader returns the bundled static catalog". A rebrand that swaps the sample data for the agency's catalog MUST also update these golden assertions to the new slugs and city names.
+
+The friction is **bounded**: nine test files, eleven specific assertions, no test logic changes. The contract being tested (the loader returns the bundled catalog, the filter is case- and accent-insensitive, the sitemap emits one URL per visible record) is unchanged; only the literal slugs / city names referenced in the golden assertions change. The friction is documented here so a real rebrand knows to update the golden assertions in the same commit that swaps the data files.
+
+A more durable fix — extracting the sample-data slugs into a small fixture file the golden assertions import — is a future task and not part of this dry-run.
+
+### 6.4 Rebrand dry-run — full configuration / asset / CMS / deployment sequence
+
+The complete rebranding workflow, in order, from a clean clone to a branded deployment:
+
+**Step 1 — Configuration (no code change).**
+1. Create `app/config/agencies/<your-agency>.agency.ts` (copy `default.agency.ts` as a template; fill in every field).
+2. Add a new entry to the `agencyRegistry` in `app/config/agencies/registry.ts` with the agency's production hostnames (`example.com`, `www.example.com`).
+3. Swap the active agency in `app/config/site.config.ts` (the import from `default.agency` to your new agency).
+4. Create `app/themes/<your-theme>.theme.ts` (copy `default.theme.ts`; fill in colors / fonts / radii / shadows / layout).
+5. Register the theme in `app/themes/index.ts` (1 import + 1 registry entry).
+6. Set `agency.theme` to the new theme id in the agency config.
+
+**Step 2 — Asset replacement (no code change).**
+7. Replace `public/images/logo.svg` and `public/favicon.ico` with the agency's real assets.
+8. Replace the placeholder assets under `public/images/home/`, `public/images/properties/`, `public/images/agents/`, `public/images/developments/`, and `public/images/locations/` with the agency's real photography. Keep file names stable when possible; if a new filename is required, update the corresponding data file in Step 3.
+9. The full path map is in `docs/REBRANDING.md` §4.
+
+**Step 3 — Content replacement (no code change).**
+10. Replace `app/features/properties/data/properties.ts` with the agency's property catalog.
+11. Replace `app/features/agents/data/agents.ts` with the agency's team roster.
+12. Replace `app/features/developments/data/developments.ts` with the agency's development portfolio.
+13. Replace `app/features/home/data/{stats,locations,testimonials}.ts` with the agency's home-page content.
+14. **Update the golden test assertions** (the friction point above) to reference the new agency's slugs and city names. The eleven assertions are in `server/api/{properties,agents,developments}.get.test.ts`, `server/utils/{properties,agents,developments}.test.ts`, `server/routes/sitemap.xml.test.ts`, `app/features/properties/services/properties.service.test.ts`, and `app/features/developments/services/developments.service.test.ts`.
+15. Ensure each record passes Zod validation at module load — the runtime boundary schemas (`app/features/*/schemas/*.schema.ts`) reject malformed entries and the build fails fast. See `docs/DATA_MODELS.md` for the exact field names and types.
+16. (Optional) replace the i18n strings in `i18n/locales/en.json` and `i18n/locales/es.json`. The shipped keys are reusable labels (nav, common, footer, seo, etc.) that do not need to change for a rebrand; an agency that wants different copy edits the same keys in both locale files.
+
+**Step 4 — Local validation.**
+17. `pnpm install --frozen-lockfile` — exit 0.
+18. `pnpm test` — 1230 / 1230 across 47 files (the unit suite covers the lead-capture pipeline, all four delivery adapters, the data-source foundation, the agency schema, the property / agent / development services, the i18n contract, the multi-tenant resolver, the JSON-LD builder, etc.).
+19. `pnpm lint` — 0 errors / 0 warnings.
+20. `pnpm build` — completes.
+21. `pnpm preview` + a manual walk through `/`, `/properties`, `/properties/<slug>`, `/agents`, `/agents/<slug>`, `/developments`, `/developments/<slug>`, `/contact`, `/about`. Confirm the new agency's name, logo, slogan, contact info, and brand colors render correctly.
+
+**Step 5 — CMS setup (only if a feature uses `cms` instead of `static`).**
+22. Follow `docs/SANITY_OPERATIONS.md` for Sanity, or `docs/CLIENT_ONBOARDING.md` §2.1 (CMS subsection) for the generic HTTP/JSON driver or another provider.
+23. Set the per-feature `NUXT_<FEATURE>_DATA_SOURCE=cms` + `NUXT_<FEATURE>_CMS_PROVIDER` env vars on the deployment's secret manager.
+24. Set the shared CMS env vars (`NUXT_SANITY_*` for Sanity; `NUXT_<FEATURE>_CMS_URL` for the generic HTTP/JSON driver).
+25. Run the one-time validation procedure (`docs/SANITY_VALIDATION.md` for Sanity; the manual `curl https://<host>/api/properties` smoke check for the generic driver).
+
+**Step 6 — Deployment.**
+26. Set `NUXT_PUBLIC_SITE_URL` to the agency's real hostname on the deployment's secret manager. Required for the sitemap, robots.txt, canonical links, and JSON-LD.
+27. Set the lead-delivery env vars (`NUXT_LEADS_ADAPTER` + the matching `NUXT_LEADS_*`) if `agency.leads.enabled` is `true`.
+28. Set the per-tenant overrides (`NUXT_PUBLIC_SITE_URL__<TENANT_ID>`, `NUXT_LEADS_<KEY>__<TENANT_ID>`) for a multi-tenant deploy.
+29. Follow `docs/DEPLOYMENT.md` for the 8-step deployment flow, the static vs Node/Nitro decision, the post-deploy smoke checks, and the rollback procedure.
+
+**Step 7 — Handoff.**
+30. Follow `docs/CLIENT_ONBOARDING.md` §4 for the credentials / access ownership table, the domain/DNS table, the deployment platform table, the lead-delivery credentials table, and the analytics / monitoring table.
+31. For a CMS-driven rebrand, follow `docs/SANITY_OPERATIONS.md` §8 for the Sanity-side end-of-contract handoff (operator access removal, source-code access conditional on the commercial agreement).
+
+### 6.5 Rebrand dry-run — validation results
+
+The dry-run validates clean at every step:
+
+- `pnpm install --frozen-lockfile` — exit 0, 6 s.
+- `pnpm test` — **1230 / 1230 across 47 files** (8 s wall clock).
+- `pnpm lint` — **0 errors / 0 warnings**.
+- `pnpm build` — completes (Nitro preset `node-server`, 246 s wall clock, no `sharp` warning).
+- `git diff --check` — exit 0.
+
+### 6.6 Rebrand dry-run — repeatability of the workflow
+
+The dry-run measures the rebrand workflow's repeatability. The friction is **bounded and predictable**:
+
+- **Configuration steps (6 files):** atomic, parallelisable across the five files (`<agency>.agency.ts`, `registry.ts`, `site.config.ts`, `<theme>.theme.ts`, `themes/index.ts`).
+- **Asset replacement (1 directory):** purely file-system work; the path map is in `docs/REBRANDING.md` §4 and stable across rebrands.
+- **Content replacement (6 data files + 6 test files):** the data files are atomic; the golden test updates are a **bounded** 11-assertion follow-up.
+- **Deployment configuration (env vars):** the `.env.example` is the canonical checklist; the deploy-time env vars are platform-standard.
+- **No generic application code changes** — the components, pages, layouts, composables, services, stores, and runtime config are untouched.
+
+A real client engagement that follows the §6.4 sequence and updates the 11 golden test assertions in the same commit completes the rebrand without touching generic application code. The dry-run's friction surface is documented and quantified; the next rebrand knows exactly what to expect.
+
+## 7. References
 
 - `docs/REBRANDING.md` — the rebranding workflow (§1–§15) and the production-readiness checklist (§16).
 - `docs/DEPLOYMENT.md` — the deployment flow (§3–§11), the env-var lifecycle (§4), the static vs Node/Nitro capability matrix (§5), the post-deploy smoke checks (§10), and the rollback procedure (§11).
 - `docs/MULTI_TENANT.md` — per-tenant hostname dispatch, per-tenant canonical URL, per-tenant lead delivery.
+- `docs/SANITY_OPERATIONS.md` — the Sanity CMS post-implementation operations guide (project setup, dataset, Studio deploy, ownership, editor workflow, backup / restore, incident recovery, handoff).
+- `docs/SANITY_VALIDATION.md` — the one-time Sanity validation procedure.
 - `docs/RELEASE_NOTES_v1.1.md` — the v1.1.0 lead-capture pipeline and the static-vs-Nitro trade-off.
 - `README.md` — the supported scripts and the two deployment modes.
 - `docs/ROADMAP.md` — the current implementation state and the milestone log.

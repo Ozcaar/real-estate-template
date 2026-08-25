@@ -266,7 +266,7 @@ describe('server/utils/agents — server-only agent loader', () => {
       // `maria-gonzalez` slug; assert at least one catalog
       // slug is reachable so a future regression that
       // returns an empty array is caught here.
-      expect(loaded.some(a => a.slug === 'maria-gonzalez')).toBe(true)
+      expect(loaded.some(a => a.slug === 'sofia-mendoza')).toBe(true)
     })
     it('resolves to the bundled static data when NUXT_AGENTS_DATA_SOURCE=static (the explicit opt-in)', async () => {
       process.env[ENV_KIND] = 'static'

@@ -296,7 +296,7 @@ describe('server/utils/properties — server-only property loader', () => {
       // `modern-hillside-villa` slug is reachable so a
       // future regression that returns an empty array is
       // caught here.
-      expect(loaded.some(p => p.slug === 'modern-hillside-villa')).toBe(true)
+      expect(loaded.some(p => p.slug === 'casa-vista-al-mar-sayulita')).toBe(true)
     })
 
     it('resolves to the bundled static data when NUXT_PROPERTIES_DATA_SOURCE=static (the historical default)', async () => {

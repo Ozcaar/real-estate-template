@@ -1,32 +1,36 @@
 import type { HomeTestimonial } from '../types/home.types'
 
 /**
- * Sample testimonials for the homepage social-proof section. All copy is
- * placeholder agency content and can be replaced per agency.
+ * Bahía del Mar fictional rebrand testimonials (Task 122 dry-run).
+ *
+ * All copy is fictional placeholder content. The rebrand can
+ * replace every entry with the agency's real client quotes; the
+ * shape (`name`, `role`, `quote`, `rating`) is unchanged so the
+ * home page renders without any component edit.
  */
 export const homeTestimonials: HomeTestimonial[] = [
   {
-    id: 'tst-001',
-    name: 'María González',
-    role: 'Bought a family home',
+    id: 'bdm-tst-001',
+    name: 'Familia Reyes',
+    role: 'Compraron casa de playa',
     quote:
-      'The team understood exactly what we were looking for and found our home in weeks. The whole process felt effortless and transparent.',
+      'El equipo de Bahía del Mar nos acompañó durante todo el proceso. Encontraron una casa con vista al mar que se ajustaba a lo que buscábamos.',
     rating: 5,
   },
   {
-    id: 'tst-002',
-    name: 'James Carter',
-    role: 'Sold an apartment',
+    id: 'bdm-tst-002',
+    name: 'Mariana López',
+    role: 'Rentó departamento',
     quote:
-      'Professional, responsive and genuinely helpful. They priced our apartment perfectly and we closed above asking.',
+      'La atención fue rápida y profesional. El departamento que nos ofrecieron estaba en perfectas condiciones y la entrega fue puntual.',
     rating: 5,
   },
   {
-    id: 'tst-003',
-    name: 'Lucía Fernández',
-    role: 'Rented an office',
+    id: 'bdm-tst-003',
+    name: 'Carlos Hernández',
+    role: 'Inversionista',
     quote:
-      'Great selection of commercial spaces and clear advice at every step. I would recommend them to any business owner.',
+      'Su conocimiento del mercado local y de las nuevas zonas en desarrollo nos ayudó a tomar una buena decisión de inversión.',
     rating: 4,
   },
 ]

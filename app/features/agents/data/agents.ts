@@ -1,58 +1,49 @@
 import type { Agent } from '../types/agent.types'
 
 /**
- * Sample agents for the MVP team page.
+ * Bahía del Mar fictional rebrand team (Task 122 dry-run).
  *
- * This is placeholder agency content (names, roles, bios, photos are
- * intentionally raw strings, not i18n keys). In a later phase a service
- * can fetch the same shape from an API without changing components. Images
- * point to local SVG placeholders under `public/images` so the template
- * renders offline; agencies replace them with real portraits.
+ * The fictional team's names, bios, contact details, and
+ * specialties are placeholder content. The contact phone /
+ * WhatsApp values match the agency's `contact.phone` value
+ * (`+52 322 123 4567`) so the rendered team cards stay
+ * consistent with the footer / contact card. The rebrand can
+ * later override individual agents with direct lines; the
+ * template does not require this.
  */
 export const sampleAgents: Agent[] = [
   {
-    id: 'agent-001',
-    name: 'María González',
-    slug: 'maria-gonzalez',
-    role: 'Senior Advisor',
-    bio: 'Over a decade helping families and investors find the right home in the metropolitan area. Specialist in residential sales.',
+    id: 'bdm-agent-001',
+    name: 'Sofía Mendoza',
+    slug: 'sofia-mendoza',
+    role: 'Directora Asociada',
+    bio: 'Más de 12 años asesorando a familias e inversionistas en la Riviera Nayarit. Especialista en propiedades residenciales y de lujo frente al mar.',
     image: '/images/agents/agent-01.svg',
-    phone: '1-800-555-1234',
-    email: 'maria@example.com',
-    whatsapp: '1-800-555-1234',
-    specialties: ['Residential', 'First-time buyers'],
+    phone: '+52 322 123 4567',
+    email: 'sofia@bahia-del-mar.test',
+    whatsapp: '+52 322 123 4567',
+    specialties: ['Residencial', 'Lujo'],
   },
   {
-    id: 'agent-002',
-    name: 'James Carter',
-    slug: 'james-carter',
-    role: 'Commercial Specialist',
-    bio: 'Focused on commercial properties, retail spaces and office leasing. Background in real estate finance.',
+    id: 'bdm-agent-002',
+    name: 'Andrés Vega',
+    slug: 'andres-vega',
+    role: 'Asesor Comercial',
+    bio: 'Apoya a clientes que buscan locales comerciales, espacios para restaurantes y terrenos para desarrollo en la región.',
     image: '/images/agents/agent-02.svg',
-    phone: '1-800-555-1234',
-    email: 'james@example.com',
-    whatsapp: '1-800-555-1234',
-    specialties: ['Commercial', 'Leasing'],
+    phone: '+52 322 123 4567',
+    email: 'andres@bahia-del-mar.test',
+    whatsapp: '+52 322 123 4567',
+    specialties: ['Comercial', 'Terrenos'],
   },
   {
-    id: 'agent-003',
-    name: 'Lucía Fernández',
-    slug: 'lucia-fernandez',
-    role: 'Rentals Lead',
-    bio: 'Coordinates the rentals portfolio and supports tenants and landlords from listing to move-in.',
+    id: 'bdm-agent-003',
+    name: 'Camila Ortega',
+    slug: 'camila-ortega',
+    role: 'Coordinadora de Rentas',
+    bio: 'Administra la cartera de rentas vacacionales y de larga estancia. Atiende a inquilinos y propietarios desde la publicación hasta la entrega.',
     image: '/images/agents/agent-03.svg',
-    email: 'lucia@example.com',
-    specialties: ['Rentals', 'Tenant relations'],
-  },
-  {
-    id: 'agent-004',
-    name: 'Daniel Ramírez',
-    slug: 'daniel-ramirez',
-    role: 'Land & Developments',
-    bio: 'Advises clients on land acquisitions, residential developments and long-term investment opportunities.',
-    image: '/images/agents/agent-04.svg',
-    phone: '1-800-555-1234',
-    whatsapp: '1-800-555-1234',
-    specialties: ['Land', 'Investments'],
+    email: 'camila@bahia-del-mar.test',
+    specialties: ['Rentas', 'Atención a clientes'],
   },
 ]

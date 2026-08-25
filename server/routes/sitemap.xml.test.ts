@@ -223,10 +223,10 @@ describe('server/routes/sitemap.xml.ts — server-only Nitro route', () => {
       const { event } = makeH3Event({ method: 'GET', headers: { host: 'unknown.example' } })
       const handler = await loadHandler()
       const body = (await handler(event)) as string
-      // The static catalog includes `modern-hillside-villa` and
+      // The static catalog includes `casa-vista-al-mar-sayulita` and
       // other slugs that are NOT hidden. Assert at least one
       // property URL is present.
-      expect(body).toMatch(/<loc>https:\/\/example\.test\/properties\/modern-hillside-villa<\/loc>/)
+      expect(body).toMatch(/<loc>https:\/\/example\.test\/properties\/casa-vista-al-mar-sayulita<\/loc>/)
     })
 
     it('emits the api-resolved URLs when the api source is configured', async () => {

@@ -308,7 +308,7 @@ describe('server/utils/developments — server-only development loader', () => {
       // `mirador-del-valle` slug; assert at least one catalog
       // slug is reachable so a future regression that
       // returns an empty array is caught here.
-      expect(loaded.some(d => d.slug === 'mirador-del-valle')).toBe(true)
+      expect(loaded.some(d => d.slug === 'residencial-costa-banderas')).toBe(true)
     })
 
     it('resolves to the bundled static data when NUXT_DEVELOPMENTS_DATA_SOURCE=static (the explicit opt-in)', async () => {

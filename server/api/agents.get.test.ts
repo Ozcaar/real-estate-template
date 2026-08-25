@@ -84,7 +84,7 @@ describe('server/api/agents.get.ts — same-origin Nitro endpoint', () => {
     const handler = await loadEndpoint()
     const body = await handler()
     expect(Array.isArray(body)).toBe(true)
-    expect((body as Array<{ slug: string }>).some(a => a.slug === 'maria-gonzalez'))
+    expect((body as Array<{ slug: string }>).some(a => a.slug === 'sofia-mendoza'))
       .toBe(true)
   })
 

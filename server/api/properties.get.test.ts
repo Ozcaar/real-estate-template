@@ -87,7 +87,7 @@ describe('server/api/properties.get.ts — same-origin Nitro endpoint', () => {
     // default. Assert the body is an array containing the
     // documented `modern-hillside-villa` slug.
     expect(Array.isArray(body)).toBe(true)
-    expect((body as Array<{ slug: string }>).some(p => p.slug === 'modern-hillside-villa'))
+    expect((body as Array<{ slug: string }>).some(p => p.slug === 'casa-vista-al-mar-sayulita'))
       .toBe(true)
   })
 
