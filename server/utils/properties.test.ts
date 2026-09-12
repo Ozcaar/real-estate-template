@@ -292,11 +292,13 @@ describe('server/utils/properties — server-only property loader', () => {
         expect(sampleSlugs.has(p.slug)).toBe(true)
       }
       // The bundled static catalog includes the documented
-      // 6-record placeholder; assert the documented
-      // `modern-hillside-villa` slug is reachable so a
-      // future regression that returns an empty array is
-      // caught here.
-      expect(loaded.some(p => p.slug === 'casa-vista-al-mar-sayulita')).toBe(true)
+      // sample records; derive the smoke-test slug from the
+      // imported `sampleProperties` array so a rebrand that
+      // replaces the catalog does not require rewriting this
+      // assertion.
+      const knownSlug = sampleProperties[0]?.slug
+      expect(knownSlug).toBeDefined()
+      expect(loaded.some(p => p.slug === knownSlug)).toBe(true)
     })
 
     it('resolves to the bundled static data when NUXT_PROPERTIES_DATA_SOURCE=static (the historical default)', async () => {

@@ -305,10 +305,13 @@ describe('server/utils/developments — server-only development loader', () => {
         expect(sampleSlugs.has(d.slug)).toBe(true)
       }
       // The bundled static catalog includes the documented
-      // `mirador-del-valle` slug; assert at least one catalog
-      // slug is reachable so a future regression that
-      // returns an empty array is caught here.
-      expect(loaded.some(d => d.slug === 'residencial-costa-banderas')).toBe(true)
+      // sample records; derive the smoke-test slug from the
+      // imported `sampleDevelopments` array so a rebrand that
+      // replaces the catalog does not require rewriting this
+      // assertion.
+      const knownSlug = sampleDevelopments[0]?.slug
+      expect(knownSlug).toBeDefined()
+      expect(loaded.some(d => d.slug === knownSlug)).toBe(true)
     })
 
     it('resolves to the bundled static data when NUXT_DEVELOPMENTS_DATA_SOURCE=static (the explicit opt-in)', async () => {

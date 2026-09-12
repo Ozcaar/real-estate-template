@@ -263,10 +263,13 @@ describe('server/utils/agents — server-only agent loader', () => {
         expect(sampleIds.has(agent.id)).toBe(true)
       }
       // The bundled static catalog includes the documented
-      // `maria-gonzalez` slug; assert at least one catalog
-      // slug is reachable so a future regression that
-      // returns an empty array is caught here.
-      expect(loaded.some(a => a.slug === 'sofia-mendoza')).toBe(true)
+      // sample records; derive the smoke-test slug from the
+      // imported `sampleAgents` array so a rebrand that
+      // replaces the catalog does not require rewriting this
+      // assertion.
+      const knownSlug = sampleAgents[0]?.slug
+      expect(knownSlug).toBeDefined()
+      expect(loaded.some(a => a.slug === knownSlug)).toBe(true)
     })
     it('resolves to the bundled static data when NUXT_AGENTS_DATA_SOURCE=static (the explicit opt-in)', async () => {
       process.env[ENV_KIND] = 'static'

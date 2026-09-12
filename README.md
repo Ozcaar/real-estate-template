@@ -57,6 +57,8 @@ pnpm install
 
 `postinstall` runs `nuxt prepare` automatically.
 
+The project pins `pnpm@10.12.1` via the top-level `packageManager` field in `package.json`. CI's `corepack enable` + `pnpm install --frozen-lockfile` reads that field and resolves to 10.12.1. Local development should follow the same path: enable corepack once (`corepack enable` on macOS / Linux, or `corepack enable --install-directory <writable-path-on-PATH>` on Windows where the default install directory needs admin), then `pnpm --version` reports `10.12.1` from any checkout of this repository. Do NOT install pnpm directly with `npm install -g pnpm@...` — that bypasses the `packageManager` pin and the CI pinning will silently disagree with the local install.
+
 ## Scripts
 
 ```bash

@@ -382,8 +382,70 @@ describe('propertiesService.filter — combined operation + type', () => {
 })
 
 describe('propertiesService.filter — location filter', () => {
+  // The location-filter contract is the filter's behavior, not
+  // the catalog's content. The four "always-exercise"
+  // normalization tests below (accent-insensitive country,
+  // accent-insensitive city, normalized / unaccented needle
+  // against accented stored data, multi-word slugification)
+  // use **synthetic** test-local records cloned from a valid
+  // sample property, with ONLY the field under test
+  // overridden. A future rebrand that swaps the bundled
+  // sample catalog for a catalog without accents, without
+  // multi-word cities, or without any of the documented
+  // accent pairs does NOT weaken these tests — the synthetic
+  // records always carry the literal accent pair / multi-word
+  // value the test is asserting.
+  //
+  // Tests that assert documentation contracts on branches
+  // that do not depend on specific catalog content (the
+  // empty / undefined / no-match / whitespace-trim branches)
+  // use either intentional literals (`'atlantis'`, `''`,
+  // undefined, padded whitespace) or a known simple synthetic
+  // value (`'Testland'`) so the catalog is not consulted for
+  // any value the test relies on. The case-insensitive-
+  // substring test remains catalog-derived because the test
+  // explicitly targets the shipped sample catalog's cities
+  // (a normal rebrand of those cities updates the test's
+  // needle together with the field under test).
+  //
+  // Synthetic record builder: clone the first visible
+  // catalog property and override ONLY the field under
+  // test. The clone is the test's only record so the
+  // assertions are tight (no cross-talk with other records).
+  // The base record is a real catalog property, so every
+  // field except the overridden one satisfies the `Property`
+  // type for the same reason it satisfies the runtime data
+  // file.
+  //
+  // The base-record lookup is intentionally inside the
+  // function body (not lifted to a module-level `const`)
+  // because the catalog is loaded asynchronously by the
+  // module-level `beforeAll` after the describe block's
+  // factory has already captured `properties`; a module-
+  // level initializer would race with that load. Resolving
+  // the base record on every `withField` call defers the
+  // lookup to test-execution time when `properties` is
+  // guaranteed to be populated.
+  function withField<K extends keyof Property>(
+    field: K,
+    value: Property[K],
+  ): readonly Property[] {
+    const visibleRecords = propertiesService.getAll(properties)
+    const baseRecord = visibleRecords[0]
+    if (!baseRecord) throw new Error('expected at least one visible property')
+    return [{ ...baseRecord, [field]: value }]
+  }
+
   it('matches a substring against city (case-insensitive)', () => {
-    const result = propertiesService.filter(properties, { location: 'sayulita' })
+    // Catalog-derived assertion: the test's intent is the
+    // documented case-insensitive substring behavior
+    // against the shipped sample catalog's actual cities.
+    // A rebrand that changes the catalog's cities updates
+    // the assertion's needle and the searched-for substring
+    // together so the contract remains exercised.
+    const target = properties.find(p => p.city.length > 0) ?? properties[0]!
+    const needle = target.city.toLowerCase()
+    const result = propertiesService.filter(properties, { location: needle })
     expect(result.length).toBeGreaterThan(0)
     for (const property of result) {
       const city = property.city.toLowerCase()
@@ -391,52 +453,84 @@ describe('propertiesService.filter — location filter', () => {
       const country = property.country.toLowerCase()
       const loc = property.location.toLowerCase()
       expect(
-        city.includes('sayulita')
-        || state.includes('sayulita')
-        || country.includes('sayulita')
-        || loc.includes('sayulita'),
+        city.includes(needle)
+        || state.includes(needle)
+        || country.includes(needle)
+        || loc.includes(needle),
       ).toBe(true)
     }
   })
 
-  it('matches a substring against country (accent-insensitive equality)', () => {
-    const result = propertiesService.filter(properties, { location: 'mexico' })
-    expect(result.length).toBeGreaterThan(0)
-    for (const property of result) {
-      // The filter is accent-insensitive (NFD-normalized), so the catalog's
-      // "México" and the search's "mexico" both normalise to the same string.
-      const normalized = property.country
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-      expect(normalized).toBe('mexico')
-    }
+  it('matches accent-insensitively on the country (normalized needle finds the accented stored value)', () => {
+    // Always-exercise: the filter must normalize BOTH the
+    // needle and the stored value to the same
+    // NFD-stripped-lowercased form. The synthetic record
+    // stores `México`; the needle is the unaccented `mexico`.
+    // The match must succeed regardless of whether the
+    // bundled sample catalog contains any accented
+    // countries.
+    const data = withField('country', 'México')
+    const result = propertiesService.filter(data, { location: 'mexico' })
+    expect(result.length).toBe(1)
+    expect(result[0]?.country).toBe('México')
   })
 
-  it('is accent-insensitive (Mexico matches México)', () => {
-    const noAccent = propertiesService.filter(properties, { location: 'Mexico' })
-    const withAccent = propertiesService.filter(properties, { location: 'México' })
-    // The catalog uses 'México' (with accent). Searching 'Mexico' (no
-    // accent) returns the same set thanks to NFD normalization.
-    expect(withAccent.length).toBeGreaterThan(0)
-    expect(withAccent.length).toBe(noAccent.length)
+  it('matches accent-insensitively on the country (searching the accented form returns the same set as the unaccented form)', () => {
+    // Always-exercise, symmetric direction: the accented
+    // needle `México` and the unaccented needle `mexico`
+    // return identical result counts against the same
+    // synthetic dataset, confirming the filter does not
+    // silently drop records when the needle carries
+    // accents.
+    const data = withField('country', 'México')
+    const unaccented = propertiesService.filter(data, { location: 'mexico' })
+    const accented = propertiesService.filter(data, { location: 'México' })
+    expect(unaccented.length).toBe(1)
+    expect(accented.length).toBe(1)
+    expect(accented.length).toBe(unaccented.length)
   })
 
-  it('is accent-insensitive on the city (bucerias matches Bucerías)', () => {
-    const noAccent = propertiesService.filter(properties, { location: 'bucerias' })
-    const withAccent = propertiesService.filter(properties, { location: 'Bucerías' })
-    expect(withAccent.length).toBeGreaterThan(0)
-    expect(withAccent.length).toBe(noAccent.length)
+  it('matches accent-insensitively on the city (normalized needle finds the accented stored value)', () => {
+    // Always-exercise: the unaccented `bucerias` needle
+    // matches the accented `Bucerías` stored value,
+    // confirming the city field participates in the same
+    // NFD normalization pipeline as the country field.
+    const data = withField('city', 'Bucerías')
+    const result = propertiesService.filter(data, { location: 'bucerias' })
+    expect(result.length).toBe(1)
+    expect(result[0]?.city).toBe('Bucerías')
   })
 
-  it('matches across the slugified haystack (street/slug normalization)', () => {
-    // The haystack concatenates slugified city/state/country/location.
-    // A search for "punta" should match the city "Punta Mita".
-    const result = propertiesService.filter(properties, { location: 'punta' })
-    expect(result.length).toBeGreaterThan(0)
+  it('matches accent-insensitively on the city (searching the accented form returns the same set as the unaccented form)', () => {
+    // Always-exercise, symmetric direction: both needles
+    // match the same synthetic record identically.
+    const data = withField('city', 'Bucerías')
+    const unaccented = propertiesService.filter(data, { location: 'bucerias' })
+    const accented = propertiesService.filter(data, { location: 'Bucerías' })
+    expect(unaccented.length).toBe(1)
+    expect(accented.length).toBe(1)
+    expect(accented.length).toBe(unaccented.length)
+  })
+
+  it('matches across the slugified haystack (multi-word city normalization)', () => {
+    // Always-exercise: a multi-word stored city (`San
+    // Pancho`) hits the whitespace-to-dash normalization
+    // branch inside `slugify()`. The needle `san` is a
+    // substring of the slugified haystack (`san-pancho`),
+    // so the match succeeds even though the needle does
+    // not appear as a literal substring of any stored
+    // field. This exercise is independent of whether the
+    // bundled catalog actually carries a multi-word city.
+    const data = withField('city', 'San Pancho')
+    const result = propertiesService.filter(data, { location: 'san' })
+    expect(result.length).toBe(1)
+    expect(result[0]?.city).toBe('San Pancho')
   })
 
   it('returns no property when the location does not match anything', () => {
+    // The literal `'atlantis'` is intentionally not derived
+    // from the catalog — it is a never-match token the test
+    // passes to verify the documented "no match" branch.
     const result = propertiesService.filter(properties, { location: 'atlantis' })
     expect(result.length).toBe(0)
   })
@@ -452,9 +546,19 @@ describe('propertiesService.filter — location filter', () => {
   })
 
   it('trims whitespace from the location filter', () => {
-    const noSpace = propertiesService.filter(properties, { location: 'mexico' })
-    const withSpace = propertiesService.filter(properties, { location: '  mexico  ' })
-    expect(withSpace.length).toBe(noSpace.length)
+    // The whitespace-trim contract does not depend on
+    // accent content. A synthetic record with a known
+    // simple country value (`Testland`, the documented
+    // fixture value used by `makeProperty` and
+    // `propertiesService.getRelated — status filter`)
+    // covers the trim branch without coupling to any
+    // catalog value.
+    const data = withField('country', 'Testland')
+    const trimmed = propertiesService.filter(data, { location: 'testland' })
+    const padded = propertiesService.filter(data, { location: '  testland  ' })
+    expect(trimmed.length).toBe(1)
+    expect(padded.length).toBe(1)
+    expect(padded.length).toBe(trimmed.length)
   })
 })
 

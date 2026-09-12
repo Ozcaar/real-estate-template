@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { sampleProperties } from '~/features/properties/data/properties'
 import { makeH3Event } from '../../tests/helpers/h3-event'
 import { _resetPropertiesServerCacheForTests } from '../utils/properties'
 
@@ -219,14 +220,19 @@ describe('server/routes/sitemap.xml.ts — server-only Nitro route', () => {
       // unset) is the bundled `sampleProperties` array. The
       // sitemap iterates over the resolved list and emits one
       // URL per visible record; `status: 'hidden'` records are
-      // excluded.
+      // excluded. The smoke-test slug is derived from the
+      // imported sample so a rebrand that replaces the catalog
+      // does not require rewriting this assertion.
       const { event } = makeH3Event({ method: 'GET', headers: { host: 'unknown.example' } })
       const handler = await loadHandler()
       const body = (await handler(event)) as string
-      // The static catalog includes `casa-vista-al-mar-sayulita` and
-      // other slugs that are NOT hidden. Assert at least one
-      // property URL is present.
-      expect(body).toMatch(/<loc>https:\/\/example\.test\/properties\/casa-vista-al-mar-sayulita<\/loc>/)
+      const knownSlug = sampleProperties[0]?.slug
+      expect(knownSlug).toBeDefined()
+      // Slugs are URL-safe (documented on the runtime schema)
+      // so no regex-escape is required.
+      expect(body).toMatch(
+        new RegExp(`<loc>https:\\/\\/example\\.test\\/properties\\/${knownSlug}<\\/loc>`),
+      )
     })
 
     it('emits the api-resolved URLs when the api source is configured', async () => {

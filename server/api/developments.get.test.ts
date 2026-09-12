@@ -83,9 +83,13 @@ describe('server/api/developments.get.ts — same-origin Nitro endpoint', () => 
   it('serves the bundled static catalog when NUXT_DEVELOPMENTS_DATA_SOURCE is unset', async () => {
     const handler = await loadEndpoint()
     const body = await handler()
+    // Derive the smoke-test slug from the imported
+    // `sampleDevelopments` array so a rebrand that replaces
+    // the catalog does not require rewriting this assertion.
     expect(Array.isArray(body)).toBe(true)
-    expect((body as Array<{ slug: string }>).some(d => d.slug === 'residencial-costa-banderas'))
-      .toBe(true)
+    const knownSlug = sampleDevelopments[0]?.slug
+    expect(knownSlug).toBeDefined()
+    expect((body as Array<{ slug: string }>).some(d => d.slug === knownSlug)).toBe(true)
   })
 
   it('returns a structurally-equal body on every call (the loader does not memoise)', async () => {

@@ -669,6 +669,27 @@ sharp v 0.32.6 | libvips v 8.14.5
 
 After a fresh `pnpm install --frozen-lockfile`, the `sharp` module loads the `sharp-win32-x64.node` native binary, processes a 32×32 PNG to a 141-byte buffer, and reports `sharp v 0.32.6` + `libvips v 8.14.5`. The `sharp` + `ipx` direct-dep entry in `package.json` + the explicit lockfile entries + the platform-specific prebuilt binary are sufficient for reproducibility on Windows x64.
 
+**Build-script approval required for the install path to actually execute sharp's lifecycle script.** Under pnpm 9 + the original `sharp@^0.32.6` direct-dep entry, `pnpm install --frozen-lockfile` runs sharp's `install` lifecycle script by default; the same was assumed for pnpm 10. Under pnpm 10.12.1 (the project's pinned `packageManager`), pnpm defaults to **skipping** lifecycle scripts for known-binary-downloading dependencies unless they are explicitly listed in `pnpm.onlyBuiltDependencies`. Without that allowlist, the install completes but sharp's `node install/libvips && node install/dll-copy && prebuild-install` script never runs, `sharp-win32-x64.node` is never downloaded into `node_modules/.pnpm/sharp@0.32.6/node_modules/sharp/build/Release/`, and `require('sharp')` throws `Cannot find module '../build/Release/sharp-win32-x64.node'`. The fix is a single-line addition to `package.json`:
+
+```json
+"pnpm": {
+  "onlyBuiltDependencies": [
+    "sharp"
+  ]
+}
+```
+
+With this allowlist in place:
+
+* `pnpm install --frozen-lockfile` runs sharp's `install` lifecycle script and produces the `sharp-win32-x64.node` + `libvips-42.dll` + libvips companion DLLs in `node_modules/.pnpm/sharp@0.32.6/node_modules/sharp/build/Release/`.
+* `pnpm rebuild sharp` is no longer required as a manual one-time step (it remains available as the recovery path if a future pnpm upgrade ever drops the install-script).
+* `pnpm ignored-builds` reports `None` (no packages blocked) instead of the four-dep list (`esbuild`, `unrs-resolver`, `@parcel/watcher`, `sharp`).
+* The 32×32 PNG smoke test produces `sharp ok: 141 bytes PNG` with `sharp v 0.32.6 | libvips v 8.14.5`.
+
+The allowlist intentionally lists only `sharp`. `esbuild`, `unrs-resolver`, and `@parcel/watcher` remain in pnpm 10's default-skip list (each is a native-binary-downloading dependency with a Vite / Nuxt WASM fallback; approving them is a separate operator decision and is **not** required for the Task 118 sharp/IPX reproducibility guarantee). Approving a dependency install script is an operator security decision per §16.6; the project keeps the allowlist as small as the documented reproducibility contract requires.
+
+**Forced-reinstall proof (Task 125 closing).** The operator-or-developer reproducibility of this configuration was verified end-to-end by deleting the existing sharp installation (`node_modules/.pnpm/sharp@0.32.6/`) and re-running `pnpm install --frozen-lockfile`. The frozen reinstall downloaded the missing package, executed sharp's `install` lifecycle script (`Using cached libvips-8.14.5-win32-x64.tar.br`, `Integrity check passed for win32-x64`, `Copying DLLs from vendor/8.14.5/win32-x64/lib to build/Release`, `Done`), and the post-reinstall smoke test produced the same `sharp ok: 141 bytes PNG` result. The install path executes the approved sharp lifecycle script without operator intervention and without manual `node install/*` steps.
+
 **One-time lockfile sync required.** When the session first ran `pnpm install --frozen-lockfile`, it failed with `ERR_PNPM_OUTDATED_LOCKFILE` because the previous turn's `package.json` edit (adding `sharp` + `ipx` as direct deps and removing the now-unused `optional@^0.1.4`) had drifted from the lockfile. The session ran `pnpm install` once to sync the lockfile (`* 1 dependencies were removed: optional 0.1.4`); subsequent `pnpm install --frozen-lockfile` runs succeed. The lockfile is now in sync with `package.json`. This is a one-time housekeeping step required by the direct-dep addition; no other drift was detected.
 
 ## 17. Confirmation that no secrets were committed

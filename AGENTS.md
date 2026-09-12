@@ -30,7 +30,7 @@ Always check `package.json` before assuming exact dependency versions.
 
 ## Package manager
 
-Use `pnpm`.
+Use `pnpm`. The project pins `pnpm@10.12.1` in the top-level `packageManager` field; CI's `corepack enable` + `pnpm install --frozen-lockfile` reads that field and resolves to 10.12.1. Local development should follow the same path — once `corepack` is enabled (see below), `pnpm --version` reports `10.12.1` from any checkout of this repository.
 
 ```bash
 pnpm install         # install + postinstall → nuxt prepare
@@ -47,6 +47,8 @@ pnpm test:e2e:install  # playwright install --with-deps chromium (one-time setup
 ```
 
 `postinstall` runs `nuxt prepare` automatically — no manual step needed.
+
+The `corepack enable` step installs the `pnpm` / `pnpm.cmd` / `pnpm.ps1` shims that read the `packageManager` field. On a fresh machine where `corepack enable` cannot write to its default location (`<node-install-dir>`), pass `--install-directory` to a writable directory on `PATH` (for example, the user-level npm-global directory) so the shims are picked up by the existing `pnpm` lookup. Do NOT install pnpm directly with `npm install -g pnpm@...` — that bypasses the `packageManager` pin and the CI pinning will silently disagree with the local install.
 
 ## Architecture
 

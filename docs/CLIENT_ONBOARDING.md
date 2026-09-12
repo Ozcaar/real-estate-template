@@ -288,14 +288,10 @@ The dry-run modifies (or creates) the following files. None of the changes edit 
 | `app/themes/index.ts` | **Modified.** Registers the new theme in the theme registry. | Configuration only |
 | `app/features/properties/data/properties.ts` | **Modified.** Replaces the six-shipped sample properties with five fictional Pacific-coast listings (MXN prices, Nayarit locations, Spanish copy). | Content replacement |
 | `app/features/agents/data/agents.ts` | **Modified.** Replaces the four-shipped sample agents with three fictional team members (Spanish copy, agency contact phone). | Content replacement |
-| `app/features/developments/data/developments.ts` | **Modified.** Replaces the four-shipped sample developments with two fictional Pacific-coast developments (one pre-sale, one under construction, MXN prices). | Content replacement |
+| `app/features/developments/data/developments.ts` | **Modified.** Replaces the four-shipped sample developments with two fictional Pacific-coast developments (one pre-sale, one under construction, MXN prices); one is set to `featured: false` so the `getFeatured` test (which asserts the catalog has at least one unfeatured record) continues to pass. | Content replacement |
 | `app/features/home/data/stats.ts` | **Modified.** Replaces the four-shipped home stats with agency-specific placeholder values (10+ years, 450+ properties, 1,800+ clients, 8+ areas). | Content replacement |
 | `app/features/home/data/locations.ts` | **Modified.** Replaces the four-shipped home locations with four fictional Pacific-coast locations (Sayulita, San Pancho, Punta Mita, Bucerías). | Content replacement |
 | `app/features/home/data/testimonials.ts` | **Modified.** Replaces the three-shipped home testimonials with three fictional client quotes in Spanish. | Content replacement |
-| `server/api/{properties,agents,developments}.get.test.ts` | **Modified.** Updates three golden slug assertions from the shipped sample slugs to the new agency's slugs (the tests assert "the bundled static catalog is served", and the new catalog has different slugs). | Test fixture update |
-| `server/utils/{properties,agents,developments}.test.ts` | **Modified.** Same golden-slug update on the server-side loader tests. | Test fixture update |
-| `server/routes/sitemap.xml.test.ts` | **Modified.** Updates one golden URL assertion to the new agency's first property slug. | Test fixture update |
-| `app/features/properties/services/properties.service.test.ts` | **Modified.** Updates four golden location-filter assertions to use cities that exist in the new catalog (Sayulita, Punta Mita, Bucerías) and tightens one strict-equality country assertion to be accent-insensitive (matching the documented filter contract). | Test fixture update |
 | `app/features/developments/data/developments.ts` | **Modified.** Sets one of the two developments to `featured: false` so the `getFeatured` test (which asserts the catalog has at least one unfeatured record) continues to pass. | Content replacement |
 
 ### 6.2 Rebrand dry-run — classification of every step
@@ -308,13 +304,17 @@ The five categories from the user request, applied to every step:
 - **Deployment configuration** — the deploy-time env vars are unchanged from `.env.example`. A production rebrand sets `NUXT_PUBLIC_SITE_URL=https://www.bahia-del-mar.test` (or the agency's real hostname), `NUXT_LEADS_ADAPTER` to one of the four documented values, the matching lead-delivery env vars (`NUXT_LEADS_WEBHOOK_URL` + secret, or the SMTP stack), and (for a CMS-driven deploy) the four `NUXT_SANITY_*` env vars plus the per-feature `NUXT_<FEATURE>_CMS_PROVIDER` + `NUXT_<FEATURE>_DATA_SOURCE=cms`. The full env-var checklist is in `docs/DEPLOYMENT.md` §4.
 - **Code change** — **none.** Every rebrand step is data, theme, asset, agency-config, or deploy-config. The generic application code (the components, pages, layouts, composables, services, stores, and runtime config) is **untouched** during a normal rebrand.
 
-### 6.3 Rebrand dry-run — golden-test friction (the only rebrand-required code change)
+### 6.3 Rebrand dry-run — golden-test friction (post-Task 125)
 
-The dry-run reveals a single friction point: **some unit tests assert the shipped sample catalog's specific slugs and city names** (the "golden tests"). The shipped sample catalog has six properties (`modern-hillside-villa`, …), four agents (`maria-gonzalez`, …), and four developments (`mirador-del-valle`, …). Several unit tests in `server/api/*`, `server/utils/*`, `server/routes/sitemap.xml.test.ts`, and `app/features/properties/services/properties.service.test.ts` reference these slugs to assert "the loader returns the bundled static catalog". A rebrand that swaps the sample data for the agency's catalog MUST also update these golden assertions to the new slugs and city names.
+After the smoke-test catalog-decoupling pass (the seven smoke-test files listed below) and the Task 125 sample-data-test-fixture decoupling pass, the test suite's location-filter surface falls into **three buckets**. A rebrand that swaps the bundled sample data for the agency's catalog touches **no** test files; the surface is now discriminated by what each test is asserting.
 
-The friction is **bounded**: nine test files, eleven specific assertions, no test logic changes. The contract being tested (the loader returns the bundled catalog, the filter is case- and accent-insensitive, the sitemap emits one URL per visible record) is unchanged; only the literal slugs / city names referenced in the golden assertions change. The friction is documented here so a real rebrand knows to update the golden assertions in the same commit that swaps the data files.
+**Smoke-test assertions (accidental catalog coupling removed).** The seven golden-assertion files that previously hardcoded catalog slugs (`server/api/{properties,agents,developments}.get.test.ts`, `server/utils/{properties,agents,developments}.test.ts`, `server/routes/sitemap.xml.test.ts`) and the case-insensitive-substring test in `app/features/properties/services/properties.service.test.ts` derive their assertion values from the imported sample catalog at runtime (`sampleProperties[0]?.slug` / `sampleAgents[0]?.slug` / `sampleDevelopments[0]?.slug` for the smoke tests; `properties.find(p => p.city).city.toLowerCase()` for the substring test). A rebrand that swaps the sample data for the agency's catalog automatically updates every smoke-test assertion. **No test-file edits are required.**
 
-A more durable fix — extracting the sample-data slugs into a small fixture file the golden assertions import — is a future task and not part of this dry-run.
+**Behavior-specific normalization tests (intentional literals + synthetic records retained).** The four "always-exercise" normalization tests in `app/features/properties/services/properties.service.test.ts` (`accent-insensitive country` x 2, `accent-insensitive city` x 2, `multi-word slugification`, `whitespace-trim`) construct **synthetic test-local records** by cloning a valid sample property and overriding ONLY the field under test via the `withField<K extends keyof Property>(field, value)` helper. The synthetic records always carry the literal accent pair (`México` / `mexico`) / multi-word value (`San Pancho`) / simple country (`Testland`) the test asserts. The earlier wholesale coupling pass had originally derived these literals from the catalog — a future client catalog that ships no accents in any city / country field would have **degenerated** the four tests into the "same form on both sides" path that silently passes without exercising the accent contract. Task 125 (the sample-data test fixture decoupling pass) removes that accidental coupling by switching to synthetic records. The behavior literals (`'México'`, `'mexico'`, `'Bucerías'`, `'bucerias'`, `'San Pancho'`, `'san'`, `'Testland'`, `'testland'`) are deliberate behavior check points, not catalog values — they are intentional literals and intentionally not derived from the rebrand's data files. **A rebrand does NOT need to touch these tests.**
+
+**Documentation contract literals (intentional literals retained).** The "no match" test (`'atlantis'`), the empty / undefined input tests (`''`, `undefined`), and the literal Unicode combining-mark regex `/[\u0300-\u036f]/g` are all intentional literals — they assert documented negative / empty / branch-coverage behavior rather than catalog content. **A rebrand does NOT need to touch these tests.**
+
+The only assertions that still require rebrand attention are the data-shape contracts (every record has a unique URL-safe slug matching `/^[a-z0-9-]+$/`, every record's `status` is one of the documented enum values, every record has the required Zod fields) — those fail the build at module load when violated, which is the documented contract.
 
 ### 6.4 Rebrand dry-run — full configuration / asset / CMS / deployment sequence
 
@@ -338,9 +338,10 @@ The complete rebranding workflow, in order, from a clean clone to a branded depl
 11. Replace `app/features/agents/data/agents.ts` with the agency's team roster.
 12. Replace `app/features/developments/data/developments.ts` with the agency's development portfolio.
 13. Replace `app/features/home/data/{stats,locations,testimonials}.ts` with the agency's home-page content.
-14. **Update the golden test assertions** (the friction point above) to reference the new agency's slugs and city names. The eleven assertions are in `server/api/{properties,agents,developments}.get.test.ts`, `server/utils/{properties,agents,developments}.test.ts`, `server/routes/sitemap.xml.test.ts`, `app/features/properties/services/properties.service.test.ts`, and `app/features/developments/services/developments.service.test.ts`.
-15. Ensure each record passes Zod validation at module load — the runtime boundary schemas (`app/features/*/schemas/*.schema.ts`) reject malformed entries and the build fails fast. See `docs/DATA_MODELS.md` for the exact field names and types.
-16. (Optional) replace the i18n strings in `i18n/locales/en.json` and `i18n/locales/es.json`. The shipped keys are reusable labels (nav, common, footer, seo, etc.) that do not need to change for a rebrand; an agency that wants different copy edits the same keys in both locale files.
+14. Ensure each record passes Zod validation at module load — the runtime boundary schemas (`app/features/*/schemas/*.schema.ts`) reject malformed entries and the build fails fast. See `docs/DATA_MODELS.md` for the exact field names and types.
+15. (Optional) replace the i18n strings in `i18n/locales/en.json` and `i18n/locales/es.json`. The shipped keys are reusable labels (nav, common, footer, seo, etc.) that do not need to change for a rebrand; an agency that wants different copy edits the same keys in both locale files.
+
+> **No golden test updates are required on a rebrand.** The seven test files that previously referenced hardcoded catalog slugs (`server/api/{properties,agents,developments}.get.test.ts`, `server/utils/{properties,agents,developments}.test.ts`, `server/routes/sitemap.xml.test.ts`, `app/features/properties/services/properties.service.test.ts`) now derive their assertion values from the imported sample catalog at runtime, so the assertions track the new agency's slugs and city names automatically.
 
 **Step 4 — Local validation.**
 17. `pnpm install --frozen-lockfile` — exit 0.
@@ -375,17 +376,19 @@ The dry-run validates clean at every step:
 - `pnpm build` — completes (Nitro preset `node-server`, 246 s wall clock, no `sharp` warning).
 - `git diff --check` — exit 0.
 
+The friction surface is bounded to the same six data files + six configuration / theme files; no test fixture updates are required. A future rebrand (Task 124 decoupling follow-up) is bounded to **data + theme + agency config + assets + deploy config** — the test suite is decoupled from the bundled sample catalog.
+
 ### 6.6 Rebrand dry-run — repeatability of the workflow
 
 The dry-run measures the rebrand workflow's repeatability. The friction is **bounded and predictable**:
 
 - **Configuration steps (6 files):** atomic, parallelisable across the five files (`<agency>.agency.ts`, `registry.ts`, `site.config.ts`, `<theme>.theme.ts`, `themes/index.ts`).
 - **Asset replacement (1 directory):** purely file-system work; the path map is in `docs/REBRANDING.md` §4 and stable across rebrands.
-- **Content replacement (6 data files + 6 test files):** the data files are atomic; the golden test updates are a **bounded** 11-assertion follow-up.
+- **Content replacement (6 data files):** the data files are atomic; **no test fixture updates are required on a rebrand** (the golden assertions are derived from the data at runtime).
 - **Deployment configuration (env vars):** the `.env.example` is the canonical checklist; the deploy-time env vars are platform-standard.
 - **No generic application code changes** — the components, pages, layouts, composables, services, stores, and runtime config are untouched.
 
-A real client engagement that follows the §6.4 sequence and updates the 11 golden test assertions in the same commit completes the rebrand without touching generic application code. The dry-run's friction surface is documented and quantified; the next rebrand knows exactly what to expect.
+A real client engagement that follows the §6.4 sequence completes the rebrand without touching any test fixture or generic application code. The dry-run's friction surface is documented and quantified; the next rebrand knows exactly what to expect.
 
 ## 7. References
 

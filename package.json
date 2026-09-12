@@ -2,6 +2,12 @@
   "name": "inmoviliaria-template",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.12.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp"
+    ]
+  },
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",

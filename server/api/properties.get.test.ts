@@ -84,11 +84,13 @@ describe('server/api/properties.get.ts — same-origin Nitro endpoint', () => {
     const handler = await loadEndpoint()
     const body = await handler()
     // The body is the resolved list — the static sample by
-    // default. Assert the body is an array containing the
-    // documented `modern-hillside-villa` slug.
+    // default. Derive the smoke-test slug from the imported
+    // `sampleProperties` array so a rebrand that replaces
+    // the catalog does not require rewriting this assertion.
     expect(Array.isArray(body)).toBe(true)
-    expect((body as Array<{ slug: string }>).some(p => p.slug === 'casa-vista-al-mar-sayulita'))
-      .toBe(true)
+    const knownSlug = sampleProperties[0]?.slug
+    expect(knownSlug).toBeDefined()
+    expect((body as Array<{ slug: string }>).some(p => p.slug === knownSlug)).toBe(true)
   })
 
   it('returns a structurally-equal body on every call (the loader does not memoise)', async () => {
