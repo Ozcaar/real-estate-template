@@ -50,6 +50,52 @@ pnpm test:e2e:install  # playwright install --with-deps chromium (one-time setup
 
 The `corepack enable` step installs the `pnpm` / `pnpm.cmd` / `pnpm.ps1` shims that read the `packageManager` field. On a fresh machine where `corepack enable` cannot write to its default location (`<node-install-dir>`), pass `--install-directory` to a writable directory on `PATH` (for example, the user-level npm-global directory) so the shims are picked up by the existing `pnpm` lookup. Do NOT install pnpm directly with `npm install -g pnpm@...` — that bypasses the `packageManager` pin and the CI pinning will silently disagree with the local install.
 
+## Multi-agent workflow (OpenCode)
+
+This project ships an override of the built-in `build` primary agent plus three project-level agent files in `.opencode/agents/` — the project-specific `reviewer` and `tester` subagents, and a project-level override of the built-in `explore` subagent that tightens its `bash` permission.
+
+| Agent | Mode | Source | Permission-layer contract | Purpose |
+| --- | --- | --- | --- | --- |
+| `build` | primary | built-in (overridden) | `task` scoped to `{explore, reviewer, tester}` only | The sole modifying/orchestrating agent. Edits files, runs the build / install / test pipeline, writes the final answer. |
+| `explore` | subagent | built-in (project-level override) | `bash: deny`, `webfetch: allow`, `websearch: allow`; `edit: deny`, `write: deny`, `task: deny` | Read-only codebase research + web research. Use when the task needs repo discovery before any edit. Shell commands cannot mutate project or system state at the permission layer. |
+| `reviewer` | subagent | project-specific | `bash` is read-only-Git allowlist (catch-all `*`: deny, then `git status` / `git status *` / `git diff` / `git diff *` / `git show` / `git show *` / `git ls-files` / `git ls-files *` / `git log *` / `git rev-parse *` allow); `edit: deny`, `write: deny`, `webfetch: deny`, `task: deny` | Read-only diff + `AGENTS.md` compliance review. Inspects the task brief + the working-tree diff itself (via the Git allowlist above) and reports severity-ranked findings. |
+| `tester` | subagent | project-specific | `bash` is command-pattern gated (catch-all `*`: deny, then explicit allow rules for the validation surface and explicit deny rules for state-changing commands); `edit: deny`, `write: deny`, `task: deny`; `node -e *` is rejected at the permission layer | Validation-only. Runs the non-persistent validation commands (`pnpm test`, `pnpm lint`, `pnpm build`, `pnpm install --frozen-lockfile`, `pnpm ignored-builds`, `git diff --check`, `node --version`, …) and reports results. **Cannot modify files, cannot mutate the working tree, cannot fix failures itself, cannot run arbitrary `node -e`.** |
+
+**Build is the only agent with a state-changing capability.** The resolved `tools` block confirms this:
+- `build`: `edit: allow`, `write: allow`, `bash: allow`, `task: allow` (scoped to `{explore, reviewer, tester}`)
+- `explore`: `edit: false`, `write: false`, `bash: false`, `task: false` (only `read`, `glob`, `grep`, `list`, `lsp`, `webfetch`, `websearch` are enabled)
+- `reviewer`: `edit: false`, `write: false`, `task: false`, `webfetch: false`; `bash: true` (tool enabled) but the bash allowlist admits only the eight read-only Git inspection commands
+- `tester`: `edit: false`, `write: false`, `task: false`, `webfetch: false`; `bash: true` (tool enabled) but the bash allowlist admits only the validation surface; `node -e *` is rejected
+
+**Build's delegation rules.** Build's `permission.task` is restricted to:
+```yaml
+task:
+  "*": deny
+  explore: allow
+  reviewer: allow
+  tester: allow
+```
+The catch-all `*: deny` removes every other subagent (`general`, `scout`, `compaction`, `title`, `summary`) from the Task tool description; the three named agents are the only delegation targets.
+
+**Bash command-pattern enforcement (OpenCode 1.18.30).** OpenCode 1.18.30 supports per-command bash permission patterns (glob-style: `*` matches zero-or-more characters, `?` matches exactly one; last matching rule wins). The project uses this for both `reviewer` and `tester`:
+
+- **Reviewer's bash allowlist** — only the read-only Git inspection commands. Eight patterns cover the canonical four commands with and without trailing arguments, plus `git log *` and `git rev-parse *` for branch / commit resolution when the brief names a specific ref. Catch-all `*: deny` rejects every other shell command at the permission layer.
+- **Tester's bash allowlist** — the project's validation surface. Allow rules cover `pnpm --version *`, `pnpm install --frozen-lockfile *`, `pnpm test *`, `pnpm lint *`, `pnpm build *`, `pnpm generate *`, `pnpm ignored-builds *`, `pnpm test:e2e *`, `pnpm studio:typecheck *`, `pnpm list *`, `git status *`, `git diff *`, `git log *`, `git show *`, `git ls-files *`, `git rev-parse *`, `cat *`, `head *`, `tail *`, `wc *`, `find *`, `ls *`, `node --version`, `node -v`. Explicit deny rules cover every state-changing Git / pnpm command plus the PowerShell `remove-item` / `move-item` / `rename-item` / `new-item` / `set-content` / `add-content` / `clear-content` / `out-file` / `copy-item` / `tee` / `touch` / `mkdir` / `new-directory` and the POSIX `rm` / `del` filesystem-mutating commands. `node -e *` is caught by the `*: deny` catch-all; arbitrary Node one-liner smoke tests are **Build-only operations** (Build has `bash: allow` and can run the exact one-liner Tester reports).
+- **Explore's bash** — `bash: deny` at the permission layer. The built-in Explore's `bash: allow` (relying on prompt restrictions) is removed. Read-only directory listings, globbing, file reads, and LSP queries are still available via `list`, `glob`, `read`, and `lsp` — none of the tasks Explore handles actually require shell commands.
+
+**Preferred flow.**
+1. **Explore before implementation** when the task needs repo discovery (which file owns X, where the canonical schema lives, what the existing tests for this area are). Explore returns pointers; Build writes code.
+2. **Build implements** the change and runs the local validation commands.
+3. **Reviewer + Tester after implementation**, in parallel when they are independent. Reviewer inspects the diff (via its Git allowlist); Tester runs the validation suite (via its bash command-pattern allowlist). Both return to Build.
+4. **Build receives their findings**, performs any fixes, owns the final answer.
+
+**Hard constraints (enforced by permissions, not just prompt):**
+- `build` is the only agent with a state-changing capability. The Tester, Reviewer, and Explore subagents all resolve with `edit: false` / `write: false` / `task: false`.
+- `explore` is the only subagent with `bash: deny`. `webfetch: allow` / `websearch: allow` are preserved for external documentation lookup; `read`, `glob`, `grep`, `list`, `lsp` cover the in-workspace research surface without any shell command.
+- `reviewer` has `bash` command-pattern gated to the eight read-only Git inspection commands. It can independently read the real working-tree diff; every other shell command is rejected at the permission layer.
+- `tester` has `bash` command-pattern gated to the validation surface. `node -e *` is rejected — any Node smoke test is a Build-only operation.
+- All three subagents have `task: deny` (no recursive delegation). They are leaf nodes — they produce findings / results directly back to Build, which is the only agent that modifies files.
+
 ## Architecture
 
 The project uses a **feature-first architecture**.
