@@ -147,69 +147,69 @@ The handoff is the moment the agency takes ownership of the deployment. This che
 
 ### 4.1 Credentials / access ownership
 
-| Item | Owner | Access location | Renewal cadence |
-| --- | --- | --- | --- |
-| Hosting platform account | The agency | The platform's identity directory (or the implementer's if the agency has delegated) | When the agency owner changes or the implementer relationship ends |
-| Hosting platform billing | The agency | The platform's billing portal | Monthly / annual per the platform's billing cycle |
-| Domain registrar account | The agency | The registrar's identity directory | When the agency owner changes |
-| DNS provider access | The agency (or the operator) | The DNS provider's console | When the DNS provider changes |
-| TLS certificate (if managed outside the platform) | The agency (or the operator) | The certificate store | Per the certificate's validity period (90 days for Let's Encrypt, 1 year for many paid CAs) |
-| SMTP credentials (for the email adapter) | The agency | The agency's email provider | When the SMTP password rotates |
-| Webhook destination credentials (for the webhook adapter) | The agency | The platform-specific secret manager | When the webhook URL or secret changes |
-| Source-code repository access | The agency (or the implementer) | The Git host (GitHub, GitLab, etc.) | When the implementer relationship ends |
-| CI / CD secrets | The agency (or the implementer) | The CI / CD provider's secret store | When the agency owner changes |
+| Item                                                      | Owner                           | Access location                                                                      | Renewal cadence                                                                             |
+| --------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Hosting platform account                                  | The agency                      | The platform's identity directory (or the implementer's if the agency has delegated) | When the agency owner changes or the implementer relationship ends                          |
+| Hosting platform billing                                  | The agency                      | The platform's billing portal                                                        | Monthly / annual per the platform's billing cycle                                           |
+| Domain registrar account                                  | The agency                      | The registrar's identity directory                                                   | When the agency owner changes                                                               |
+| DNS provider access                                       | The agency (or the operator)    | The DNS provider's console                                                           | When the DNS provider changes                                                               |
+| TLS certificate (if managed outside the platform)         | The agency (or the operator)    | The certificate store                                                                | Per the certificate's validity period (90 days for Let's Encrypt, 1 year for many paid CAs) |
+| SMTP credentials (for the email adapter)                  | The agency                      | The agency's email provider                                                          | When the SMTP password rotates                                                              |
+| Webhook destination credentials (for the webhook adapter) | The agency                      | The platform-specific secret manager                                                 | When the webhook URL or secret changes                                                      |
+| Source-code repository access                             | The agency (or the implementer) | The Git host (GitHub, GitLab, etc.)                                                  | When the implementer relationship ends                                                      |
+| CI / CD secrets                                           | The agency (or the implementer) | The CI / CD provider's secret store                                                  | When the agency owner changes                                                               |
 
 ### 4.2 Domain and DNS
 
-| Item | Owner | Notes |
-| --- | --- | --- |
-| Domain registration | The agency | The agency owns the domain; the registry is the source of truth. |
-| Nameservers | The agency (or the operator) | The DNS provider's nameservers are set at the registrar. |
+| Item                  | Owner                        | Notes                                                                                                       |
+| --------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Domain registration   | The agency                   | The agency owns the domain; the registry is the source of truth.                                            |
+| Nameservers           | The agency (or the operator) | The DNS provider's nameservers are set at the registrar.                                                    |
 | Apex / `www.` records | The agency (or the operator) | The deploy's hostname (apex or `www.`) is an `A` / `AAAA` / `CNAME` record pointing to the platform's edge. |
-| `www.` redirect | The platform's edge | Configured at the edge; the template does not ship redirect logic. |
+| `www.` redirect       | The platform's edge          | Configured at the edge; the template does not ship redirect logic.                                          |
 
 ### 4.3 Deployment platform
 
-| Item | Owner | Notes |
-| --- | --- | --- |
-| Hosting platform account | The agency | The agency owns the account; the implementer may have a shared account during the engagement. |
-| Production deploy primitive | The operator | The operator owns the process manager, the port mapping, and the restart policy. |
-| Secrets store | The operator | The platform's secret manager is the source of truth for production env vars (the runtime env vars `NUXT_LEADS_*`, the data-source URLs, the per-tenant overrides). `.env` files are not used in production. |
-| Build artifact retention | The operator | The platform keeps the last N build artifacts (the default in most platforms is 5–10). The handoff confirms the retention policy. |
-| Rollback procedure | The operator | The 5-step rollback is in `docs/DEPLOYMENT.md` §11. The operator owns the previous-build promotion. |
+| Item                        | Owner        | Notes                                                                                                                                                                                                        |
+| --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Hosting platform account    | The agency   | The agency owns the account; the implementer may have a shared account during the engagement.                                                                                                                |
+| Production deploy primitive | The operator | The operator owns the process manager, the port mapping, and the restart policy.                                                                                                                             |
+| Secrets store               | The operator | The platform's secret manager is the source of truth for production env vars (the runtime env vars `NUXT_LEADS_*`, the data-source URLs, the per-tenant overrides). `.env` files are not used in production. |
+| Build artifact retention    | The operator | The platform keeps the last N build artifacts (the default in most platforms is 5–10). The handoff confirms the retention policy.                                                                            |
+| Rollback procedure          | The operator | The 5-step rollback is in `docs/DEPLOYMENT.md` §11. The operator owns the previous-build promotion.                                                                                                          |
 
 ### 4.4 Lead-delivery credentials
 
-| Item | Owner | Notes |
-| --- | --- | --- |
-| `NUXT_LEADS_ADAPTER` value | The agency | Set at deploy time. Default is `disabled`; the form is the placeholder UI until the agency is ready. |
-| `NUXT_LEADS_WEBHOOK_URL` (when `webhook`) | The agency | The agency-controlled endpoint URL. |
-| `NUXT_LEADS_WEBHOOK_SECRET` (when `webhook`) | The agency | 32+ character random string. The agency-side endpoint verifies the `X-Lead-Signature` header with the same secret. |
-| `NUXT_LEADS_SMTP_*` and `NUXT_LEADS_EMAIL_*` (when `email`) | The agency | The SMTP credentials and the `From:` / `To:` addresses. |
-| Webhook signature verification | The agency | The agency-side endpoint owns the verification logic. The reference pseudocode is in `docs/REBRANDING.md` §12.3. |
-| Lead retention policy | The agency | The template does not persist leads; the destination is the only place that sees the stamped shape. The agency owns the retention policy at the destination. |
+| Item                                                        | Owner      | Notes                                                                                                                                                        |
+| ----------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NUXT_LEADS_ADAPTER` value                                  | The agency | Set at deploy time. Default is `disabled`; the form is the placeholder UI until the agency is ready.                                                         |
+| `NUXT_LEADS_WEBHOOK_URL` (when `webhook`)                   | The agency | The agency-controlled endpoint URL.                                                                                                                          |
+| `NUXT_LEADS_WEBHOOK_SECRET` (when `webhook`)                | The agency | 32+ character random string. The agency-side endpoint verifies the `X-Lead-Signature` header with the same secret.                                           |
+| `NUXT_LEADS_SMTP_*` and `NUXT_LEADS_EMAIL_*` (when `email`) | The agency | The SMTP credentials and the `From:` / `To:` addresses.                                                                                                      |
+| Webhook signature verification                              | The agency | The agency-side endpoint owns the verification logic. The reference pseudocode is in `docs/REBRANDING.md` §12.3.                                             |
+| Lead retention policy                                       | The agency | The template does not persist leads; the destination is the only place that sees the stamped shape. The agency owns the retention policy at the destination. |
 
 ### 4.5 Analytics / monitoring ownership (if used)
 
-| Item | Owner | Notes |
-| --- | --- | --- |
-| Uptime monitor target | The operator | The monitor is configured against the safe GET routes `/` and `/sitemap.xml`. The template ships no monitor. |
-| Uptime monitor account | The agency | The agency owns the monitor account (or the operator's shared account). |
-| Analytics provider account | The agency | The agency owns the analytics account (Plausible, GA, Fathom, Matomo, etc.). |
-| Analytics destination URL | The agency | The agency's property id, GA measurement id, or equivalent. |
-| Error tracking account | The agency | The agency owns the Sentry / GlitchTip / similar account. |
-| Error tracking DSN | The operator | The DSN is configured at the deploy time. |
+| Item                       | Owner        | Notes                                                                                                        |
+| -------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------ |
+| Uptime monitor target      | The operator | The monitor is configured against the safe GET routes `/` and `/sitemap.xml`. The template ships no monitor. |
+| Uptime monitor account     | The agency   | The agency owns the monitor account (or the operator's shared account).                                      |
+| Analytics provider account | The agency   | The agency owns the analytics account (Plausible, GA, Fathom, Matomo, etc.).                                 |
+| Analytics destination URL  | The agency   | The agency's property id, GA measurement id, or equivalent.                                                  |
+| Error tracking account     | The agency   | The agency owns the Sentry / GlitchTip / similar account.                                                    |
+| Error tracking DSN         | The operator | The DSN is configured at the deploy time.                                                                    |
 
 ### 4.6 Source-code ownership and delivery expectations
 
-| Item | Owner | Notes |
-| --- | --- | --- |
-| Source-code repository | The agency | The agency owns the repository (or the implementer holds the canonical fork during the engagement). |
-| License | The implementer | The template's license is preserved; the agency's rebranded code is owned by the agency per the engagement contract. |
-| Build instructions | The repository | The README is the canonical source. The handoff confirms the implementer has updated the README to point at the agency's hostname / repo. |
-| Deployment instructions | The repository | `docs/DEPLOYMENT.md` is the canonical procedure. The handoff confirms the operator has read it. |
-| Test suite | The repository | The validation pipeline (`pnpm lint`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `git diff --check`) is the source of truth. |
-| Future update ownership | The agency | The agency owns the decision of who maintains the codebase after the handoff (the implementer, an internal team, a third-party operator). |
+| Item                    | Owner           | Notes                                                                                                                                     |
+| ----------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Source-code repository  | The agency      | The agency owns the repository (or the implementer holds the canonical fork during the engagement).                                       |
+| License                 | The implementer | The template's license is preserved; the agency's rebranded code is owned by the agency per the engagement contract.                      |
+| Build instructions      | The repository  | The README is the canonical source. The handoff confirms the implementer has updated the README to point at the agency's hostname / repo. |
+| Deployment instructions | The repository  | `docs/DEPLOYMENT.md` is the canonical procedure. The handoff confirms the operator has read it.                                           |
+| Test suite              | The repository  | The validation pipeline (`pnpm lint`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `git diff --check`) is the source of truth.             |
+| Future update ownership | The agency      | The agency owns the decision of who maintains the codebase after the handoff (the implementer, an internal team, a third-party operator). |
 
 ### 4.7 CMS access and ownership (when `DATA_SOURCE=cms` is in use)
 
@@ -226,18 +226,18 @@ The **long-term ownership model** is:
 - **The client only receives access to its own isolated CMS project.** The agency never grants access to other agencies' CMS projects, even inside a multi-tenant deployment.
 - **Operator / developer access after handoff is optional and depends on the maintenance agreement.** A project-based engagement releases all roles at the handoff. An ongoing-maintenance contract may keep the operator on a developer or admin role appropriate to the agreement; the handoff documents who holds which role and on what schedule the role is renewed. Removing operator access is **not** required when ongoing maintenance is contracted.
 
-| Item | Owner | Notes |
-| --- | --- | --- |
-| CMS account (the company's billing account) | The agency | The agency owns the account. The implementer is a member, not the owner. |
-| CMS project / workspace | The agency | One client = one agency = one isolated CMS project. The project's name matches the agency's `agency.id`. |
-| CMS admin role (at least one) | The agency | The agency owns the only-admin access after handoff. The implementer holds an admin role during the build and transfers it. The handoff confirms at least one agency-side administrator remains. |
-| CMS editor role | The agency | The agency decides who in their team can edit content. The implementer does not need an editor role in production. |
-| Developer / read-only role (post-handoff) | The agency (with optional operator) | Project-based engagements release all roles at the handoff. Ongoing-maintenance contracts may keep the operator on a developer role appropriate to the agreement; the handoff documents who holds which role and on what schedule it is renewed. |
-| Image / media store | The agency | The agency's photography is uploaded to the CMS project's media store (or the agency provides an external CDN URL). The implementer does not keep copies of the licensed assets on personal accounts. |
-| Content migration responsibility | The agency (with optional operator) | The handoff documents who is responsible for the next migration: the agency (typical for content-only updates) or the operator (typical for schema changes). The per-feature Zod schema is the boundary schema. |
-| Preview / draft endpoint | The agency (with optional operator) | The current generic HTTP/JSON driver points at the production endpoint. A preview / draft endpoint is a future enhancement; the handoff documents whether the agency has one and how it is exposed. |
-| CMS provider-specific driver | The agency (with optional operator) | The current integration is the generic HTTP/JSON driver. A provider-specific driver (Sanity, Contentful, Strapi) is a future task; the handoff documents whether the agency needs one and which provider is the target. |
-| CMS provider credentials | The agency | The CMS provider's credentials (admin password, API token, etc.) are owned by the agency. The operator does not need them in production today — the generic HTTP/JSON driver does not consume them. When a future provider-specific driver ships, server-side credentials are stored in the platform's secret manager and never exposed to the client bundle. The implementer needs the credentials during the build and transfers them. |
+| Item                                        | Owner                               | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CMS account (the company's billing account) | The agency                          | The agency owns the account. The implementer is a member, not the owner.                                                                                                                                                                                                                                                                                                                                                                 |
+| CMS project / workspace                     | The agency                          | One client = one agency = one isolated CMS project. The project's name matches the agency's `agency.id`.                                                                                                                                                                                                                                                                                                                                 |
+| CMS admin role (at least one)               | The agency                          | The agency owns the only-admin access after handoff. The implementer holds an admin role during the build and transfers it. The handoff confirms at least one agency-side administrator remains.                                                                                                                                                                                                                                         |
+| CMS editor role                             | The agency                          | The agency decides who in their team can edit content. The implementer does not need an editor role in production.                                                                                                                                                                                                                                                                                                                       |
+| Developer / read-only role (post-handoff)   | The agency (with optional operator) | Project-based engagements release all roles at the handoff. Ongoing-maintenance contracts may keep the operator on a developer role appropriate to the agreement; the handoff documents who holds which role and on what schedule it is renewed.                                                                                                                                                                                         |
+| Image / media store                         | The agency                          | The agency's photography is uploaded to the CMS project's media store (or the agency provides an external CDN URL). The implementer does not keep copies of the licensed assets on personal accounts.                                                                                                                                                                                                                                    |
+| Content migration responsibility            | The agency (with optional operator) | The handoff documents who is responsible for the next migration: the agency (typical for content-only updates) or the operator (typical for schema changes). The per-feature Zod schema is the boundary schema.                                                                                                                                                                                                                          |
+| Preview / draft endpoint                    | The agency (with optional operator) | The current generic HTTP/JSON driver points at the production endpoint. A preview / draft endpoint is a future enhancement; the handoff documents whether the agency has one and how it is exposed.                                                                                                                                                                                                                                      |
+| CMS provider-specific driver                | The agency (with optional operator) | The current integration is the generic HTTP/JSON driver. A provider-specific driver (Sanity, Contentful, Strapi) is a future task; the handoff documents whether the agency needs one and which provider is the target.                                                                                                                                                                                                                  |
+| CMS provider credentials                    | The agency                          | The CMS provider's credentials (admin password, API token, etc.) are owned by the agency. The operator does not need them in production today — the generic HTTP/JSON driver does not consume them. When a future provider-specific driver ships, server-side credentials are stored in the platform's secret manager and never exposed to the client bundle. The implementer needs the credentials during the build and transfers them. |
 
 ## 5. Environment-variable template
 
@@ -245,27 +245,27 @@ The repository does not ship a `.env.example` by default. The `.gitignore` alrea
 
 The template the implementer should use is the one in the repository's `.env.example` (the file is committed once the template is generic; the sample below is the canonical placeholder shape). All values are non-secret; the secrets (the webhook signing key, the SMTP password) are intentionally blank with a comment that names the field.
 
-| Variable | Sample placeholder | Purpose |
-| --- | --- | --- |
-| `NUXT_PUBLIC_SITE_URL` | `https://example.test` | The canonical site URL. Build-time + runtime. The real default is empty; the placeholder is the production shape. |
-| `NUXT_PROPERTIES_DATA_SOURCE` | `static` | `static` / `api` / `cms`. The real default is `static`. |
-| `NUXT_PROPERTIES_API_URL` | `# https://api.example.test/properties` | Required when `kind=api`. Real default is empty. |
-| `NUXT_PROPERTIES_API_TIMEOUT_MS` | `10000` | Optional. The real default is `10000` ms (10 seconds). |
-| `NUXT_PROPERTIES_CMS_URL` | `# https://cms.example.test/properties` | Required when `kind=cms`. Real default is empty. |
-| `NUXT_PROPERTIES_CMS_TIMEOUT_MS` | `10000` | Optional. The real default is `10000` ms (10 seconds). |
-| `NUXT_AGENTS_*` | same pattern as properties | Per-feature data source. |
-| `NUXT_DEVELOPMENTS_*` | same pattern as properties | Per-feature data source. |
-| `NUXT_LEADS_ADAPTER` | `disabled` | `disabled` / `log` / `webhook` / `email`. Real default is `disabled`. |
-| `NUXT_LEADS_WEBHOOK_URL` | (blank — secret) | When `webhook`. |
-| `NUXT_LEADS_WEBHOOK_SECRET` | (blank — secret) | When `webhook`. |
-| `NUXT_LEADS_SMTP_HOST` | `smtp.example.test` | When `email`. |
-| `NUXT_LEADS_SMTP_PORT` | `587` | When `email`. Required as a positive integer. |
-| `NUXT_LEADS_SMTP_SECURE` | (blank — real default) | When `email`. Real default is empty (= plaintext SMTP). The string `"true"` forces TLS; any other value (including empty, `"false"`, `"1"`) means plaintext. The adapter treats STARTTLS (port 587 + `NUXT_LEADS_SMTP_SECURE` unset) as the most common production setup. |
-| `NUXT_LEADS_SMTP_USER` | `leads@example.test` | When `email`. |
-| `NUXT_LEADS_SMTP_PASSWORD` | (blank — secret) | When `email`. |
-| `NUXT_LEADS_EMAIL_FROM` | `leads@example.test` | When `email`. |
-| `NUXT_LEADS_EMAIL_TO` | `inbox@example.test` | When `email`. |
-| `NUXT_PUBLIC_SITE_URL__<TENANT_ID>` | `# https://tenant.example.test` | Multi-tenant override. Real default is empty (the global `NUXT_PUBLIC_SITE_URL` is the fallback). |
+| Variable                            | Sample placeholder                      | Purpose                                                                                                                                                                                                                                                                   |
+| ----------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NUXT_PUBLIC_SITE_URL`              | `https://example.test`                  | The canonical site URL. Build-time + runtime. The real default is empty; the placeholder is the production shape.                                                                                                                                                         |
+| `NUXT_PROPERTIES_DATA_SOURCE`       | `static`                                | `static` / `api` / `cms`. The real default is `static`.                                                                                                                                                                                                                   |
+| `NUXT_PROPERTIES_API_URL`           | `# https://api.example.test/properties` | Required when `kind=api`. Real default is empty.                                                                                                                                                                                                                          |
+| `NUXT_PROPERTIES_API_TIMEOUT_MS`    | `10000`                                 | Optional. The real default is `10000` ms (10 seconds).                                                                                                                                                                                                                    |
+| `NUXT_PROPERTIES_CMS_URL`           | `# https://cms.example.test/properties` | Required when `kind=cms`. Real default is empty.                                                                                                                                                                                                                          |
+| `NUXT_PROPERTIES_CMS_TIMEOUT_MS`    | `10000`                                 | Optional. The real default is `10000` ms (10 seconds).                                                                                                                                                                                                                    |
+| `NUXT_AGENTS_*`                     | same pattern as properties              | Per-feature data source.                                                                                                                                                                                                                                                  |
+| `NUXT_DEVELOPMENTS_*`               | same pattern as properties              | Per-feature data source.                                                                                                                                                                                                                                                  |
+| `NUXT_LEADS_ADAPTER`                | `disabled`                              | `disabled` / `log` / `webhook` / `email`. Real default is `disabled`.                                                                                                                                                                                                     |
+| `NUXT_LEADS_WEBHOOK_URL`            | (blank — secret)                        | When `webhook`.                                                                                                                                                                                                                                                           |
+| `NUXT_LEADS_WEBHOOK_SECRET`         | (blank — secret)                        | When `webhook`.                                                                                                                                                                                                                                                           |
+| `NUXT_LEADS_SMTP_HOST`              | `smtp.example.test`                     | When `email`.                                                                                                                                                                                                                                                             |
+| `NUXT_LEADS_SMTP_PORT`              | `587`                                   | When `email`. Required as a positive integer.                                                                                                                                                                                                                             |
+| `NUXT_LEADS_SMTP_SECURE`            | (blank — real default)                  | When `email`. Real default is empty (= plaintext SMTP). The string `"true"` forces TLS; any other value (including empty, `"false"`, `"1"`) means plaintext. The adapter treats STARTTLS (port 587 + `NUXT_LEADS_SMTP_SECURE` unset) as the most common production setup. |
+| `NUXT_LEADS_SMTP_USER`              | `leads@example.test`                    | When `email`.                                                                                                                                                                                                                                                             |
+| `NUXT_LEADS_SMTP_PASSWORD`          | (blank — secret)                        | When `email`.                                                                                                                                                                                                                                                             |
+| `NUXT_LEADS_EMAIL_FROM`             | `leads@example.test`                    | When `email`.                                                                                                                                                                                                                                                             |
+| `NUXT_LEADS_EMAIL_TO`               | `inbox@example.test`                    | When `email`.                                                                                                                                                                                                                                                             |
+| `NUXT_PUBLIC_SITE_URL__<TENANT_ID>` | `# https://tenant.example.test`         | Multi-tenant override. Real default is empty (the global `NUXT_PUBLIC_SITE_URL` is the fallback).                                                                                                                                                                         |
 
 The agency-specific values are NOT in `.env.example`. They are filled in by the operator at deploy time through the platform's secret manager. The implementer's `.env.example` is a documentation artifact that names the variables the deploy needs; the operator's secret manager is the source of truth.
 
@@ -279,20 +279,20 @@ The fictional agency is **not** a real client. Every name, address, phone, email
 
 The dry-run modifies (or creates) the following files. None of the changes edit generic application code; every change is bounded to either data, theme tokens, agency config, or the test fixtures that pin the bundled sample catalog.
 
-| File | Action | Classification |
-| --- | --- | --- |
-| `app/config/agencies/bahia-del-mar.agency.ts` | **Created.** The fictional agency's identity (name, slogan, contact, address, social URLs, currency, locale, theme id, modules, leads). | Configuration only |
-| `app/config/agencies/registry.ts` | **Modified.** Imports the new agency and registers a new entry under id `bahia-del-mar` with the production hostnames (`bahia-del-mar.test`, `www.bahia-del-mar.test`). | Configuration only |
-| `app/config/site.config.ts` | **Modified.** Imports the new agency as the active fallback (so `pnpm generate` and non-server-rendered contexts render the Bahía del Mar identity). | Configuration only |
-| `app/themes/bahia.theme.ts` | **Created.** The fictional agency's brand palette (deep ocean-blue primary, warm sand-beige secondary, coral-sunset accent), font stack, radius and shadow tokens. | Configuration only |
-| `app/themes/index.ts` | **Modified.** Registers the new theme in the theme registry. | Configuration only |
-| `app/features/properties/data/properties.ts` | **Modified.** Replaces the six-shipped sample properties with five fictional Pacific-coast listings (MXN prices, Nayarit locations, Spanish copy). | Content replacement |
-| `app/features/agents/data/agents.ts` | **Modified.** Replaces the four-shipped sample agents with three fictional team members (Spanish copy, agency contact phone). | Content replacement |
+| File                                             | Action                                                                                                                                                                                                                                                                                                    | Classification      |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `app/config/agencies/bahia-del-mar.agency.ts`    | **Created.** The fictional agency's identity (name, slogan, contact, address, social URLs, currency, locale, theme id, modules, leads).                                                                                                                                                                   | Configuration only  |
+| `app/config/agencies/registry.ts`                | **Modified.** Imports the new agency and registers a new entry under id `bahia-del-mar` with the production hostnames (`bahia-del-mar.test`, `www.bahia-del-mar.test`).                                                                                                                                   | Configuration only  |
+| `app/config/site.config.ts`                      | **Modified.** Imports the new agency as the active fallback (so `pnpm generate` and non-server-rendered contexts render the Bahía del Mar identity).                                                                                                                                                      | Configuration only  |
+| `app/themes/bahia.theme.ts`                      | **Created.** The fictional agency's brand palette (deep ocean-blue primary, warm sand-beige secondary, coral-sunset accent), font stack, radius and shadow tokens.                                                                                                                                        | Configuration only  |
+| `app/themes/index.ts`                            | **Modified.** Registers the new theme in the theme registry.                                                                                                                                                                                                                                              | Configuration only  |
+| `app/features/properties/data/properties.ts`     | **Modified.** Replaces the six-shipped sample properties with five fictional Pacific-coast listings (MXN prices, Nayarit locations, Spanish copy).                                                                                                                                                        | Content replacement |
+| `app/features/agents/data/agents.ts`             | **Modified.** Replaces the four-shipped sample agents with three fictional team members (Spanish copy, agency contact phone).                                                                                                                                                                             | Content replacement |
 | `app/features/developments/data/developments.ts` | **Modified.** Replaces the four-shipped sample developments with two fictional Pacific-coast developments (one pre-sale, one under construction, MXN prices); one is set to `featured: false` so the `getFeatured` test (which asserts the catalog has at least one unfeatured record) continues to pass. | Content replacement |
-| `app/features/home/data/stats.ts` | **Modified.** Replaces the four-shipped home stats with agency-specific placeholder values (10+ years, 450+ properties, 1,800+ clients, 8+ areas). | Content replacement |
-| `app/features/home/data/locations.ts` | **Modified.** Replaces the four-shipped home locations with four fictional Pacific-coast locations (Sayulita, San Pancho, Punta Mita, Bucerías). | Content replacement |
-| `app/features/home/data/testimonials.ts` | **Modified.** Replaces the three-shipped home testimonials with three fictional client quotes in Spanish. | Content replacement |
-| `app/features/developments/data/developments.ts` | **Modified.** Sets one of the two developments to `featured: false` so the `getFeatured` test (which asserts the catalog has at least one unfeatured record) continues to pass. | Content replacement |
+| `app/features/home/data/stats.ts`                | **Modified.** Replaces the four-shipped home stats with agency-specific placeholder values (10+ years, 450+ properties, 1,800+ clients, 8+ areas).                                                                                                                                                        | Content replacement |
+| `app/features/home/data/locations.ts`            | **Modified.** Replaces the four-shipped home locations with four fictional Pacific-coast locations (Sayulita, San Pancho, Punta Mita, Bucerías).                                                                                                                                                          | Content replacement |
+| `app/features/home/data/testimonials.ts`         | **Modified.** Replaces the three-shipped home testimonials with three fictional client quotes in Spanish.                                                                                                                                                                                                 | Content replacement |
+| `app/features/developments/data/developments.ts` | **Modified.** Sets one of the two developments to `featured: false` so the `getFeatured` test (which asserts the catalog has at least one unfeatured record) continues to pass.                                                                                                                           | Content replacement |
 
 ### 6.2 Rebrand dry-run — classification of every step
 
@@ -321,50 +321,45 @@ The only assertions that still require rebrand attention are the data-shape cont
 The complete rebranding workflow, in order, from a clean clone to a branded deployment:
 
 **Step 1 — Configuration (no code change).**
+
+There are **two distinct agency surfaces** in the rebranding workflow, and they are **not interchangeable**:
+
+- `app/config/site.config.ts` exports the **`siteConfig` constant** that is bundled into the **fallback** seed value for `useState('site-config')`. This constant is what a `pnpm generate` static export, a client-only navigation, or a unit test that bypasses the Nitro server sees.
+- `app/config/agencies/registry.ts` exports the **`agencyRegistry`** — the **runtime** tenant selector. On every Nitro request the server-only plugin `app/plugins/tenancy.server.ts` reads `useRequestURL().hostname`, calls `selectAgencyByHost(registry, host)`, and seeds `useState('site-config')` with the entry's pre-resolved `SiteConfig`. A Node / SSR deployment selects the active agency from the **request hostname** through this resolver — **not** through the `site.config.ts` import.
+
+Changing `app/config/site.config.ts` alone does **not** select the agency for an SSR request when the tenancy plugin runs. The static-export path and the unit-test path read the `siteConfig` constant; the SSR path reads the `agencyRegistry` and the request hostname. Both paths must agree on the same agency for a clean deployment.
+
+With that distinction explicit, the configuration steps are:
+
 1. Create `app/config/agencies/<your-agency>.agency.ts` (copy `default.agency.ts` as a template; fill in every field).
-2. Add a new entry to the `agencyRegistry` in `app/config/agencies/registry.ts` with the agency's production hostnames (`example.com`, `www.example.com`).
-3. Swap the active agency in `app/config/site.config.ts` (the import from `default.agency` to your new agency).
+2. Add a new entry to the `agencyRegistry` in `app/config/agencies/registry.ts` with the agency's production hostnames (`example.com`, `www.example.com`). This is the **runtime** entry — a Node / SSR deployment reads it per request.
+3. Update `app/config/site.config.ts` so its `siteConfig` constant uses the new agency as the **fallback** (one-line import swap from `default.agency` to your new agency). This is the surface that `pnpm generate` and any non-server-rendered context consume; it must agree with the registry's default-tenant entry so the static export and the SSR rendering show the same agency.
 4. Create `app/themes/<your-theme>.theme.ts` (copy `default.theme.ts`; fill in colors / fonts / radii / shadows / layout).
 5. Register the theme in `app/themes/index.ts` (1 import + 1 registry entry).
 6. Set `agency.theme` to the new theme id in the agency config.
 
-**Step 2 — Asset replacement (no code change).**
-7. Replace `public/images/logo.svg` and `public/favicon.ico` with the agency's real assets.
-8. Replace the placeholder assets under `public/images/home/`, `public/images/properties/`, `public/images/agents/`, `public/images/developments/`, and `public/images/locations/` with the agency's real photography. Keep file names stable when possible; if a new filename is required, update the corresponding data file in Step 3.
-9. The full path map is in `docs/REBRANDING.md` §4.
+**Step 1a — Hostname configuration (client onboarding, no code change).**
 
-**Step 3 — Content replacement (no code change).**
-10. Replace `app/features/properties/data/properties.ts` with the agency's property catalog.
-11. Replace `app/features/agents/data/agents.ts` with the agency's team roster.
-12. Replace `app/features/developments/data/developments.ts` with the agency's development portfolio.
-13. Replace `app/features/home/data/{stats,locations,testimonials}.ts` with the agency's home-page content.
-14. Ensure each record passes Zod validation at module load — the runtime boundary schemas (`app/features/*/schemas/*.schema.ts`) reject malformed entries and the build fails fast. See `docs/DATA_MODELS.md` for the exact field names and types.
-15. (Optional) replace the i18n strings in `i18n/locales/en.json` and `i18n/locales/es.json`. The shipped keys are reusable labels (nav, common, footer, seo, etc.) that do not need to change for a rebrand; an agency that wants different copy edits the same keys in both locale files.
+Hostname configuration is a separate, **explicit** step in the client onboarding workflow. The implementer collects the production hostnames from the agency (see `§2.2 "Domain / hostname ownership"`) before the deployment, and the rebrand commits the matching `hosts` list to the registry entry. The development hostname is a local-test concern; the production hostnames are a deployment concern. Both belong in the same registry entry.
+
+1. **Register the agency in `agencyRegistry`.** The new entry's `id` is the tenant id (unique across the registry). The id is the same value the implementer will use later for the per-tenant env-var dispatch convention (`NUXT_PUBLIC_SITE_URL__<TENANT_ID>`).
+2. **Configure the production hostnames.** Add the agency's production apex and `www.` subdomain to the entry's `hosts` array (`example.com`, `www.example.com`). The hostname is the lookup key the per-request resolver matches; the operator's DNS is the source of truth for which hostname resolves to the deployment.
+3. **Configure an appropriate development hostname for local testing.** Add a development hostname (`localhost`, `127.0.0.1`, or a project-specific hostname like `bahia-del-mar.local`) to the entry's `hosts` array. This is what `pnpm dev` and `pnpm preview` use; without it, a request to the development hostname resolves to the registry's `default` tenant (the documented single-agency fallback). The development hostname is **not** a recommended production configuration; it is a local-test convenience.
+4. **Verify the resolved agency id and theme id match the expected tenant.** Hit the dev server with the development hostname (e.g. `curl -H 'Host: <dev-hostname>' http://localhost:3000/`) and confirm the rendered HTML carries the new agency's name and brand colors. The runtime resolver is `app/plugins/tenancy.server.ts` → `app/config/agencies/registry.ts` → `selectAgencyByHost(registry, host)`; the resolved `SiteConfig.agency.id` and `SiteConfig.theme.id` are the canonical tenant identifiers. A request to a hostname that does not match any `hosts` list resolves to the `default` tenant via the fallback (see `docs/MULTI_TENANT.md` §5 "Unknown-host fallback").
+
+**Step 2 — Asset replacement (no code change).** 7. Replace `public/images/logo.svg` and `public/favicon.ico` with the agency's real assets. 8. Replace the placeholder assets under `public/images/home/`, `public/images/properties/`, `public/images/agents/`, `public/images/developments/`, and `public/images/locations/` with the agency's real photography. Keep file names stable when possible; if a new filename is required, update the corresponding data file in Step 3. 9. The full path map is in `docs/REBRANDING.md` §4.
+
+**Step 3 — Content replacement (no code change).** 10. Replace `app/features/properties/data/properties.ts` with the agency's property catalog. 11. Replace `app/features/agents/data/agents.ts` with the agency's team roster. 12. Replace `app/features/developments/data/developments.ts` with the agency's development portfolio. 13. Replace `app/features/home/data/{stats,locations,testimonials}.ts` with the agency's home-page content. 14. Ensure each record passes Zod validation at module load — the runtime boundary schemas (`app/features/*/schemas/*.schema.ts`) reject malformed entries and the build fails fast. See `docs/DATA_MODELS.md` for the exact field names and types. 15. (Optional) replace the i18n strings in `i18n/locales/en.json` and `i18n/locales/es.json`. The shipped keys are reusable labels (nav, common, footer, seo, etc.) that do not need to change for a rebrand; an agency that wants different copy edits the same keys in both locale files.
 
 > **No golden test updates are required on a rebrand.** The seven test files that previously referenced hardcoded catalog slugs (`server/api/{properties,agents,developments}.get.test.ts`, `server/utils/{properties,agents,developments}.test.ts`, `server/routes/sitemap.xml.test.ts`, `app/features/properties/services/properties.service.test.ts`) now derive their assertion values from the imported sample catalog at runtime, so the assertions track the new agency's slugs and city names automatically.
 
-**Step 4 — Local validation.**
-17. `pnpm install --frozen-lockfile` — exit 0.
-18. `pnpm test` — 1230 / 1230 across 47 files (the unit suite covers the lead-capture pipeline, all four delivery adapters, the data-source foundation, the agency schema, the property / agent / development services, the i18n contract, the multi-tenant resolver, the JSON-LD builder, etc.).
-19. `pnpm lint` — 0 errors / 0 warnings.
-20. `pnpm build` — completes.
-21. `pnpm preview` + a manual walk through `/`, `/properties`, `/properties/<slug>`, `/agents`, `/agents/<slug>`, `/developments`, `/developments/<slug>`, `/contact`, `/about`. Confirm the new agency's name, logo, slogan, contact info, and brand colors render correctly.
+**Step 4 — Local validation.** 17. `pnpm install --frozen-lockfile` — exit 0. 18. `pnpm test` — 1230 / 1230 across 47 files (the unit suite covers the lead-capture pipeline, all four delivery adapters, the data-source foundation, the agency schema, the property / agent / development services, the i18n contract, the multi-tenant resolver, the JSON-LD builder, etc.). 19. `pnpm lint` — 0 errors / 0 warnings. 20. `pnpm build` — completes. 21. `pnpm preview` + a manual walk through `/`, `/properties`, `/properties/<slug>`, `/agents`, `/agents/<slug>`, `/developments`, `/developments/<slug>`, `/contact`, `/about`. Confirm the new agency's name, logo, slogan, contact info, and brand colors render correctly.
 
-**Step 5 — CMS setup (only if a feature uses `cms` instead of `static`).**
-22. Follow `docs/SANITY_OPERATIONS.md` for Sanity, or `docs/CLIENT_ONBOARDING.md` §2.1 (CMS subsection) for the generic HTTP/JSON driver or another provider.
-23. Set the per-feature `NUXT_<FEATURE>_DATA_SOURCE=cms` + `NUXT_<FEATURE>_CMS_PROVIDER` env vars on the deployment's secret manager.
-24. Set the shared CMS env vars (`NUXT_SANITY_*` for Sanity; `NUXT_<FEATURE>_CMS_URL` for the generic HTTP/JSON driver).
-25. Run the one-time validation procedure (`docs/SANITY_VALIDATION.md` for Sanity; the manual `curl https://<host>/api/properties` smoke check for the generic driver).
+**Step 5 — CMS setup (only if a feature uses `cms` instead of `static`).** 22. Follow `docs/SANITY_OPERATIONS.md` for Sanity, or `docs/CLIENT_ONBOARDING.md` §2.1 (CMS subsection) for the generic HTTP/JSON driver or another provider. 23. Set the per-feature `NUXT_<FEATURE>_DATA_SOURCE=cms` + `NUXT_<FEATURE>_CMS_PROVIDER` env vars on the deployment's secret manager. 24. Set the shared CMS env vars (`NUXT_SANITY_*` for Sanity; `NUXT_<FEATURE>_CMS_URL` for the generic HTTP/JSON driver). 25. Run the one-time validation procedure (`docs/SANITY_VALIDATION.md` for Sanity; the manual `curl https://<host>/api/properties` smoke check for the generic driver).
 
-**Step 6 — Deployment.**
-26. Set `NUXT_PUBLIC_SITE_URL` to the agency's real hostname on the deployment's secret manager. Required for the sitemap, robots.txt, canonical links, and JSON-LD.
-27. Set the lead-delivery env vars (`NUXT_LEADS_ADAPTER` + the matching `NUXT_LEADS_*`) if `agency.leads.enabled` is `true`.
-28. Set the per-tenant overrides (`NUXT_PUBLIC_SITE_URL__<TENANT_ID>`, `NUXT_LEADS_<KEY>__<TENANT_ID>`) for a multi-tenant deploy.
-29. Follow `docs/DEPLOYMENT.md` for the 8-step deployment flow, the static vs Node/Nitro decision, the post-deploy smoke checks, and the rollback procedure.
+**Step 6 — Deployment.** 26. Set `NUXT_PUBLIC_SITE_URL` to the agency's real hostname on the deployment's secret manager. Required for the sitemap, robots.txt, canonical links, and JSON-LD. 27. Set the lead-delivery env vars (`NUXT_LEADS_ADAPTER` + the matching `NUXT_LEADS_*`) if `agency.leads.enabled` is `true`. 28. Set the per-tenant overrides (`NUXT_PUBLIC_SITE_URL__<TENANT_ID>`, `NUXT_LEADS_<KEY>__<TENANT_ID>`) for a multi-tenant deploy. 29. Follow `docs/DEPLOYMENT.md` for the 8-step deployment flow, the static vs Node/Nitro decision, the post-deploy smoke checks, and the rollback procedure.
 
-**Step 7 — Handoff.**
-30. Follow `docs/CLIENT_ONBOARDING.md` §4 for the credentials / access ownership table, the domain/DNS table, the deployment platform table, the lead-delivery credentials table, and the analytics / monitoring table.
-31. For a CMS-driven rebrand, follow `docs/SANITY_OPERATIONS.md` §8 for the Sanity-side end-of-contract handoff (operator access removal, source-code access conditional on the commercial agreement).
+**Step 7 — Handoff.** 30. Follow `docs/CLIENT_ONBOARDING.md` §4 for the credentials / access ownership table, the domain/DNS table, the deployment platform table, the lead-delivery credentials table, and the analytics / monitoring table. 31. For a CMS-driven rebrand, follow `docs/SANITY_OPERATIONS.md` §8 for the Sanity-side end-of-contract handoff (operator access removal, source-code access conditional on the commercial agreement).
 
 ### 6.5 Rebrand dry-run — validation results
 
@@ -377,6 +372,29 @@ The dry-run validates clean at every step:
 - `git diff --check` — exit 0.
 
 The friction surface is bounded to the same six data files + six configuration / theme files; no test fixture updates are required. A future rebrand (Task 124 decoupling follow-up) is bounded to **data + theme + agency config + assets + deploy config** — the test suite is decoupled from the bundled sample catalog.
+
+#### 6.5.1 Dry-run hostname / tenant-resolution verification (Task 123 follow-up)
+
+The original Task 123 dry-run swapped `site.config.ts` to the Bahía del Mar fallback and registered the new entry in `agencyRegistry` with the production hostnames `bahia-del-mar.test` and `www.bahia-del-mar.test`. The first local validation pass against `pnpm dev` / `pnpm preview` on `localhost:3000` did **not** render the Bahía theme; the rendered agency was the registry's `default` tenant. The discrepancy was investigated through the runtime resolver and recorded as follows:
+
+- **Initial state.** A request to `localhost:3000` (and to `localhost:3000` with no `Host` override) was normalized to `localhost`, walked the registry's `hosts` lists, and resolved to the `default` tenant via `selectAgencyByHost`'s fallback. The `default` tenant's `agency.theme` is `'default'`, so the bundled default palette rendered. The Bahía del Mar identity was correct in the static `siteConfig` constant but invisible to the SSR request because the SSR path reads the `agencyRegistry` + the request hostname, not the `site.config.ts` import.
+- **Temporary dry-run configuration.** `localhost` was added to the Bahía del Mar entry's `hosts` list as a **temporary dry-run-only** mapping (alongside the production `bahia-del-mar.test` and `www.bahia-del-mar.test`). This is the local-test convenience described in `Step 1a` §3.
+- **Re-test.** With the temporary mapping in place, the same `localhost:3000` request resolved to the `bahia-del-mar` entry; the pre-resolved `SiteConfig.theme.id` was `'bahia'`; the rendered HTML carried the Bahía identity (name, slogan, brand colors, MXN currency, metric measurement, Spanish locale). Removing the temporary `localhost` mapping and restoring the registry to its production state caused the same request to resolve back to the `default` tenant.
+- **Conclusion.** The theme system is **working**: the same theme token resolution path that renders the default theme on the default tenant also renders the Bahía theme on the Bahía tenant when the per-request resolver selects the right entry. The original issue was **not** a theme-resolution bug. The issue was **tenant hostname selection** — the `agencyRegistry`'s `hosts` list for the Bahía entry did not include `localhost`, so the per-request resolver fell through to the `default` tenant. The fix is configuration (add the development hostname to the registry entry per `Step 1a` §3), not code.
+- **Important.** The `localhost` mapping is **temporary dry-run configuration**, not a recommended production configuration. A real first-client rebrand registers the agency's production hostnames only; a development hostname (if used) belongs in the operator's local environment or in a project-specific development registry, not in the production registry. The production registry continues to ship with `localhost` absent from every tenant's `hosts` list, so an out-of-the-box `pnpm dev` on `localhost:3000` resolves to the `default` tenant — the documented single-agency behavior is preserved.
+
+#### 6.5.2 Step-by-step hostname / tenant-resolution dry-run sequence
+
+For reproducibility, the dry-run followed this exact sequence:
+
+1. `pnpm dev` on `localhost:3000` with the registry shipping the production state (no `localhost` mapping) — request to `localhost` resolves to `default`, default theme renders.
+2. Edit `app/config/agencies/registry.ts`: add `localhost` to the `bahia-del-mar` entry's `hosts` array (temporary, dry-run-only).
+3. Re-test `pnpm dev` on `localhost:3000` — request to `localhost` resolves to `bahia-del-mar`, Bahía theme renders.
+4. Revert `app/config/agencies/registry.ts` to the production state (no `localhost` mapping) — request to `localhost` resolves back to `default`, default theme renders.
+5. Run `pnpm test` — 1230 / 1230 across 47 files (no test changes; the registry's hostname tests in `app/config/agencies/registry.test.ts` cover the fallback path byte-identically).
+6. Run `pnpm lint` — 0 errors / 0 warnings.
+7. Run `pnpm build` — completes.
+8. Run `git diff --check` — exit 0.
 
 ### 6.6 Rebrand dry-run — repeatability of the workflow
 
