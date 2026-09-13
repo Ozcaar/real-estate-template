@@ -157,6 +157,204 @@ v1.0.0 is released. v1.1.0 is released (tag `v1.1.0` on the `feature/lead-captur
 
 Future follow-up work lives in Section 6 — Deferred Work.
 
+## 5b. v1.3 Planning — Prioritized Backlog
+
+This section is the v1.3 prioritization that closes the gap between the v1.2.0 release-prep and the v1.3 first-task decision. It was produced by an Explore-led audit of `docs/ROADMAP.md` §5 / §6, `docs/RELEASE_NOTES_v1.2.md` "Known limitations", `docs/CLIENT_ONBOARDING.md` §2.3 + §4, `docs/COMMERCIAL_DELIVERY.md` §3.10 + §9 / §10, `docs/SANITY_OPERATIONS.md` §6 / §7 + body, and `docs/CMS_EVALUATION.md`, consolidated into the meaningful candidates below. The full audit inventory (29 duplicate clusters, 9 stale mentions, 11 already-completed items still appearing in the backlog) is the work product of this prioritization; only the consolidated surface is recorded here.
+
+### 5b.1 Backlog candidates (consolidated)
+
+The audit surfaced ~52 candidate items across `docs/`. The following consolidation removes the duplicates and the already-completed items, leaving the meaningful candidates grouped by the dimension the work addresses.
+
+#### Client onboarding
+
+1. **Client Project Bootstrap Strategy.** A reproducible procedure (CLI / script + docs) that automates the Bahía del Mar dry-run (Task 123) into a real `pnpm bootstrap:client --id=<tenant>` flow. Captures agency identity, generates the agency config file, scaffolds the theme, registers the tenant in `agencyRegistry`, replaces the placeholder sample data, selects the lead adapter, and runs the validation pipeline (`pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm build && pnpm test:e2e`). The Task 123 dry-run measured the friction surface; this task closes the loop by making the friction zero for the operator.
+2. **Onboarding questionnaire template** (Googledoc / Notion / Typeform). An operator-facing form that mirrors `docs/CLIENT_ONBOARDING.md` §2.1 + `docs/COMMERCIAL_DELIVERY.md` §3. The form is the agency-side intake; the operator walks the form with the agency owner during the kick-off. Implementation: a single `docs/ONBOARDING_QUESTIONNAIRE.md` file with the question set + the canonical mapping to `agency.{name,contact,…}` fields.
+
+#### Production reliability
+
+3. **Production multi-tenant deployment hardening.** The v1.1.0 M16 / M19 / M23 / M24 minimal foundation is shipped; the production-grade follow-ups (registry persistence from a database / JSON file / external API, env-var indirection via `NUXT_TENANT_REGISTRY_URL`, per-tenant runtime overrides for currency + locale + lead destination, an admin / debug endpoint, IPv6 / IDN / IDNA hostname normalization) remain deferred.
+4. **Sanity Studio webhooks → CI rebuild trigger.** A webhook endpoint at `server/api/webhooks/sanity.post.ts` that, on a Sanity `published` / `updated` event, triggers the agency's deployment hook (a CI rebuild, a webhook-to-receiver URL, or a CMS-side preview refresh). The Nitro deployment case already re-fetches on every request (per the v1.1.0 M17 / M20 no-permanent-cache + in-flight-coalescing contract documented in `server/utils/{properties,agents,developments}.ts`), so the webhook's primary value is the **static-export** case: the staleness window shrinks from "next `pnpm generate`" to "within seconds of the Sanity event" by triggering a CI rebuild via the operator's chosen deployment hook. The Nitro case gets observability + cache-prewarming; the static case gets true staleness reduction. The implementation requires **a new inbound signature verifier** (the lead-capture webhook at `server/services/leads/adapters/webhook.ts:61` is an **outbound** signer — it produces the `X-Lead-Signature: sha256=<hex>` header on the outgoing POST; the Sanity webhook needs an inbound `verifySanitySignature(headers, body, secret)` that does NOT yet exist in the codebase). The new utility is the only new server module the task adds; the endpoint, integration test, and docs are the rest of the work.
+5. **API / CMS adapter retry + response-cache layer.** A shared `$fetch` retry policy + in-memory TTL response cache applied to the api and CMS adapters. The current `createApiDataSource` and `createHttpJsonCmsDriver` are intentionally thin transports; this task adds the production-grade layer without changing the service-layer contract.
+6. **Distributed rate limiter.** Replace the per-process `Map`-based lead-capture rate limiter with a Redis- or Upstash-backed counter that survives multi-process deployments (PM2 cluster, Cloudflare Workers isolates).
+7. **Uptime monitoring guide.** An operator-facing runbook for the safe-route smoke checks documented in `docs/DEPLOYMENT.md` §10, wired into the operator's choice of monitor (UptimeRobot, Better Uptime, the platform's native check). The template ships no monitor; the guide tells the operator what to point the monitor at and what to do when it fires.
+
+#### CMS / editor experience
+
+8. **Hotspot / crop-aware URL building (`@sanity/image-url`).** The Sanity image strategy currently uses raw asset URLs. A future task wires `@sanity/image-url` to honor the agency's photographer-defined focal point; the `cdn.sanity.io` URL builder is the only change. Real-estate imagery has strong horizontal-aspect and focal-point conventions; this matters in production.
+9. **Additional Sanity content types** (SiteSettings, Page, Category, Testimonial). The Studio ships Property / Agent / Development only. A future engagement that wants editable home-page copy, footer legal links, or a category taxonomy adds the new types.
+10. **Map picker for the `coordinates` field.** Replace the Studio's two-numeric-input editing surface with a visual map input (Leaflet or Mapbox).
+11. **Studio schema CI contract test (`pnpm studio:contract`).** A CI step that runs the Studio schema against the runtime boundary Zod schema and asserts the field names, types, and required-flag parity. The `studio/schemas/*.test.ts` Vitest suite already covers the field names; the contract test extends this to a cross-bundle assertion that the Studio's published document shape matches the runtime boundary.
+12. **Auth-token support in the generic HTTP/JSON CMS driver.** The current `createHttpJsonCmsDriver` sends only `Accept: application/json`. A future rebrand that fronts a private CMS behind a token-gated endpoint needs a `headers` / `Authorization` config.
+
+#### Commercial capability
+
+13. **Provider-specific drivers for Contentful / Strapi.** Pattern mirror of the Sanity driver: one file in `server/utils/` per provider, GROQ-style / GraphQL / REST mapping to the boundary shape, structural server-only placement.
+14. **Pre-commit / pre-push hooks (Husky / lefthook).** A `pnpm lint && pnpm test` runner on every commit; the CI workflow catches the same failures but local hooks catch them at the source.
+15. **Custom 404 / 500 pages.** The template ships default Nuxt error pages; a rebrand wants a designed error experience.
+
+#### Developer experience
+
+16. **Real browser accessibility certification (axe-core via Playwright).** A focused axe-core pass against the seven public routes, with the violations archived as a CI artifact. The v1.1.0 M10 source-level review is the baseline; a real browser pass is the certification.
+17. **Remaining untested utilities** in `docs/ROADMAP.md` §6 ("formatCurrency" / `themeToCssVars` / `useJsonLd` / `usePageSeo` / development / agent / contact / home schemas / sitemap.xml / robots.txt / `getRequestKey`). 30–60 additional Vitest cases; test-only refactor.
+18. **Studio typecheck + tests coverage expansion.** The 47-case Studio suite covers the 41 schema cases + 6 sanity-config cases; additional boundary tests for the per-document field-level rules.
+19. **Multi-agent workflow `Reviewer` + `Tester` subagent task surface.** The current `.opencode/agents/{reviewer,tester}.md` agents are subagents; a future task expands the description-driven auto-delegation triggers so the Build primary agent invokes Reviewer + Tester automatically after implementation.
+
+#### Optional product features
+
+20. **Blog module.** Out of MVP scope per `docs/SPEC.md` §7. `agency.modules.blog` ships `false`; the route and the home section are not implemented.
+21. **Testimonials dedicated route + admin.** Section is implemented (`HomeTestimonials`); no dedicated route or admin. Out of MVP scope.
+22. **Property comparison, saved properties, accounts, scheduling, valuation, PDF brochures.** Future-phase features from `docs/SPEC.md` §7.
+23. **Admin / dashboard / auth / CRM / maps / external image storage / payments.** Out of MVP scope.
+24. **High-contrast theme variant.** Light / dark is the current pair (Task 098); a third variant is premature.
+25. **Generic `BaseLightbox` shared component.** Per the M14 description, the deferred "generic `BaseLightbox` shared component" question is now moot for the property gallery; a future module (developments, agents) can decide on its own whether to extract a shared base or to copy the property pattern.
+26. **Multi-region deployment.** Premature for the current client base.
+27. **Browser-matrix Playwright (Firefox + WebKit).** CI time + coverage tradeoff; defer.
+28. **Visual regression testing.** Expensive; defer.
+29. **GDPR / CCPA / LFPDPPP compliance.** Each rebrand adds its own; the template stays neutral.
+
+### 5b.2 Prioritization matrix
+
+Scores use a 1–5 scale (1 = lowest, 5 = highest). The numbers are **decision support, not a mechanical ranking**; the implementation recommendation in §5b.3 weighs the dependencies and the bandwidth cost, not the raw sum.
+
+| # | Candidate | Group | Commercial value | Client impact | Production-risk reduction | Onboarding-time reduction | Implementation effort (lower = better) | Regression risk |
+| - | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | **Client Project Bootstrap Strategy** | Client onboarding | **5** | **5** | 2 | **5** | 3 | 1 |
+| 2 | Onboarding questionnaire template | Client onboarding | 3 | 3 | 1 | 3 | 1 (docs only) | 1 |
+| 3 | Production multi-tenant hardening | Production reliability | 4 | 3 | **5** | 2 | 4 | 3 |
+| 4 | **Sanity Studio webhooks → CI rebuild trigger** | CMS / editor experience | **5** | **5** | 4 | 2 | 2 | 2 |
+| 5 | **API / CMS adapter retry + cache layer** | Production reliability | 4 | 3 | **5** | 1 | 3 | 2 |
+| 6 | Distributed rate limiter | Production reliability | 3 | 2 | 4 | 1 | **5** (Redis / Upstash dep) | 3 |
+| 7 | Uptime monitoring guide | Production reliability | 3 | 3 | 4 | 1 | 1 (docs only) | 1 |
+| 8 | **Hotspot / crop (`@sanity/image-url`)** | CMS / editor experience | 4 | **5** | 1 | 1 | 2 | 1 |
+| 9 | Additional Sanity content types | CMS / editor experience | 3 | 4 | 1 | 2 | 3 | 2 |
+| 10 | Map picker for coordinates | CMS / editor experience | 2 | 3 | 1 | 1 | 3 | 2 |
+| 11 | **Studio schema CI contract test** | CMS / editor experience | 3 | 2 | **5** | 1 | 2 | 1 |
+| 12 | Auth-token support in HTTP/JSON CMS driver | CMS / editor experience | 3 | 3 | 2 | 1 | 2 | 1 |
+| 13 | Contentful / Strapi drivers | Commercial capability | 2 | 2 | 2 | 2 | 4 (per provider) | 2 |
+| 14 | **Pre-commit hooks (Husky / lefthook)** | Developer experience | 3 | 2 | 3 | 1 | 1 | 1 |
+| 15 | Custom 404 / 500 pages | Commercial capability | 2 | 4 | 1 | 1 | 1 | 1 |
+| 16 | Real browser accessibility certification | Developer experience | 4 | 3 | 3 | 1 | 2 | 1 |
+| 17 | Untested utilities (formatCurrency / themeToCssVars / schemas / sitemap / robots) | Developer experience | 1 | 1 | 1 | 1 | 2 | 1 |
+| 18 | Studio typecheck coverage expansion | Developer experience | 1 | 1 | 1 | 1 | 1 | 1 |
+| 19 | Multi-agent workflow expansion | Developer experience | 2 | 1 | 1 | 2 | 2 | 1 |
+| 20 | Blog module | Optional product feature | 2 | 3 | 0 | 0 | 4 | 1 |
+| 21 | Testimonials dedicated route + admin | Optional product feature | 1 | 2 | 0 | 0 | 2 | 1 |
+| 22 | Comparison / saved / accounts / scheduling / valuation / PDF | Optional product feature | 3 | 3 | 0 | 0 | **5** | 2 |
+| 23 | Admin / dashboard / auth / CRM | Optional product feature | 4 | 4 | 1 | 1 | **5** | 3 |
+| 24 | High-contrast theme variant | Optional product feature | 1 | 2 | 0 | 0 | 1 | 1 |
+| 25 | Generic BaseLightbox | Optional product feature | 1 | 1 | 0 | 0 | 1 | 1 |
+| 26 | Multi-region deployment | Optional product feature | 3 | 1 | 2 | 0 | **5** | 3 |
+| 27 | Firefox / WebKit Playwright | Optional product feature | 2 | 2 | 1 | 0 | 3 | 1 |
+| 28 | Visual regression | Optional product feature | 2 | 2 | 2 | 0 | **5** | 2 |
+| 29 | GDPR / CCPA compliance | Optional product feature | 4 | 4 | 1 | 0 | 4 | 3 |
+
+Bolded items are the proposed v1.3 "Must" + "Should ship" set.
+
+### 5b.3 Proposed v1.3 scope
+
+#### Must ship (P0)
+
+1. **Client Project Bootstrap Strategy** — `pnpm bootstrap:client --id=<tenant>` that automates the dry-run procedure end-to-end. Captures agency identity, generates the agency config file (`app/config/agencies/<id>.agency.ts`), scaffolds the theme (`app/themes/<id>.theme.ts`) and registers it in `app/themes/index.ts`, registers the tenant in `agencyRegistry` with the production hostnames, leaves the data wiring to the operator (the operator either edits the bundled placeholder data files in `app/features/*/data/*.ts` directly, or wires the per-feature data source to a CMS — `static` is the default, `cms` + provider-specific env vars switch to Sanity / Contentful / Strapi / etc.), selects the lead adapter (`disabled` / `log` / `webhook` / `email`), and runs `pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm build && pnpm test:e2e`. The new file lives at `scripts/bootstrap-client.ts`; the test lives at `scripts/bootstrap-client.test.ts`; the docs live at a new `docs/CLIENT_BOOTSTRAP.md` (or an extension of `docs/CLIENT_ONBOARDING.md` §6). **The data-wiring step is explicitly out of scope for the Bootstrap** — the operator populates the catalog after the Bootstrap finishes, either by editing the bundled data files or by switching the per-feature data source to a CMS. This keeps the Bootstrap within the "no generic code touched" surface that Task 123 measured; the per-tenant data file mechanism (alternative (ii)) is a future task that would change the data-source loaders and is NOT in v1.3. **First implementation task.**
+
+#### Should ship if capacity allows (P1)
+
+2. **Sanity Studio webhooks → CI rebuild trigger.** A webhook endpoint at `server/api/webhooks/sanity.post.ts` that, on a Sanity `published` / `updated` event, triggers the agency's deployment hook (a CI rebuild, a webhook-to-receiver URL, or a CMS-side preview refresh). The Nitro deployment case already re-fetches on every request per the v1.1.0 M17 / M20 no-permanent-cache contract; the webhook's primary value is the **static-export** case (staleness window shrinks from "next `pnpm generate`" to "within seconds of the Sanity event"). The endpoint requires **a new inbound signature verifier** (`verifySanitySignature(headers, body, secret)`) — the lead-capture webhook at `server/services/leads/adapters/webhook.ts:61` is an **outbound** signer and is not reusable as an inbound verifier. The new utility is the only new server module the task adds; the endpoint, integration test, and docs are the rest of the work.
+3. **Hotspot / crop-aware URL building (`@sanity/image-url`).** The `@sanity/image-url` builder replaces the raw asset URL in the GROQ → mapping pipeline. Adds one dependency; the IPX provider continues to process the URLs (Nuxt Image's `domains` allowlist already includes `cdn.sanity.io`).
+4. **API / CMS adapter retry + response-cache layer.** A shared `$fetch` retry policy + in-memory TTL response cache applied to the api and CMS adapters. The retry policy retries idempotent failures (network errors, 5xx, 429) with exponential backoff; the response cache uses a short TTL (default 60 s) and respects the published dataset's staleness window.
+5. **Pre-commit hooks (Husky / lefthook).** A `pnpm lint && pnpm test` runner on every commit, with a documented bypass (`--no-verify`) for the rare exception.
+
+#### Post-v1.3 (P2 — valuable but not urgent)
+
+6. **Production multi-tenant deployment hardening.** Registry persistence, IPv6 / IDN / IDNA normalization, admin / debug endpoint, per-tenant runtime overrides for currency + locale + lead destination.
+7. **Real browser accessibility certification (axe-core via Playwright).** A focused axe-core pass against the seven public routes, with the violations archived as a CI artifact.
+8. **Additional Sanity content types.** SiteSettings, Page, Category, Testimonial. Added per engagement.
+9. **Map picker for the `coordinates` field.** Custom Studio input component with a Leaflet / Mapbox map.
+10. **Studio schema CI contract test.** `pnpm studio:contract` step that asserts the Studio schema matches the runtime boundary Zod schema.
+11. **Auth-token support in the HTTP/JSON CMS driver.** Optional `headers` / `Authorization` config for private endpoints.
+12. **Uptime monitoring guide.** Operator-facing runbook for the safe-route smoke checks.
+13. **Untested utilities coverage expansion.** 30–60 additional Vitest cases for the §7 surface.
+14. **Distributed rate limiter.** Redis- or Upstash-backed counter that survives multi-process deployments.
+15. **Onboarding questionnaire template.** Single `docs/ONBOARDING_QUESTIONNAIRE.md` file with the question set + canonical mapping.
+
+#### Not currently worth building (P3)
+
+- **Contentful / Strapi drivers.** No real client has asked; only ship when a real engagement needs one.
+- **Custom 404 / 500 pages.** Each rebrand designs its own; the template's default Nuxt error pages are sufficient.
+- **Studio typecheck + tests coverage expansion.** The 47-case Studio suite is comprehensive; adding more is low-value.
+- **Multi-agent workflow expansion.** The current `.opencode/agents/{reviewer,tester}.md` description-driven delegation works.
+- **Blog module.** Explicitly out of MVP scope per `docs/SPEC.md` §7.
+- **Testimonials dedicated route + admin.** Out of MVP scope.
+- **Property comparison, saved properties, accounts, scheduling, valuation, PDF brochures.** Future-phase features from `docs/SPEC.md` §7.
+- **Admin / dashboard / auth / CRM / maps / external image storage / payments.** Out of MVP scope.
+- **High-contrast theme variant.** Light / dark is the current pair; premature.
+- **Generic `BaseLightbox` shared component.** Only one consumer; not justified.
+- **Multi-region deployment.** Premature.
+- **Browser-matrix Playwright (Firefox + WebKit).** CI time + coverage tradeoff.
+- **Visual regression testing.** Expensive; defer.
+- **GDPR / CCPA / LFPDPPP compliance.** Each rebrand adds its own; template stays neutral.
+
+### 5b.4 Recommended execution order
+
+The Must / Should / Post list is ordered by dependency and risk, not by raw score.
+
+```
+Phase A — Client Project Bootstrap Strategy (P0, Must)
+   ↓
+Phase B — Three P1 tasks in parallel (no inter-dependencies)
+   ├── Sanity Studio webhooks → CI rebuild trigger
+   ├── Hotspot / crop-aware URL building (@sanity/image-url)
+   └── Pre-commit hooks (Husky / lefthook)
+   ↓
+Phase C — API / CMS adapter retry + response-cache layer (P1, single)
+   ↓
+Phase D — Production multi-tenant hardening (P2, deferred)
+```
+
+**Phase A rationale.** The Client Project Bootstrap Strategy is the right first task because (a) the dry-run measured the friction surface in Task 123, so the requirements are known; (b) the documentation foundation is in place (`docs/CLIENT_ONBOARDING.md`, `docs/COMMERCIAL_DELIVERY.md`, `docs/SANITY_OPERATIONS.md`); (c) the friction surface is bounded to data + theme + agency config + the validation pipeline — the same surface Task 123 audited; (d) it directly reduces onboarding time for the next client engagement (the highest single-number scoring dimension in the matrix); (e) it has no dependency on features that aren't shipped today. **Phase A ↔ Phase D register-write conflict.** Phase A writes new tenants into the frozen `agencyRegistry` constant (`app/config/agencies/registry.ts`). Phase D (production multi-tenant hardening, item 6 in §5b.3) replaces that constant with persistence-from-DB / JSON / external API via `NUXT_TENANT_REGISTRY_URL`. Phase A's writes become Phase D's migration debt: the entries Phase A adds are bundled into the repo and must be migrated to the persistent store when Phase D lands. The Bootstrap's docs explicitly call this out — the operator is told that the v1.3 Bootstrap registers tenants in the bundled registry, and Phase D's persistence migration absorbs those entries. This is an intentional v1.3 shortcut; the alternative is to defer the Bootstrap until Phase D lands, but that postpones the highest-ROI onboarding item for a backend migration that most clients do not need in the first year.
+
+**Phase B rationale.** The three P1 tasks are independent and can run in parallel. The Sanity webhook (item 4) is Sanity-specific; the hotspot / crop wiring (item 8) is also Sanity-specific; the pre-commit hook (item 14) is generic and low-effort. None require the Bootstrap Strategy to land first (the Bootstrap Strategy does not generate webhook URLs in v1.3). **Phase B Sanity-concentration rationale.** Two of the three Phase B slots are Sanity-only. This is intentional for v1.3: the Sanity provider driver is the only shipped CMS provider, the v1.2 operations work hardened the Sanity path, and the Sanity-only items have no useful work in a non-CMS deployment. A rebrand that ships without a CMS skips the two Sanity items; a rebrand that ships with Sanity takes them both. The pre-commit hook is the only Phase B item every rebrand takes. If a real client engagement requires either Sanity item to ship after Phase A, the items land in Phase B as planned. If the engagement uses Contentful / Strapi instead, the items are deferred until the corresponding provider driver ships (P3 in §5b.3) and the items are re-scoped.
+
+**Phase B / Phase C / Phase D ordering for item 11 (Studio schema CI contract test).** Item 11 lands in P2 instead of Phase B because (a) the contract test is most valuable once the CMS adapter surface has settled — Phase B's `@sanity/image-url` work may adjust the published document shape; (b) the existing `studio/schemas/*.test.ts` Vitest suite covers 41 schema cases + 6 sanity-config cases, so the gap to a contract test is small. If the rationale becomes unsound (a real engagement ships a cms adapter change that warrants the contract test), the item moves to Phase B and item 5 (retry / cache layer) defers to Phase C.
+
+**Phase C rationale.** The retry / cache layer touches every api and cms consumer, so it lands after Phase B's per-feature extensions. The single Phase C task keeps the diff narrow and the review tractable.
+
+**Phase D rationale.** The multi-tenant hardening is the largest single body of work and is decoupled from the client-facing surface. It lands in a future minor or major release, not in v1.3.
+
+### 5b.5 Stale-item cleanup
+
+The audit surfaced the following stale items that contradict current shipped state. These are **not in the v1.3 backlog** (the items they reference are already shipped); they are doc-consistency fixes that ship in v1.3 alongside Phase A.
+
+| Stale mention | Source | Resolution |
+| --- | --- | --- |
+| "Real CMS provider integrations (Sanity, Contentful, Strapi)" listed as future v1.x | `docs/REBRANDING.md` §16.3 | Remove "(Sanity, …)" — Sanity is shipped in v1.2.0. Only Contentful / Strapi are deferred. |
+| "no Sanity / Contentful / Strapi driver shipping today" | `docs/CLIENT_ONBOARDING.md` §2.1 (CMS subsection) + §4.7 (handoff table) | Remove "Sanity" — the Sanity driver shipped in v1.2.0. |
+| "Dark mode" listed as a separate entry in §6 Deferred Work | `docs/ROADMAP.md` §6 | Remove the duplicate entry; the existing §6 "Light / dark color mode" entry already says "Shipped in v1.1.0 M15 (Task 098)". |
+
+The doc-consistency fixes are scoped to `docs/REBRANDING.md` §16.3, `docs/CLIENT_ONBOARDING.md` §2.1 + §4.7, and `docs/ROADMAP.md` §6, and ship alongside the Bootstrap Strategy in Phase A.
+
+**Intentionally preserved historical references** (not stale — explicitly out of scope for the cleanup): the `docs/RELEASE_NOTES_v1.1.md` "Known limitations" table entries (per-property / per-development / per-agent detail pages, fullscreen lightbox, real API / CMS integration, Playwright + CI, dark mode, minimal multi-tenant foundation) are intentionally left unchanged because the v1.1.0 release notes are a snapshot at v1.1.0 release. The v1.2.0 release notes' "What v1.2 release does not claim" section already cross-references the v1.1.0 snapshot for readers who need the historical context.
+
+### 5b.6 Removed / consolidated items (audit summary)
+
+The full audit identified 52 candidate items. The consolidation removed:
+
+- **29 duplicate clusters** (the same concern mentioned in multiple docs — distributed rate limiter, analytics, error tracking, uptime monitoring, security headers, etc.). Each duplicate cluster was reduced to a single line in §5b.1.
+- **9 stale mentions** of features already shipped (Sanity driver, fullscreen lightbox, dark mode, per-agent detail page, etc.). Recorded in §5b.5 for doc-consistency cleanup; not in the v1.3 backlog.
+- **11 already-completed items still appearing in the backlog** (real lead capture, property-specific inquiry form, per-development detail page, per-agent detail page, fullscreen lightbox, real API / CMS integration, Playwright smoke tests + CI, dark mode, minimal multi-tenant foundation, Sanity provider integration, per-feature api adapter for agents + developments). The v1.2 pilot work (Tasks 115–120, entries 59–65: Sanity provider driver, Sanity Studio, real-Sanity end-to-end validation, deterministic default Playwright, Studio editor UX polish, operations documentation) and the v1.1.0 multi-tenant / api / cms milestones (Tasks 099, 100, 104–110, 106, 107 + 107B) are also complete and are cross-referenced in Section 5; none are in the v1.3 backlog.
+
+The three counts overlap by design — an item can be both a duplicate (mentioned in multiple docs) and a stale mention (the docs contradict the shipped state) or an already-completed item that reappears in a backlog. `29 + 9 + 11 = 49` summed with overlaps; the audit's 52 unique items are the union of the three sets. The 29 consolidated candidates are recorded in §5b.1.
+
+### 5b.7 First implementation task — rationale
+
+The Client Project Bootstrap Strategy is the first implementation task of v1.3 because:
+
+1. **All requirements are known.** Task 123's Bahía del Mar dry-run measured the friction surface end-to-end and recorded the answer: the friction is bounded to data + theme + agency config + 11 golden test assertions across 7 test files. No generic application code is touched by the rebrand; the Bootstrap Strategy automates the same surface.
+2. **The documentation foundation is in place.** `docs/CLIENT_ONBOARDING.md` (the upstream agency-side info checklist), `docs/COMMERCIAL_DELIVERY.md` (the umbrella 9-phase workflow), `docs/SANITY_OPERATIONS.md` (the post-implementation operations guide), `docs/REBRANDING.md` (the technical rebrand workflow), and `docs/DEPLOYMENT.md` (the post-rebrand deployment) are all shipped. The Bootstrap Strategy is the operational glue that ties these documents to a script.
+3. **It directly addresses the highest-ROI backlog item.** Onboarding-time reduction scores 5/5 in the matrix (the highest single-number score); client impact scores 5/5; commercial value scores 5/5. The next client engagement is the largest single revenue event, and the time savings are immediate.
+4. **It is bounded and testable.** The Bootstrap Strategy is a CLI / script with a documented input contract and a documented output contract. The test is the same `pnpm lint && pnpm test && pnpm build && pnpm test:e2e` pipeline that ships today; the new test file (`scripts/bootstrap-client.test.ts`) covers the dry-run scenario. The data-wiring step is explicitly out of scope: the Bootstrap generates agency + theme + registry entries + lead-adapter config; the operator populates the catalog afterward by editing the bundled data files or by switching the per-feature data source to a CMS. This preserves the "no generic code touched" surface that Task 123 measured; a future per-tenant data file mechanism is a separate task that would change the data-source loaders.
+5. **It has no upstream dependency.** The Bootstrap Strategy does not require any v1.3 Should / Post item. It is the foundational task; subsequent items assume it is in place (a future Client Project Bootstrap V2 may integrate the Sanity webhook URL, the hotspot / crop wiring, and the multi-tenant registry persistence — but the v1.3 Bootstrap Strategy is the baseline).
+6. **No new dependencies are required.** The Bootstrap Strategy uses the existing Vitest / Playwright / Nuxt tooling. It is a script + a docs file, not a new package.
+
 ## 6. Deferred Work
 
 Tracked separately so they are not lost but they are explicitly not part of the next ten tasks.
