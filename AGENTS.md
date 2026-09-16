@@ -89,8 +89,106 @@ The catch-all `*: deny` removes every other subagent (`general`, `scout`, `compa
 3. **Reviewer + Tester after implementation**, in parallel when they are independent. Reviewer inspects the diff (via its Git allowlist); Tester runs the validation suite (via its bash command-pattern allowlist). Both return to Build.
 4. **Build receives their findings**, performs any fixes, owns the final answer.
 
+**Subagent delegation rules (native Task tool only).** Build delegates
+work to `explore`, `reviewer`, and `tester` **exclusively through
+OpenCode's native Task / subagent mechanism** declared in
+`.opencode/agents/build.md`. The hard prohibitions (must follow):
+
+- **Never invoke the OpenCode CLI from bash** to delegate work. No
+  `opencode`, `opencode run`, `opencode --session`, `opencode exec`,
+  `opencode serve`, `opencode attach`. The CLI launches a brand-new
+  unrelated primary session, not a child subagent.
+- **Never launch another Build / OpenCode process** in order to reach
+  a subagent. A child OpenCode process inherits none of this
+  session's permissions, `permission.task` rules, working-tree state,
+  or model context.
+- **Never create temporary prompt files** for subagent delegation.
+  No `/tmp/agent-prompt.md`, no `.opencode/prompts/*.md`, no
+  `--prompt-file <path>` indirection. Subagents are invoked
+  directly through the Task tool with the brief inline.
+- **Never spawn, poll, inspect, or terminate nested OpenCode
+  processes.** No `ps aux | grep opencode`, no `wait $PID`, no
+  signalling, no `kill <child>`. The child session's lifecycle is
+  the Task tool's responsibility — Build has no business reaching
+  into it.
+- **Never use PowerShell process management** (`Get-Process`,
+  `Stop-Process`, `Wait-Process`, `Start-Process opencode`,
+  `Start-Job { opencode … }`) or POSIX equivalents (`kill`,
+  `pkill`, `pgrep`, `nohup opencode … &`) as part of subagent
+  orchestration.
+- **Never run detached background jobs** that wrap a subagent. No
+  `nohup`, no `Start-Job`, no `(... &)`, no `disown`.
+- **Reviewer, Tester, and Explore must be invoked directly from the
+  current Build session through the native Task tool** — never
+  through a shell wrapper, never through a different OpenCode
+  process, never through a temporary prompt file.
+- **Subagent results must return to the current Build session.**
+  When `explore` / `reviewer` / `tester` complete, their final
+  message lands inline in this Build session. Build treats it as
+  the authoritative input for the next step.
+
+> **Why nested `opencode run` is prohibited.** `opencode run` (and
+> every other CLI entrypoint — `serve`, `attach`, `exec`, ...)
+> starts a brand-new **unrelated primary session** with its own
+> model context, its own permission resolution, and no link back to
+> the requesting Build session. Each invocation: (1) bypasses this
+> session's `permission.task` allowlist (the child resolves its own
+> subagent set independently); (2) loses this session's
+> working-tree state, conversation context, and DOOM-loop /
+> interruption handling; (3) is invisible to the parent's
+> tool-permission layer — the parent cannot enforce read-only
+> roles on a free-standing child primary session; (4) spawns an
+> independent conversation the parent cannot steer, cancel, or
+> recover results from without hand-rolled stdout / file plumbing
+> that the Task tool already provides in-session. The intended
+> child-session workflow is the Task tool, which keeps the child
+> under this session's permission contract and returns its result
+> inline to Build. Nested `opencode run` is therefore explicitly
+> out of scope for this project. The full prose version of these
+> rules lives in `.opencode/agents/build.md`.
+>
+> **Dual-layer enforcement.** The nested-OpenCode prohibition is
+> enforced by **both** (a) Build's prose-level instructions in
+> `.opencode/agents/build.md` (the body of the agent file lists
+> every prohibited mechanism) **and** (b) Build's bash permission
+> layer — the `permission.bash` block at the top of that file
+> carries an explicit `opencode: deny` / `opencode *: deny` pair so
+> a prompt that tries to spawn a nested primary session is rejected
+> at the permission layer before it can ever execute. Normal Build
+> shell access (`git`, `pnpm`, `node`, `ls`, ...) is preserved: the
+> safeguard only denies the two `opencode` patterns, with no
+> catch-all `*: deny` on bash.
+>
+> **Git repository-state operations are operator-controlled.** The
+> long-standing project policy is that Git state changes are
+> operator-controlled: the operator stages, commits, tags, pushes,
+> restores, resets, cleans, rebases, merges, cherry-picks, reverts,
+> switches, checks out, branches, manages remotes, updates refs,
+> and removes tracked files via Git only when a human is in the
+> loop. Build edits files (its `edit` / `write` tools are not
+> restricted); Build does NOT run Git state-change subcommands
+> through its `bash` tool. The same `permission.bash` block at
+> the top of `.opencode/agents/build.md` carries an explicit deny
+> for every Git state-change subcommand family — `git add`,
+> `git commit`, `git tag`, `git push`, `git stash`, `git checkout`,
+> `git switch`, `git restore`, `git reset`, `git clean`,
+> `git rebase`, `git merge`, `git cherry-pick`, `git revert`,
+> `git branch`, `git remote`, `git update-ref`, and `git rm` —
+> each in both the bare (`git <subcommand>`) and the
+> with-trailing-arguments (`git <subcommand> *`) forms. Read-only
+> Git inspection (`git status`, `git diff`, `git log`, `git show`,
+> `git ls-files`, `git rev-parse`) remains allowed by default so
+> Build can describe the working tree, attach diff context to a
+> Reviewer brief, and inspect commit / tag refs without leaving
+> the agent's permission contract. A prompt that asks Build to
+> "commit and push the changes" is rejected at the permission
+> layer before it can ever execute — even if the prose-level
+> prohibition were absent, the runtime guarantee holds.
+
 **Hard constraints (enforced by permissions, not just prompt):**
 - `build` is the only agent with a state-changing capability. The Tester, Reviewer, and Explore subagents all resolve with `edit: false` / `write: false` / `task: false`.
+- `build` is the only agent allowed to delegate. The Task tool is the sole delegation channel; shell-based or nested-process delegation is explicitly prohibited (see the "Subagent delegation rules (native Task tool only)" subsection above and `.opencode/agents/build.md`).
+- `build`'s `bash` permission layer has two explicit safeguard blocks: (a) `opencode: deny` / `opencode *: deny` blocks nested OpenCode execution, and (b) a per-subcommand deny list for every Git state-change family (see the "Git repository-state operations are operator-controlled" blockquote above) blocks repository-state mutations. Normal shell access is preserved (no `*: deny` on bash); only the listed patterns are forbidden, so a prompt that tries to spawn a nested primary session or perform an unattended Git operation is rejected at the permission layer before it can ever execute.
 - `explore` is the only subagent with `bash: deny`. `webfetch: allow` / `websearch: allow` are preserved for external documentation lookup; `read`, `glob`, `grep`, `list`, `lsp` cover the in-workspace research surface without any shell command.
 - `reviewer` has `bash` command-pattern gated to the eight read-only Git inspection commands. It can independently read the real working-tree diff; every other shell command is rejected at the permission layer.
 - `tester` has `bash` command-pattern gated to the validation surface. `node -e *` is rejected — any Node smoke test is a Build-only operation.
@@ -125,6 +223,18 @@ Shared app infrastructure belongs outside features.
 | `config/`                | Agency config, navigation, SEO                                     |
 | `themes/`                | Design tokens per theme                                            |
 | `i18n/locales/`          | `en.json`, `es.json`                                               |
+
+The project-root `scripts/` directory holds **operator tooling** —
+dependency-free Node ESM CLI utilities that run against the
+runtime source tree (e.g. `pnpm bootstrap:client` →
+`scripts/bootstrap-client.mjs`) plus their Vitest suite at
+`scripts/*.test.mjs`. `scripts/` is intentionally NOT part of
+the Nuxt application bundle: it runs under Node directly, has no
+Vue / Nuxt runtime, and is loaded by `pnpm <script-name>` from
+`package.json`'s `scripts:` block, not by the page components,
+the Nitro endpoints, or the Studio. The `scripts/` directory is
+distinct from `app/` (runtime) and from `server/` (Nitro
+server-only code).
 
 ## Core conventions
 
