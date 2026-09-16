@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { sampleAgents } from '../../app/features/agents/data/agents'
 
 /**
  * Agent detail regression tests.
@@ -24,13 +25,20 @@ import { expect, test, type Page } from '@playwright/test'
  *    the property and development detail pages).
  *  - The sitemap advertises per-agent detail URLs.
  *
- * The known slug is the first agent in the static catalog
- * (`maria-gonzalez`); the test fails loudly if the catalog is
- * edited to remove that record.
+ * The known slug / name / role are derived from the static
+ * catalog fixture (`sampleAgents[0]`) — a future catalog edit
+ * that swaps the first record will be followed by the test
+ * automatically. The structural assertions (single `<h1>`,
+ * breadcrumb `aria-current`, heading-hierarchy walk, sitemap
+ * per-agent URLs) remain strict. The not-found slug
+ * (`UNKNOWN_SLUG`) stays a literal because the literal IS the
+ * behavior the not-found path is exercising.
  */
 
-const KNOWN_SLUG = 'maria-gonzalez'
-const KNOWN_NAME = 'María González'
+const KNOWN_RECORD = sampleAgents[0]
+const KNOWN_SLUG = KNOWN_RECORD.slug
+const KNOWN_NAME = KNOWN_RECORD.name
+const KNOWN_ROLE = KNOWN_RECORD.role
 const UNKNOWN_SLUG = 'this-agent-does-not-exist'
 
 test.describe('Smoke — agent detail route', () => {
@@ -53,9 +61,11 @@ test.describe('Smoke — agent detail route', () => {
     expect((await lastCrumb.textContent())?.trim()).toBe(KNOWN_NAME)
 
     // The role is rendered above the heading as a `<p>`. The
-    // "Senior Advisor" string is the static catalog's `role` for
-    // maria-gonzalez.
-    await expect(page.getByText('Senior Advisor', { exact: true }).first()).toBeVisible()
+    // exact string comes from the static catalog entry's `role`
+    // field — we read it from the canonical fixture so a future
+    // role edit (e.g. renaming "Directora Asociada") updates the
+    // test alongside the catalog.
+    await expect(page.getByText(KNOWN_ROLE, { exact: true }).first()).toBeVisible()
 
     const errors = getErrors()
     expect(errors, `/agents/${KNOWN_SLUG} should not emit uncaught pageerrors`).toEqual([])
@@ -159,7 +169,7 @@ test.describe('Smoke — agent detail a11y contract', () => {
     const person = payloads.find(p => p['@type'] === 'Person')
     expect(person, 'Person JSON-LD payload should be present').toBeDefined()
     expect(person.name).toBe(KNOWN_NAME)
-    expect(person.jobTitle).toBe('Senior Advisor')
+    expect(person.jobTitle).toBe(KNOWN_ROLE)
     expect(typeof person.image).toBe('string')
     expect(person.image.length, 'Person.image should be a non-empty URL').toBeGreaterThan(0)
     expect(person.worksFor, 'Person payload should include a worksFor reference to the agency').toBeDefined()
@@ -181,8 +191,15 @@ test.describe('Smoke — sitemap includes per-agent URLs', () => {
     if (sitemapStatus === 200) {
       const body = await sitemapResponse.text()
       expect(body, 'sitemap should include the agents listing').toContain('/agents')
-      expect(body, 'sitemap should include the maria-gonzalez detail URL').toContain('/agents/maria-gonzalez')
-      expect(body, 'sitemap should include the james-carter detail URL').toContain('/agents/james-carter')
+      // The sitemap must advertise every per-agent detail URL the
+      // catalog ships — including the canonical first-record slug
+      // and every other record's slug. Derived from the static
+      // fixture so the test follows future catalog edits
+      // automatically.
+      expect(body, `sitemap should include the ${KNOWN_SLUG} detail URL`).toContain(`/agents/${KNOWN_SLUG}`)
+      for (const agent of sampleAgents) {
+        expect(body, `sitemap should include /agents/${agent.slug}`).toContain(`/agents/${agent.slug}`)
+      }
     } else {
       // 503 path: the endpoint returned the documented plain-text hint.
       expect(sitemapStatus, 'sitemap should return 503 when siteUrl is not configured').toBe(503)

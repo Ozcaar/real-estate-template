@@ -80,7 +80,93 @@ Edit `app/config/agencies/default.agency.ts` directly. This is the simplest path
 
 No component change is required. `useSiteConfig()` reads from `siteConfig.agency` and every consumer re-renders.
 
-## 3a. Configure the Structured Agency Address
+## 3a. Bootstrap a new client (automated)
+
+`pnpm bootstrap:client -- …` automates the dry-run procedure Task 123 measured end-to-end. Run this **once per new client** before `## 4` (Step 1). The Bootstrap writes four files and reports the remaining manual steps; it does **not** modify any generic application code.
+
+### What the Bootstrap creates / modifies
+
+* `app/config/agencies/<id>.agency.ts` (CREATE) — `AgencyConfig` const, named `<id>AgencyConfig`. Safe placeholders for the operator to fill in; `enabled: true` when `--lead-adapter` is not `disabled`.
+* `app/themes/<id>.theme.ts` (CREATE) — `ThemeConfig` const, named `<id>Theme`. A copy of the default theme's neutral palette; the brand colors are flagged `[TODO]`.
+* `app/config/agencies/registry.ts` (MODIFY) — adds one `import { <id>AgencyConfig } from './<id>.agency'` line and one `<id>: buildEntry(<id>AgencyConfig, [hostnames])` entry in the frozen registry.
+* `app/themes/index.ts` (MODIFY) — adds one `import { <id>Theme } from './<id>.theme'` line and one `[<id>Theme.id]: <id>Theme` entry in the frozen themes map.
+
+### What the Bootstrap does **not** touch
+
+* Bundled sample data under `app/features/<feature>/data/` — the operator populates the catalog after the Bootstrap finishes (or wires the per-feature data source to a CMS).
+* The lead pipeline, the four delivery adapters, the `POST /api/contact` endpoint, the existing agency `leads` flag — the Bootstrap only sets `agency.leads.enabled` to match the operator's chosen `--lead-adapter`; the actual delivery adapter (`NUXT_LEADS_ADAPTER`) is selected at the server via env vars.
+* CMS project setup (Sanity / Contentful / Strapi) — see `docs/SANITY_OPERATIONS.md`.
+* `.env` files, `public/images/*` placeholder assets, i18n locale files — operator steps after the Bootstrap finishes.
+* Generic application code (pages, components, composables, layouts).
+
+### CLI
+
+```
+pnpm bootstrap:client --id=<tenant> --name="<agency display name>" --hostname=<host>
+  [--hostname=<additional-host> ...]
+  [--theme-name="<theme display name>"]
+  [--currency=<ISO-4217-code>]
+  [--default-locale=<locale-code>]
+  [--available-locales=<csv-list>]
+  [--measurement-unit=<metric|imperial>]
+  [--lead-adapter=<disabled|log|webhook|email>]
+  [--dry-run]
+  [-h|--help]
+```
+
+Required: `--id`, `--name`, `--hostname`. The `--id` becomes the registry key + the agency + theme filename stem + the theme id; it must be lowercase letters + digits + dashes, start and end alphanumeric, 2–64 characters, and not `default`. The `--name` is the agency's display name (≤120 characters, non-empty). The `--hostname` is the production hostname (port stripped, lowercased); pass multiple `--hostname` flags for both apex and `www.` variants.
+
+Use `--dry-run` to print the planned files + the remaining manual steps without writing anything. **Always run `--dry-run` first** to verify the plan before running without it.
+
+### Example
+
+```bash
+# 1. Plan only (no writes).
+pnpm bootstrap:client \
+  --id=acme \
+  --name="Acme Real Estate" \
+  --hostname=acme.example.com \
+  --hostname=www.acme.example.com \
+  --currency=USD \
+  --lead-adapter=webhook \
+  --dry-run
+
+# 2. After reviewing the plan, generate the scaffolding.
+pnpm bootstrap:client \
+  --id=acme \
+  --name="Acme Real Estate" \
+  --hostname=acme.example.com \
+  --hostname=www.acme.example.com \
+  --currency=USD \
+  --lead-adapter=webhook
+
+# 3. Run the standard validation pipeline (the Bootstrap does NOT run these).
+pnpm install --frozen-lockfile
+pnpm lint && pnpm test && pnpm build && pnpm test:e2e
+
+# 4. Replace every [TODO] in app/config/agencies/acme.agency.ts
+#    with the agency's real identity, contact, and social information.
+# 5. Replace the 22 placeholder assets under public/images/.
+# 6. Replace the bundled sample data in app/features/*/data/.
+# 7. Set NUXT_PUBLIC_SITE_URL + the matching NUXT_LEADS_* env vars at deploy time.
+```
+
+### Conflict detection / idempotency
+
+The Bootstrap detects the following conflicts before any write:
+
+* Existing tenant id in the registry → refuses (the registry's `Object.freeze` would otherwise produce two entries with the same id).
+* Existing `app/config/agencies/<id>.agency.ts` or `app/themes/<id>.theme.ts` file → refuses (overwriting a real client's data is a hard error).
+* Existing hostname in any registry entry's `hosts` list → refuses (the runtime resolver uses first-match; a duplicate hostname would silently shadow the existing tenant).
+* Existing theme id in the theme registry → refuses.
+
+Repeated execution with the same `--id` fails safely with a clear error message. There is no automatic overwrite; the operator must delete the existing entry or choose a different `--id`.
+
+### Atomic writes
+
+The four files are written in order: agency file, theme file, registry patch, themes-index patch. If any check or write fails, the function rolls back the writes that succeeded and surfaces the failure to the caller. No partial output on validation failure.
+
+## 3b. Configure the Structured Agency Address
 
 The agency contact config carries two address fields that coexist:
 

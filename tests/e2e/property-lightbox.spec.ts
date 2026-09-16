@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { sampleProperties } from '../../app/features/properties/data/properties'
 
 /**
  * Property detail page — fullscreen lightbox regression tests
@@ -35,15 +36,18 @@ import { expect, test, type Page } from '@playwright/test'
  *    on close.
  *  - No uncaught browser error during open / navigate / close.
  *
- * The known slug is the first property in the static catalog
- * (`modern-hillside-villa`); the test fails loudly if the catalog
- * is edited to remove that record or to remove the lightbox
- * trigger.
+ * The known slug / title / image count are derived from the
+ * static catalog fixture (`sampleProperties[0]`) — a future
+ * catalog edit that swaps the first record will be followed by
+ * the test automatically. The structural assertions (role,
+ * aria-label, prev/next navigation, focus trap, body scroll
+ * lock) are independent of the catalog content and remain strict.
  */
 
-const KNOWN_SLUG = 'modern-hillside-villa'
-const KNOWN_TITLE = 'Modern Hillside Villa'
-const TOTAL_IMAGES = 3
+const KNOWN_RECORD = sampleProperties[0]
+const KNOWN_SLUG = KNOWN_RECORD.slug
+const KNOWN_TITLE = KNOWN_RECORD.title
+const TOTAL_IMAGES = KNOWN_RECORD.images.length
 
 /**
  * Reuse the uncaught-error tracker from the other suites so a JS
@@ -503,11 +507,10 @@ test.describe('Smoke — lightbox focus management', () => {
 
     // Count the focusables inside the dialog directly. The
     // dialog exposes: 1 close button + 1 prev + 1 next + N
-    // thumbnails (one per image). For the test fixture
-    // (modern-hillside-villa, 3 images) the expected count is
-    // 6. The test does not assert a hard number — it walks
-    // the tab order and confirms focus wraps back to the close
-    // button after the right number of presses.
+    // thumbnails (one per image — TOTAL_IMAGES per the static
+    // catalog). The test does not assert a hard number — it
+    // walks the tab order and confirms focus wraps back to the
+    // close button after the right number of presses.
     const focusableCount = await page.getByTestId('property-lightbox').evaluate((el) => {
       const selector = 'button:not([disabled])'
       return el.querySelectorAll<HTMLElement>(selector).length

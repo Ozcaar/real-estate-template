@@ -58,6 +58,7 @@ export default defineConfig({
       'server/api/**/*.test.ts',
       'server/utils/**/*.test.ts',
       'server/routes/**/*.test.ts',
+      'scripts/**/*.test.{ts,mjs}',
     ],
     // Each test file is its own module so the rate-limit map and the
     // adapter registry do not leak between test files.

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { sampleProperties } from '../../app/features/properties/data/properties'
 
 /**
  * Smoke tests for the post-v1.1.0 project.
@@ -40,13 +41,13 @@ const PUBLIC_ROUTES = [
 ] as const
 
 /**
- * One property detail page is exercised. The slug comes from the
- * static catalog at `app/features/properties/data/properties.ts`
- * and is asserted to resolve to a real visible record. A new
- * static record with the same slug would make the test fail
- * loudly; replacing the slug is a one-line maintenance change.
+ * One property detail page is exercised. The slug is derived
+ * from the canonical static catalog entry
+ * (`sampleProperties[0]`) so a future catalog edit (rename,
+ * rebrand, additional first record) is followed by the test
+ * automatically.
  */
-const PROPERTY_DETAIL_PATH = '/properties/modern-hillside-villa'
+const PROPERTY_DETAIL_PATH = `/properties/${sampleProperties[0].slug}`
 
 /**
  * Wire a `pageerror` listener to every page so a JavaScript
@@ -134,7 +135,7 @@ test.describe('Smoke — properties listing', () => {
 })
 
 test.describe('Smoke — property detail route', () => {
-  test('the modern-hillside-villa detail page renders without errors', async ({ page }) => {
+  test('the canonical property detail page renders without errors', async ({ page }) => {
     const getErrors = trackUncaughtErrors(page)
 
     const response = await page.goto(PROPERTY_DETAIL_PATH, { waitUntil: 'domcontentloaded' })

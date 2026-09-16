@@ -21,6 +21,7 @@
     "test:e2e:install": "playwright install --with-deps chromium",
     "test:e2e:sanity": "node -e \"process.env.SANITY_REAL_E2E='1';require('child_process').execSync('pnpm exec playwright test tests/e2e/sanity-real-validation.spec.ts',{stdio:'inherit'})\"",
     "studio:typecheck": "cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test",
+    "bootstrap:client": "node scripts/bootstrap-client.mjs",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {

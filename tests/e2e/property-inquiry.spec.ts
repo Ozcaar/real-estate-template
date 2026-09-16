@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { sampleProperties } from '../../app/features/properties/data/properties'
 
 /**
  * Property inquiry section — Playwright integration tests.
@@ -29,8 +30,14 @@ import { expect, test } from '@playwright/test'
  * the **integration surface**: the form is wired into the
  * property page, the i18n keys render, the form structure is
  * correct, and the documented disabled state is honored.
+ *
+ * The detail page path is derived from the static catalog
+ * fixture (`sampleProperties[0]`) — the title expected in the
+ * description assertion follows the same fixture, so a future
+ * catalog edit is followed by the test automatically.
  */
-const PROPERTY_DETAIL_PATH = '/properties/modern-hillside-villa'
+const KNOWN_RECORD = sampleProperties[0]
+const PROPERTY_DETAIL_PATH = `/properties/${KNOWN_RECORD.slug}`
 
 /**
  * Wire a `pageerror` listener to every page so a JavaScript
@@ -66,9 +73,10 @@ test.describe('Property inquiry — page structure', () => {
     // which listing they are inquiring about.
     const description = page.getByText(/our team will get back to you with more information about/i).first()
     await expect(description, 'inquiry description should mention the property title').toBeVisible()
-    // The property title from the bundled static catalog is
-    // "Modern Hillside Villa"; assert the description names it.
-    await expect(description, 'inquiry description should name the property').toContainText('Modern Hillside Villa')
+    // The property title comes from the canonical static
+    // catalog record (sampleProperties[0].title), so a future
+    // catalog rename is followed by the test automatically.
+    await expect(description, `inquiry description should name the property (${KNOWN_RECORD.title})`).toContainText(KNOWN_RECORD.title)
 
     const errors = getErrors()
     expect(errors, 'property detail page should not emit uncaught pageerrors').toEqual([])

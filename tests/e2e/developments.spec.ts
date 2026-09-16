@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { sampleDevelopments } from '../../app/features/developments/data/developments'
 
 /**
  * Development detail regression tests.
@@ -22,11 +23,21 @@ import { expect, test } from '@playwright/test'
  *    that does not skip levels (mirroring the M10 contract on
  *    `/properties`).
  *  - The JSON-LD payload includes a `Residence` schema with a
- *    `BreadcrumbList` companion (the same dual-payload pattern as the
- *    property detail page).
+ *    `BreadcrumbList` companion (the same dual-payload pattern as
+ *    the property detail page).
+ *
+ * The known slug / name / location are derived from the static
+ * catalog fixture (`sampleDevelopments[0]`). The structural
+ * assertions (single `<h1>`, breadcrumb `aria-current`,
+ * heading-hierarchy walk, JSON-LD shape, sitemap per-development
+ * URLs) remain strict. The not-found slug (`UNKNOWN_SLUG`) stays
+ * a literal because the literal IS the behavior the not-found
+ * path is exercising.
  */
 
-const KNOWN_SLUG = 'mirador-del-valle'
+const KNOWN_RECORD = sampleDevelopments[0]
+const KNOWN_SLUG = KNOWN_RECORD.slug
+const KNOWN_NAME = KNOWN_RECORD.name
 const UNKNOWN_SLUG = 'this-development-does-not-exist'
 
 test.describe('Smoke — development detail route', () => {
@@ -40,13 +51,13 @@ test.describe('Smoke — development detail route', () => {
     // The page-level <h1> is the development name.
     await expect(page.locator('h1').first()).toBeVisible()
     const h1Text = (await page.locator('h1').first().textContent())?.trim()
-    expect(h1Text, '<h1> on the development detail page should be the development name').toBe('Mirador del Valle')
+    expect(h1Text, '<h1> on the development detail page should be the development name').toBe(KNOWN_NAME)
 
     // The breadcrumb trail is rendered by `SeoBreadcrumbs` and ends
     // with a non-linked <span aria-current="page">.
     const lastCrumb = page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')
     await expect(lastCrumb, 'breadcrumb trail should end with aria-current="page"').toBeVisible()
-    expect((await lastCrumb.textContent())?.trim()).toBe('Mirador del Valle')
+    expect((await lastCrumb.textContent())?.trim()).toBe(KNOWN_NAME)
 
     const errors = getErrors()
     expect(errors, `/developments/${KNOWN_SLUG} should not emit uncaught pageerrors`).toEqual([])
@@ -158,20 +169,20 @@ test.describe('Smoke — development detail a11y contract', () => {
     expect(residence, 'Residence payload should not include address (no structured Development.address in the model)').not.toHaveProperty('address')
 
     // `containedInPlace` is the documented place for the visible
-    // location. The Mirador del Valle fixture has
-    // `location: 'Valle Oriente, Monterrey'` — the assertion checks
-    // that the payload carries it (any non-empty string is OK; the
-    // exact copy is agency content).
+    // location. The first static catalog entry's `location` is
+    // used for the assertion — the payload must surface it as a
+    // non-empty `Place.name`. The exact copy is agency content
+    // and lives in `sampleDevelopments[0].location`.
     expect(residence.containedInPlace, 'Residence payload should include containedInPlace').toBeDefined()
     expect(residence.containedInPlace['@type']).toBe('Place')
-    expect(typeof residence.containedInPlace.name).toBe('string')
-    expect(residence.containedInPlace.name.length, 'containedInPlace.name should be non-empty').toBeGreaterThan(0)
+    expect(residence.containedInPlace.name).toBe(KNOWN_RECORD.location)
 
-    // Mirador del Valle has priceFrom !== priceTo, so the payload
-    // must use the documented `AggregateOffer` shape (lowPrice /
-    // highPrice / priceCurrency) — NOT the previous
-    // `Offer.price` + `eligibleQuantity` shape, which described a
-    // quantity of items rather than an upper price bound.
+    // The first static catalog entry has priceFrom !== priceTo,
+    // so the payload must use the documented `AggregateOffer`
+    // shape (lowPrice / highPrice / priceCurrency) — NOT the
+    // previous `Offer.price` + `eligibleQuantity` shape, which
+    // described a quantity of items rather than an upper price
+    // bound.
     expect(residence.offers, 'Residence payload should include an offers block when a price range is known').toBeDefined()
     expect(residence.offers['@type']).toBe('AggregateOffer')
     expect(residence.offers, 'AggregateOffer should not carry the deprecated eligibleQuantity field').not.toHaveProperty('eligibleQuantity')
@@ -182,18 +193,21 @@ test.describe('Smoke — development detail a11y contract', () => {
     expect(residence.offers.priceCurrency.length, 'priceCurrency should be a non-empty ISO 4217 code').toBeGreaterThan(0)
   })
 
-  test('a development with a single price emits an Offer (not an AggregateOffer)', async ({ page }) => {
-    // The static catalog ships Mirador del Valle, Parque Residencial
-    // Lomas, CostaMar Towers, and Quinta Industrial Lofts. All four
-    // have `priceFrom !== priceTo` (a real range). The Offer
-    // fallback path is exercised by a development record with a
-    // single price; none of the four static records trigger it, so
-    // we instead parse the catalog and find at least one record
-    // whose `priceFrom === priceTo` — or skip the assertion if no
-    // such record exists. The Mirador del Valle detail page is the
-    // primary fixture; this test is defensive coverage for a future
-    // catalog shape.
-    await page.goto(`/developments/${KNOWN_SLUG}`, { waitUntil: 'load' })
+  test('a development with a range emits an AggregateOffer (with lowPrice + highPrice)', async ({ page }) => {
+    // The bundled catalog ships two developments, both with
+    // `priceFrom !== priceTo` (a real range). The Offer fallback
+    // path is exercised by a development record with a single
+    // price; the bundled catalog does not currently trigger it.
+    // This test pins the documented `AggregateOffer` shape
+    // (lowPrice / highPrice / priceCurrency) — NOT the previous
+    // `Offer.price` + `eligibleQuantity` shape, which described
+    // a quantity of items rather than an upper price bound.
+    // When a future catalog edit introduces a single-price
+    // record, a sibling test will exercise the `Offer` branch
+    // against it.
+    const rangeRecord = sampleDevelopments.find(d => d.priceFrom !== d.priceTo)
+    expect(rangeRecord, 'the static catalog must contain at least one price-range development to exercise this branch').toBeDefined()
+    await page.goto(`/developments/${rangeRecord!.slug}`, { waitUntil: 'load' })
     const residence = await page.locator('script[type="application/ld+json"]')
       .evaluateAll((els) => {
         for (const el of els) {
@@ -207,11 +221,10 @@ test.describe('Smoke — development detail a11y contract', () => {
         return null
       })
     expect(residence, 'Residence JSON-LD payload should be present').not.toBeNull()
-    // The Mirador del Valle record has priceFrom=285000, priceTo=420000.
-    // The aggregate branch is the correct shape for that range; the
-    // single-price branch is covered by the corrected-shape assertion
-    // above (and is reachable when the data is later edited).
     expect(residence!.offers['@type']).toBe('AggregateOffer')
+    expect(typeof residence!.offers.lowPrice).toBe('number')
+    expect(typeof residence!.offers.highPrice).toBe('number')
+    expect(residence!.offers.highPrice, 'highPrice should be >= lowPrice').toBeGreaterThanOrEqual(residence!.offers.lowPrice)
   })
 })
 
@@ -228,8 +241,13 @@ test.describe('Smoke — sitemap includes per-development URLs', () => {
     if (sitemapStatus === 200) {
       const body = await sitemapResponse.text()
       expect(body, 'sitemap should include the developments listing').toContain('/developments')
-      expect(body, 'sitemap should include the mirador-del-valle detail URL').toContain('/developments/mirador-del-valle')
-      expect(body, 'sitemap should include the costamar-towers detail URL').toContain('/developments/costamar-towers')
+      // The sitemap must advertise every per-development detail URL
+      // the catalog ships — derived from the static fixture so the
+      // test follows future catalog edits automatically.
+      expect(body, `sitemap should include the ${KNOWN_SLUG} detail URL`).toContain(`/developments/${KNOWN_SLUG}`)
+      for (const development of sampleDevelopments) {
+        expect(body, `sitemap should include /developments/${development.slug}`).toContain(`/developments/${development.slug}`)
+      }
     } else {
       // 503 path: the endpoint returned the documented plain-text hint.
       expect(sitemapStatus, 'sitemap should return 503 when siteUrl is not configured').toBe(503)
