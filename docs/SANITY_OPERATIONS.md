@@ -202,6 +202,229 @@ The backup file is the **agency's property**: the agency owns the dataset the ba
 
 The Studio's schemas live in `studio/schemas/*.ts` and are committed to the source-code repository. The agency (or the next operator) rebuilds the Studio from the same repository, so the schemas are version-controlled. The schemas are the source of truth for the editor contract; the GROQ queries in `server/utils/sanity-mappings.ts` and the runtime Zod schemas in `app/features/*/schemas/*.schema.ts` are the source of truth for the runtime contract. The two are matched by hand (and the Studio's `schemas.test.ts` pins the field-name parity).
 
+## 6.7 Sanity webhook integration (Task 128)
+
+The Studio webhook flow shrinks the static deployment's content-staleness window from "next `pnpm generate`" to "within seconds of the Sanity event". The Node/Nitro deployment already re-fetches the remote catalog on every request per the v1.1.0 M17 / M20 no-permanent-cache contract, so the webhook's primary value is the **static** case.
+
+The webhook flow is **two separate architectures** — one per deployment mode — that converge on a single provider-agnostic external rebuild trigger.
+
+The new server modules are:
+
+- `server/utils/sanity-webhook.ts` — the inbound signature verifier (hand-rolled HMAC-SHA256, base64url-encoded; `node:crypto` only; no `@sanity/webhook` dependency).
+- `server/utils/sanity-webhook-dedup.ts` — the in-memory idempotency cache keyed on the `idempotency-key` header.
+- `server/utils/deploy-trigger.ts` — the provider-agnostic external rebuild trigger (`redirect: 'manual'`, bounded AbortController timeout).
+- `server/api/webhooks/sanity.post.ts` — the Node/Nitro webhook endpoint that wires the three utility modules together and applies the documented status-code mapping.
+
+### 6.7.1 Static deployment flow (`pnpm generate`)
+
+A `pnpm generate` deployment emits `.output/public/` only — **no Nitro runtime, no `server/api/*` endpoints**. The Nuxt-side webhook endpoint at `server/api/webhooks/sanity.post.ts` does NOT exist at runtime on a static host. A webhook configured against the static hostname would 404 or hang at the static host's edge.
+
+The static deployment's webhook trigger therefore terminates at infrastructure that actually exists at runtime:
+
+- **A hosting-provider deploy hook.** Most static hosts expose a per-project deploy hook URL (a small webhook-to-deploy pipeline). The operator configures Sanity to POST to that URL. The host's pipeline runs `pnpm install --frozen-lockfile && pnpm generate && deploy`, and the new artifact picks up the latest content.
+- **A CI workflow with `repository_dispatch` triggered via a serverless receiver.** A small receiver (Cloudflare Worker, Lambda, edge function, Vercel edge middleware, even a tiny Node script) receives the Sanity webhook, translates it into a `repository_dispatch` event with `event_type: 'sanity-webhook'`, and the workflow's `on.repository_dispatch` step runs the same `pnpm install --frozen-lockfile && pnpm generate && deploy` sequence.
+- **A direct GitHub Actions `workflow_dispatch` via the GitHub REST API.** Equivalent to the above; the receiver authenticates with a GitHub PAT (`secrets.WORKFLOW_TOKEN`) and triggers the workflow.
+
+The static deployment does NOT need `server/api/webhooks/sanity.post.ts` and does NOT need `NUXT_SANITY_WEBHOOK_SECRET` / `NUXT_DEPLOY_HOOK_URL` on its deployment environment. The receiver (not the Nuxt app) holds the secret + the deploy-hook URL.
+
+### 6.7.2 Node/Nitro deployment flow (`pnpm build`)
+
+A `pnpm build` deployment ships `.output/server/index.mjs` (Nitro runtime) + `.output/public/` (prerendered public pages). The webhook endpoint at `server/api/webhooks/sanity.post.ts` runs at request time and handles the Sanity webhook end-to-end:
+
+1. **Verify the signature** against the raw request body with the configured secret. A missing / malformed / stale / mismatched signature returns 401; a missing secret returns 401 with the same shape (a misconfiguration is indistinguishable from an attack from the response side).
+2. **Deduplicate on the `idempotency-key` header** (Sanity uses at-least-once delivery — see §6.7.7 for the full retry semantics). A replayed delivery returns 200 with `duplicate: true` and does NOT invoke the deploy hook a second time. The dedup lifecycle is **claim / complete / release** (§6.7.6): on every dispatch failure the endpoint calls `cache.release(key)` so the next Sanity retry with the same `idempotency-key` can re-claim and re-dispatch. **A failed dispatch NEVER permanently consumes the idempotency key.**
+3. **POST to the configured deploy hook URL** (`NUXT_DEPLOY_HOOK_URL`) with the documented dispatch metadata. The trigger uses `redirect: 'manual'` so a 3xx response from the receiver is reported as `redirect_blocked` and the endpoint returns **503** (retryable — credentials are NEVER followed across an arbitrary redirect; the cache releases the idempotency-key claim so the next Sanity retry can re-claim and re-dispatch). A bounded 5-second `AbortController` timeout keeps the webhook under Sanity's 30-second delivery window.
+4. **Log structured metadata** (`webhookId`, `operation`, `documentId`, `idempotencyKey`, `dataset`, `projectId`, `dispatch outcome`, `dispatch status`) without the raw body, the secret, or the provider response body.
+
+The Nitro case's primary value is **observability + deduplication + future cache-prewarming**, not staleness reduction (the loader re-fetches on every request, so the next request already sees the new content). The static case's primary value is **true staleness reduction** — the deploy hook rebuilds the artifact on demand.
+
+### 6.7.3 Required environment variables
+
+| Variable | Required by | Default | Purpose |
+| --- | --- | --- | --- |
+| `NUXT_SANITY_WEBHOOK_SECRET` | Static receiver **and** Node/Nitro endpoint | empty | The shared secret Sanity includes in the signed-payload header. The operator generates this on the Sanity side (Studio → API → Webhooks → Create → set secret) and copies the value here. Server-only; never via `useRuntimeConfig`. Multi-tenant override: `NUXT_SANITY_WEBHOOK_SECRET__<TENANT_ID>` (uppercased, non-alphanumeric → `_`). |
+| `NUXT_SANITY_WEBHOOK_TOLERANCE_MS` | Node/Nitro signature verifier | `300000` (5 minutes) | Replay-protection tolerance for the signature verifier. **The 5-minute default is a project replay-protection policy, NOT a requirement of Sanity's signature protocol** (Sanity's reference library does not enforce a tolerance at all). The two concerns are distinct from the dedup TTL below. |
+| `NUXT_SANITY_WEBHOOK_DEDUP_TTL_MS` | Node/Nitro dedup cache | `3600000` (1 hour) | TTL per cached idempotency entry. **Deliberately separate from the signature tolerance** — the verifier's tolerance is a security boundary (rejects replay attempts older than the window), while the dedup TTL is an operational courtesy (recognizes a replayed delivery as "already dispatched" without re-invoking the trigger). The default of 1 hour is conservative: Sanity's documented retry window is seconds-to-minutes, so any replay that lands more than an hour after the original success is treated as a fresh delivery. The deploy hook must be idempotent on its own end to make this safe. |
+| `NUXT_DEPLOY_HOOK_URL` | Static receiver **and** Node/Nitro endpoint | empty | The provider-agnostic deploy-hook URL. The endpoint POSTs here after a verified Sanity event. NOT named after a specific hosting provider; the operator chooses where it points. Required for the Node/Nitro case; the endpoint returns 503 (`missing_dispatch_config`) until this is set so Sanity retries. |
+| `NUXT_DEPLOY_HOOK_AUTH_HEADER` | Only when the receiver requires auth | empty | The full `Authorization` header value (e.g. `Bearer <token>` for Vercel / Netlify, `Token <pat>` for GitHub). The trigger never logs the value. |
+| `NUXT_DEPLOY_HOOK_TIMEOUT_MS` | Trigger outer timeout | `5000` (5 seconds) | Bounded AbortController timeout for the deploy-hook POST. Sanity's delivery timeout is 30 seconds; a 5-second receiver timeout leaves headroom for the signature verification + dispatch path. |
+
+### 6.7.4 Operator-side Sanity webhook setup
+
+The operator configures the webhook on the Sanity side:
+
+1. Open the Sanity project at `https://www.sanity.io/manage`.
+2. Navigate to **API → Webhooks → Create**.
+3. Configure:
+   - **Name.** A descriptive name (e.g. `Real Estate Template — production rebuild`).
+   - **URL.** The receiver URL (a hosting-provider deploy hook, a small serverless receiver, or — for the Node/Nitro case — the endpoint URL `/api/webhooks/sanity`).
+   - **Dataset.** The dataset the webhook listens on (typically `production`).
+   - **Trigger on.** The operations to forward. Recommended: `create`, `update`. Optional: `delete` (some operators ignore `delete` events when the agency unpublishes a record).
+   - **Filter.** A GROQ filter that narrows the webhook to the agency's relevant document types. The recommended filter: `_type in ['property', 'agent', 'development']`. Without a filter, the webhook fires on every dataset change.
+   - **Projection.** Optional. A custom projection can replace the default `_id`, `_type`, `_updatedAt` shape. The receiver does NOT require the full document body.
+   - **HTTP method.** `POST` (the documented default; the endpoint pins to POST).
+   - **API version.** The current date (Sanity's webhook API is versioned).
+   - **Secret.** Generate a fresh 32+ character random string. Copy this into `NUXT_SANITY_WEBHOOK_SECRET` (or the per-tenant override).
+4. **Save.** Sanity delivers a test webhook (a no-op) to the URL; the receiver should return 200.
+
+The receiver's contract is documented above (§6.7.1 for static, §6.7.2 for Node/Nitro). The endpoint's status-code mapping is deterministic (§6.7.5).
+
+### 6.7.5 Endpoint status-code contract (Node/Nitro)
+
+The endpoint maps every failure mode to a stable, documented HTTP status. Under the failure-safe retry semantics (§6.7.8), every dispatch failure maps to **503** (retryable) — the endpoint releases the idempotency claim on every failure so a Sanity retry can re-claim and re-dispatch. The four `400-range` rejects (bad signature, missing idempotency key, oversize body, wrong content-type) are permanent; Sanity does NOT retry on 4xx.
+
+| Status | Body | When | Sanity retries? |
+| --- | --- | --- | --- |
+| `200` | `{ ok: true }` | Signature verified, dispatch accepted by the receiver; cache entry transitioned to `completed`. | n/a (success) |
+| `200` | `{ ok: true, duplicate: true }` | Replayed idempotency key — a prior delivery already dispatched and completed successfully. | n/a (success) |
+| `400` | `{ ok: false, error: 'missing_idempotency_key' }` | The `idempotency-key` header is missing. | no (4xx) |
+| `400` | `{ ok: false, error: 'malformed_payload' }` | The body is empty or the JSON is not parseable after a valid signature. **The cache claim is released** so a corrected replay can re-dispatch. | no (4xx) |
+| `401` | `{ ok: false, error: 'invalid_signature' }` | Signature verification failed (missing / malformed / stale / mismatched). | no (4xx) |
+| `405` | (h3 default) | Method other than POST. | no (4xx) |
+| `413` | `{ ok: false, error: 'payload_too_large' }` | Body > 256 KB. | no (4xx) |
+| `415` | `{ ok: false, error: 'unsupported_media_type' }` | Content-Type other than `application/json`. | no (4xx) |
+| `503` | `{ ok: false, error: 'dispatch_in_flight' }` | A prior delivery with the same idempotency-key is mid-dispatch. **The endpoint does NOT acknowledge an in-flight duplicate as success** — the retry's outcome depends on the prior dispatch's result (success → markCompleted → next retry is `duplicate` 200; failure → release → next retry is `claimed` + re-dispatch). No event loss. | yes (5xx) |
+| `503` | `{ ok: false, error: 'dispatch_missing_config' }` | `NUXT_DEPLOY_HOOK_URL` is not configured. **The cache claim is released** so a Sanity retry can re-claim after the operator wires the hook. | yes (5xx) |
+| `503` | `{ ok: false, error: 'dispatch_auth_rejected' }` | The receiver returned 401 or 403. Cache released; retry invokes the trigger again with the (operator-fixed) credential. | yes (5xx) |
+| `503` | `{ ok: false, error: 'dispatch_not_found' }` | The receiver returned 404. Cache released; retry invokes the trigger again with the (operator-fixed) URL. | yes (5xx) |
+| `503` | `{ ok: false, error: 'dispatch_client_error' }` | The receiver returned a 4xx other than 401 / 403 / 404. Cache released; retry invokes the trigger again. | yes (5xx) |
+| `503` | `{ ok: false, error: 'dispatch_server_error' }` | The receiver returned 5xx. Cache released; retry invokes the trigger again. | yes (5xx) |
+| `503` | `{ ok: false, error: 'dispatch_redirect_blocked' }` | The receiver returned a 3xx (the trigger does NOT follow arbitrary redirects). Cache released; retry invokes the trigger again with the (operator-fixed) URL. | yes (5xx) |
+| `503` | `{ ok: false, error: 'dispatch_timeout' }` | The fetch exceeded the receiver's timeout. Cache released; retry invokes the trigger again. | yes (5xx) |
+| `503` | `{ ok: false, error: 'dispatch_network_error' }` | A transport-layer failure (DNS, TCP, TLS). Cache released; retry invokes the trigger again. | yes (5xx) |
+
+Provider response bodies and secrets are never exposed in the response body or in the log line. The endpoint's structured log carries only the documented fields (`webhookId`, `operation`, `documentId`, `idempotencyKey`, `outcome`, `status`, `lifecycle`).
+
+### 6.7.6 Idempotency lifecycle (claim / complete / release)
+
+The endpoint deduplicates on the `idempotency-key` header via an in-memory cache that tracks each entry through three states:
+
+1. **`claimed`** — the endpoint has accepted the delivery and is currently invoking the external rebuild trigger. A second delivery with the same key arriving while the first is still in flight sees the entry in `claimed` state and the endpoint returns **503 `dispatch_in_flight`** — the retry stays in Sanity's queue until the first dispatch's outcome (success or failure) determines what happens next.
+2. **`completed`** — the dispatch was accepted by the external receiver (a 2xx response). Subsequent deliveries with the same key see `duplicate` and the endpoint returns **200 + `duplicate: true`** (idempotent ack). The cache entry's TTL bounds the duplicate-detection window.
+
+   **`markCompleted` preserves the original `expiresAt`** — the entry's `state` field transitions from `'claimed'` to `'completed'`; the `expiresAt` timestamp is **NOT refreshed or extended**. The entry lives for the remainder of the original dedup TTL window. This matches the implementation at `server/utils/sanity-webhook-dedup.ts:280-288`: `existing.state = 'completed'`. The `completed` state and the original TTL together answer the question "was this idempotency-key seen in the last `NUXT_SANITY_WEBHOOK_DEDUP_TTL_MS` window?" — a `completed` entry that has not yet expired is a duplicate; a `completed` entry that has expired is treated as a fresh delivery (a re-publish after the TTL elapsed is a new event in Sanity's view).
+3. **(released)** — the dispatch failed for any reason (missing config, auth rejected, 4xx, 5xx, redirect blocked, timeout, network error, malformed body after valid signature). The endpoint deletes the cache entry so a Sanity retry can re-claim and re-dispatch. **A failed dispatch NEVER permanently consumes the idempotency key.**
+
+The endpoint's decision tree:
+
+```
+tryClaim(key)
+  ├─ 'claimed'    → run dispatch → on success markCompleted → 200
+  │                                       on failure release       → 503 (retryable)
+  ├─ 'in_flight'  → return 503 { ok: false, error: 'dispatch_in_flight' }
+  └─ 'duplicate'  → return 200 { ok: true, duplicate: true }
+```
+
+**No-event-loss guarantee.** A second delivery arriving while the first is mid-dispatch returns **503 `dispatch_in_flight`** rather than a success ack — the in-flight dispatch's eventual outcome (success → markCompleted → next retry is `duplicate` 200; failure → release → next retry is `claimed` + re-dispatch) determines the eventual delivery status. An ack on an in-flight duplicate could permanently lose the event if the original dispatch later fails.
+
+The cache is documented as **in-memory only** with the following limitations:
+
+- **Multi-instance / serverless.** A deployment with more than one Nitro process (PM2 cluster mode, Cloudflare Workers isolates, multiple containers, edge functions) does NOT share the cache. Two instances that see the same replay will both trigger. The deploy hook should be idempotent on its own end — a `repository_dispatch` with the same commit SHA is a no-op; a hosting-provider deploy hook called twice during the build window is also a no-op. The practical blast radius is bounded.
+- **Process restart.** A Nitro process restart clears the cache. A Sanity replay that lands after the restart will re-trigger. Same mitigation as above (deploy-hook idempotency).
+- **Bounded size.** The cache holds at most 1024 entries; older entries are evicted under FIFO when the cap is reached.
+- **TTL.** Each entry expires after `NUXT_SANITY_WEBHOOK_DEDUP_TTL_MS` (1 hour by default — see §6.7.3). The TTL is deliberately separate from the signature verifier's tolerance (`NUXT_SANITY_WEBHOOK_TOLERANCE_MS`, 5 minutes default). The two env vars measure different things: the signature tolerance is a **security boundary** (rejects replay attempts older than the window); the dedup TTL is an **operational courtesy** (recognizes a replayed delivery as "already dispatched" without re-invoking the trigger). An operator can tighten one without relaxing the other.
+
+Operators who need strict single-trigger semantics across instances must back this cache with a shared store (Redis / KV). The deploy-hook contract is documented above to note this limitation; the endpoint does not enforce it.
+
+### 6.7.7 Sanity's retry semantics & reconciliation
+
+The endpoint is designed against Sanity's documented delivery contract (<https://www.sanity.io/docs/webhooks>):
+
+- **At-least-once delivery.** Sanity may redeliver the same event more than once. The `idempotency-key` header identifies a single event across all attempts — a retry carries the same key as the original delivery. The endpoint's claim / complete / release lifecycle (§6.7.6) uses this key as the dedup unit.
+- **Sanity's status-code retry policy (verbatim from the Sanity docs).**
+  - **2xx is treated as success** — Sanity marks the delivery successful and does not retry.
+  - **4xx (except 429) is treated as undeliverable** — Sanity marks the delivery failed and does **not** retry. The endpoint's `400` mapping (`missing_idempotency_key`, `malformed_payload`), the `401` invalid-signature mapping, the `405` method-guard mapping, the `413` oversize-body mapping, and the `415` wrong-content-type mapping are all **permanent rejects** under this rule.
+  - **429 is retried** per Sanity's retry policy.
+  - **Any 5xx, including 502 and 503, is retried** per Sanity's retry policy. The endpoint's `503` mapping for every dispatch-failure outcome (`dispatch_in_flight`, `dispatch_missing_config`, `dispatch_auth_rejected`, `dispatch_not_found`, `dispatch_client_error`, `dispatch_server_error`, `dispatch_redirect_blocked`, `dispatch_timeout`, `dispatch_network_error`) is **deliberately in the 5xx family** so Sanity retries the delivery. The previous `502` mapping that pre-dated the failure-safe refactor placed dispatch failures in the 4xx family from Sanity's perspective; that has been corrected to `503` so every dispatch failure is now retryable.
+- **Retry cadence.** Sanity currently retries **twice** at approximately **30-second intervals** (per Sanity's docs). The endpoint's `NUXT_DEPLOY_HOOK_TIMEOUT_MS` (default 5 seconds) leaves headroom so a slow receiver can return a retryable 5xx within Sanity's 30-second delivery window rather than the attempt being cancelled.
+- **30-second delivery timeout per attempt.** Sanity cancels a single attempt after 30 seconds. The endpoint's 5-second receiver timeout leaves headroom for the signature verification + dispatch path.
+
+**The original Task 129 bug, restated for the operator.** The failure the refactor addressed was that **a failed dispatch left the idempotency-key entry in the cache in a state that prevented a later Sanity retry from re-dispatching**. A Sanity retry after a transient 5xx or `dispatch_*` failure could not re-claim the key, so the rebuild was lost. The fix is the three-state `claim / complete / release` lifecycle (§6.7.6): on every dispatch failure the endpoint calls `cache.release(key)`, which deletes the entry so the next Sanity retry with the same `idempotency-key` sees an empty cache and re-claims + re-dispatches. **The bug was NOT that Sanity does not retry on 502** — Sanity's published policy is that any 5xx (including 502) is retryable. The bug was the dedup cache permanently consuming the entry on failure. The status-code change from `502` to `503` aligns the contract with Sanity's actual retry policy; the lifecycle change is the correctness fix.
+
+**Reconciliation.** Sanity's retry policy does NOT guarantee synchronization outside its retry window. The 30-second retry interval × 2 retries gives a best-case coverage of ~60 seconds from the original publish. Beyond that window — receiver outage, secret rotation, env var misconfiguration, Nitro process restart before the endpoint calls `markCompleted` — the operator must reconcile the production site manually:
+
+- For static deployments: re-run `pnpm install --frozen-lockfile && pnpm generate && deploy` to ship a fresh artifact (or `pnpm generate && deploy` for the cached install).
+- For Node/Nitro deployments: re-run the deploy (the next request will refetch from the data source).
+- For content correction: republish the affected documents in the Studio (the republish is a fresh event with a new idempotency-key).
+
+**Do not rely on the webhook alone for synchronization.** The webhook is the fast path; reconciliation is the safety net. The deploy hook must be idempotent on its own end so a missed + retried event, or a manual replay, does not cause double-execution (a `repository_dispatch` with the same commit SHA is a no-op; a hosting-provider deploy hook called twice during the build window is also a no-op). The short Sanity retry window (~60 seconds of best-case coverage) is the constraint that makes the reconciliation procedure a **required** part of the contract — webhook processing must include a reconciliation path because the retry window is too short to recover from a long receiver outage.
+
+### 6.7.8 Static deployment security architectures
+
+A `pnpm generate` deployment emits `.output/public/` only — no Nitro runtime, no `server/api/*` endpoints. The static artifact cannot verify `sanity-webhook-signature`. The Nuxt-side webhook endpoint is therefore **not** the Sanity webhook receiver for the static deployment; the receiver is operator-side infrastructure that terminates at runtime.
+
+Two architectures are documented below. The operator chooses the one that matches the agency's threat model and operational preferences.
+
+#### 6.7.8.1 Direct: `Sanity → deploy / CI receiver` (allowed only when the receiver authenticates the request)
+
+Direct flow `Sanity → deploy / CI receiver` is allowed only when the **receiver authenticates the request using a strong mechanism that Sanity can supply**. The two acceptable mechanisms are:
+
+1. **Verification of `sanity-webhook-signature`.** The receiver computes the expected HMAC-SHA256 over `${timestamp}.${rawBody}` with the shared secret, base64url-encodes the result, and compares to the `v1=` field of the `sanity-webhook-signature` header (per Sanity's documented protocol). This is the canonical mechanism.
+2. **An explicitly configured custom / shared-secret authorization header that the receiver verifies.** The Sanity Studio's webhook configuration supports the documented `Authorization` header (the operator enters the full `Authorization` value, e.g. `Bearer <token>` or `Token <token>`, and Sanity forwards it verbatim on every delivery). The receiver verifies the header value against a known shared secret stored on the receiver side. This is appropriate when the receiver's stack supports `Authorization`-header-based verification but not the Sanity signature protocol.
+
+**Unauthenticated public POST endpoints are NOT acceptable.** A direct flow where the receiver accepts any POST and triggers a deploy on receipt is **NOT** a documented architecture. An unauthenticated POST endpoint means an attacker who knows the URL can trigger a deploy at will (or, depending on the deploy hook, exfiltrate build secrets). Pointing Sanity at such a URL is rejected by the operator's threat model — the operator must use one of the two mechanisms above, or fall back to the verified-receiver architecture (§6.7.8.2).
+
+If the operator chooses the direct architecture with one of the two mechanisms above:
+
+- The receiving endpoint is responsible for the verification (using the documented Sanity signature protocol, or by comparing the `Authorization` header to a known shared secret stored in the receiver's secret manager).
+- The receiver must reject any request that fails the verification with a non-2xx response so Sanity treats it as undeliverable. The receiver's verification logic is the security boundary; the deploy hook's existence on a public URL is not by itself a vulnerability if the verification gate is enforced.
+- The Sanity side configures the URL + the secret (signature secret OR `Authorization` value) via the Sanity webhook configuration (Studio → API → Webhooks → Create → set secret / set header). The credential is held by Sanity and the receiver; neither is held by the Nuxt static artifact.
+- The provider may additionally authenticate its own deploy hook out-of-band (e.g., the provider requires a signed payload or a server-to-server credential that is not derived from the Sanity secret).
+
+If the operator's chosen provider does NOT support either of the two mechanisms above (no `sanity-webhook-signature` verification AND no `Authorization`-header verification), this architecture is **NOT** appropriate — switch to the verified-receiver architecture (§6.7.8.2). The Nuxt deployment does not document any provider by name; the operator is responsible for verifying the provider's authentication capability.
+
+#### 6.7.8.2 Preferred: `Sanity → signature-verifying receiver → authenticated CI / hosting deploy trigger`
+
+The preferred architecture for any deployment where the receiving provider does NOT verify `sanity-webhook-signature`. The receiver is a small operator-side component (Cloudflare Worker, Lambda, edge function, Vercel edge middleware, GitHub Action via a tiny serverless entry point, etc.) that:
+
+1. Receives the Sanity webhook POST.
+2. Verifies `sanity-webhook-signature` against the raw body using the Sanity secret held by the receiver (NOT by the Nuxt artifact).
+3. Optionally verifies the `idempotency-key` header against a short-lived dedup store (the receiver's own — independent of the in-memory cache the Nuxt endpoint uses).
+4. Authenticates to a CI workflow (`repository_dispatch` with a GitHub PAT) or a hosting-provider deploy hook (Bearer / Token auth) using a credential held by the receiver (NOT by the Nuxt artifact).
+5. Triggers the rebuild pipeline.
+
+```
+Sanity  ────►  Receiver  ────►  CI / hosting deploy hook
+            (verifies           (authenticated
+             signature,          trigger)
+             holds secret)
+                              ▲
+                              │ rebuild
+                              ▼
+                          Static artifact
+                          (no secrets,
+                           no verification,
+                           no webhook logic)
+```
+
+**Ownership of secrets.** The verifying receiver owns BOTH the Sanity webhook secret and the deploy-hook credential. The static Nuxt artifact owns neither. The Nuxt artifact is a dumb file server that ships pre-rendered HTML / CSS / JS to a CDN; an attacker who compromises the artifact cannot impersonate Sanity (no Sanity secret) and cannot trigger a rebuild (no deploy-hook credential).
+
+**Provider-agnostic.** The receiver is provider-agnostic — the Nuxt project ships no provider-specific code. The receiver's implementation choice (Cloudflare Workers vs Lambda vs Vercel middleware vs a small Node.js endpoint in a separate repository) is the operator's. The contract between the Nuxt artifact and the rebuild pipeline is "the receiver POSTs to a deploy hook URL the operator chooses"; nothing in the Nuxt artifact depends on which provider the operator selected.
+
+**What Sanity sees.** Sanity only sees an outbound POST to the receiver's URL with the standard webhook headers + the `sanity-webhook-signature` header. Sanity has no awareness of the receiver's downstream actions; the receiver is a black box from Sanity's perspective.
+
+**What the static artifact sees.** The static artifact sees nothing — no inbound webhooks, no Sanity calls, no deploy calls. It just serves pre-rendered files. The webhook flow is entirely outside the artifact's lifecycle.
+
+**Receiver implementation guidance (operator-side, NOT shipped by the Nuxt project).** The receiver can be as simple as ~50 lines of code that:
+
+1. Reads the `sanity-webhook-signature` header.
+2. Reads the raw request body via `request.text()`.
+3. Computes the expected HMAC-SHA256 over `${timestamp}.${body}`, base64url-encoded, and compares to `v1` via `crypto.timingSafeEqual`.
+4. Checks the timestamp tolerance (5 minutes).
+5. If valid, POSTs to the deploy hook URL with an `Authorization` header (Bearer / Token / custom) using a credential held in the receiver's secret manager.
+
+The Nuxt project does NOT ship a reference receiver implementation — the operator's receiver is independent of the Nuxt project. The boundary regression tests in `server/utils/sanity-boundary.test.ts` enforce that no Nuxt-shipped code reads `sanity-webhook-signature` outside `server/utils/sanity-webhook.ts` — the signature-verification surface is contained to the verifier module the receiver (NOT the Nuxt project) can re-implement or vendor.
+
+#### 6.7.8.3 Static-deployment third-party receiver (Zapier, Make, n8n, IFTTT, Pipedream)
+
+For deployments that prefer not to run any receiver on the agency's behalf, Sanity's webhook can target a third-party integration the agency already operates. The third-party tool receives the Sanity webhook, performs any fan-out or transformation, and triggers the deploy hook on the platform the agency chose. The trade-offs are:
+
+- **Pro.** No operator-side receiver code to maintain.
+- **Con.** The third-party tool's secret-handling and signature-verification capabilities are out of the operator's control. The operator must verify that the chosen tool supports Sanity's signature protocol (most do via documented actions; some do not).
+- **Con.** The deploy-hook credential is held by the third-party tool, not by the operator. The operator must trust the tool's secret-handling practices.
+
+This architecture is appropriate when the agency already operates the third-party tool and the operator is satisfied with its security posture.
+
 ## 7. Incident / recovery actions
 
 The agency / operator runs the recovery actions below when the content pipeline misbehaves. Each action has a clear owner, a clear entry condition, and a clear exit condition. The recovery actions are **non-destructive by default**; the destructive actions (dataset restore, project delete) require written agency-owner approval.

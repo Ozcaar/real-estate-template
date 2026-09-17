@@ -89,6 +89,50 @@ const FORBIDDEN_APP_PATTERNS = [
     label: 'createSanityClientConfig reference',
     pattern: /createSanityClientConfig\b/,
   },
+  {
+    label: 'sanity-webhook import from app/',
+    pattern: /from\s+['"][^'"]*sanity-webhook['"]/,
+  },
+  {
+    label: 'sanity-webhook-dedup import from app/',
+    pattern: /from\s+['"][^'"]*sanity-webhook-dedup['"]/,
+  },
+  {
+    label: 'deploy-trigger import from app/',
+    pattern: /from\s+['"][^'"]*deploy-trigger['"]/,
+  },
+  {
+    label: 'NUXT_SANITY_WEBHOOK_SECRET reference (including the per-tenant override form)',
+    pattern: /NUXT_SANITY_WEBHOOK_SECRET/,
+  },
+  {
+    label: 'NUXT_SANITY_WEBHOOK_TOLERANCE_MS reference',
+    pattern: /NUXT_SANITY_WEBHOOK_TOLERANCE_MS\b/,
+  },
+  {
+    label: 'NUXT_DEPLOY_HOOK_URL reference',
+    pattern: /NUXT_DEPLOY_HOOK_URL\b/,
+  },
+  {
+    label: 'NUXT_DEPLOY_HOOK_AUTH_HEADER reference',
+    pattern: /NUXT_DEPLOY_HOOK_AUTH_HEADER\b/,
+  },
+  {
+    label: 'NUXT_DEPLOY_HOOK_TIMEOUT_MS reference',
+    pattern: /NUXT_DEPLOY_HOOK_TIMEOUT_MS\b/,
+  },
+  {
+    label: 'verifySanitySignature re-export',
+    pattern: /verifySanitySignature\b/,
+  },
+  {
+    label: 'computeSanitySignature re-export',
+    pattern: /computeSanitySignature\b/,
+  },
+  {
+    label: 'triggerDeploy re-export',
+    pattern: /triggerDeploy\b/,
+  },
 ] as const
 
 /**
