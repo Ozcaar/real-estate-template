@@ -343,11 +343,25 @@ useJsonLd(relatedJsonLd)
 
       <div class="grid items-start gap-10 lg:grid-cols-2">
         <ResponsiveImage
+          v-if="!d.imageMeta"
           :src="d.image"
           :alt="d.name"
           ratio="3/2"
           rounded="xl"
           sizes="100vw lg:50vw"
+          loading="eager"
+          fetchpriority="high"
+        />
+        <SanityImage
+          v-else
+          :src="d.image"
+          :meta="d.imageMeta"
+          :alt="d.name"
+          ratio="3/2"
+          rounded="xl"
+          sizes="100vw lg:50vw"
+          width="960"
+          :aspect-ratio="3 / 2"
           loading="eager"
           fetchpriority="high"
         />

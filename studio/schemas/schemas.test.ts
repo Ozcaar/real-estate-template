@@ -263,6 +263,27 @@ describe('studio/schemas', () => {
       expect(field?.of?.map(t => t.type)).toEqual(['image'])
     })
 
+    it('property coverImage enables the Sanity hotspot (Task 130 — `options: { hotspot: true }`)', () => {
+      // Sanity's documented image schema pattern: `options: { hotspot: true }`.
+      // `hotspot: true` alone exposes both the focal-point picker AND the
+      // crop region UI to the editor (Sanity's `sanity.imageHotspot` and
+      // `sanity.imageCrop` widgets are bundled with the hotspot toggle).
+      // No manual `fields: [{ name: 'hotspot', ... }, { name: 'crop', ... }]`
+      // array is needed.
+      const field = findField(propertyType, 'coverImage') as
+        | { options?: { hotspot?: boolean } }
+        | undefined
+      expect(field?.options?.hotspot).toBe(true)
+    })
+
+    it('property images gallery enables the Sanity hotspot on every entry (Task 130)', () => {
+      const field = findField(propertyType, 'images') as
+        | { of?: Array<{ type: string, options?: { hotspot?: boolean } }> }
+        | undefined
+      const imageEntry = field?.of?.[0]
+      expect(imageEntry?.options?.hotspot).toBe(true)
+    })
+
     it('declares coordinates as a geopoint', () => {
       const field = findField(propertyType, 'coordinates') as { type: string } | undefined
       expect(field?.type).toBe('geopoint')
@@ -492,7 +513,11 @@ describe('studio/schemas', () => {
       }
     })
 
-    it('portrait image enables the hotspot', () => {
+    it('portrait image enables the Sanity hotspot (Task 130 — `options: { hotspot: true }`)', () => {
+      // Sanity's documented image schema pattern: `options: { hotspot: true }`.
+      // `hotspot: true` alone exposes both the focal-point picker AND the
+      // crop region UI to the editor (Sanity's `sanity.imageHotspot` and
+      // `sanity.imageCrop` widgets are bundled with the hotspot toggle).
       const field = findField(agentType, 'image') as { options?: { hotspot?: boolean } } | undefined
       expect(field?.options?.hotspot).toBe(true)
     })
@@ -568,6 +593,14 @@ describe('studio/schemas', () => {
     it('declares image as a required image', () => {
       const field = findField(developmentType, 'image') as { type: string } | undefined
       expect(field?.type).toBe('image')
+    })
+
+    it('development cover image enables the Sanity hotspot (Task 130 — `options: { hotspot: true }`)', () => {
+      // Sanity's documented image schema pattern: `options: { hotspot: true }`.
+      // `hotspot: true` alone exposes both the focal-point picker AND the
+      // crop region UI to the editor.
+      const field = findField(developmentType, 'image') as { options?: { hotspot?: boolean } } | undefined
+      expect(field?.options?.hotspot).toBe(true)
     })
   })
 

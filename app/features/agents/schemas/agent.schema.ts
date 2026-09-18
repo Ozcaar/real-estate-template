@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { Agent } from '../types/agent.types'
+import { imageSourceMetaSchema } from '~/core/image/image-source.schema'
 
 /**
  * Runtime validation for the agent domain model.
@@ -47,6 +48,15 @@ export const agentSchema = z.object({
   role: z.string().min(1),
   bio: z.string().min(1),
   image: z.string().min(1),
+  /**
+   * Provider-neutral metadata for the portrait image. Populated by
+   * the Sanity mapper when the editor has saved a hotspot + crop on
+   * the source asset; `undefined` for the static / api / generic-CMS
+   * paths and for Sanity records without editorial crop metadata.
+   * The rendering layer treats `undefined` as "no metadata, use the
+   * plain asset URL".
+   */
+  imageMeta: imageSourceMetaSchema.optional(),
   phone: z.string().optional(),
   email: z.string().optional(),
   whatsapp: z.string().optional(),

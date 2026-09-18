@@ -76,6 +76,19 @@ const props = defineProps<{
   coverImage: string
   title: string
   initialIndex: number
+  /**
+   * Provider-neutral metadata for the cover image (Task 130).
+   * When present, the lightbox uses the Sanity-aware
+   * `SanityImage` wrapper for the cover-image slide; when
+   * absent, it falls back to the plain `ResponsiveImage`.
+   */
+  coverImageMeta?: import('~/core/image/image-source').ImageSourceMeta
+  /**
+   * Provider-neutral metadata for the gallery images. Indexed
+   * in lockstep with `images`. Same fallback contract as
+   * `coverImageMeta`.
+   */
+  imagesMeta?: import('~/core/image/image-source').ImageSourceMeta[]
 }>()
 
 const emit = defineEmits<{
@@ -84,6 +97,18 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+/**
+ * Resolve the provider-neutral metadata for a given image
+ * index (Task 130). The first image is the cover image (the
+ * gallery prepends it when `images[]` is empty); the
+ * cover-image meta takes precedence, and the per-index
+ * `imagesMeta[i]` is the fallback for the rest.
+ */
+function metaForIndex(index: number): import('~/core/image/image-source').ImageSourceMeta | undefined {
+  if (index === 0) return props.coverImageMeta ?? props.imagesMeta?.[0]
+  return props.imagesMeta?.[index]
+}
 
 const displayImages = computed<string[]>(() => {
   if (props.images && props.images.length > 0) {
@@ -465,11 +490,24 @@ const dialogLabel = computed(() =>
           >
             <div class="flex h-full items-center justify-center">
               <ResponsiveImage
+                v-if="!metaForIndex(index)"
                 :src="src"
                 :alt="imageAlt(index)"
                 ratio="auto"
                 rounded="none"
                 sizes="100vw"
+                loading="eager"
+                fetchpriority="high"
+              />
+              <SanityImage
+                v-else
+                :src="src"
+                :meta="metaForIndex(index)!"
+                :alt="imageAlt(index)"
+                ratio="auto"
+                rounded="none"
+                sizes="100vw"
+                width="1920"
                 loading="eager"
                 fetchpriority="high"
               />

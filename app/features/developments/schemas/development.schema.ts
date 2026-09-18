@@ -4,6 +4,7 @@ import type {
   DevelopmentStatus,
 } from '../types/development.types'
 import type { MeasurementUnit } from '~/types/agency.types'
+import { imageSourceMetaSchema } from '~/core/image/image-source.schema'
 
 /**
  * Runtime validation for the development domain model.
@@ -75,6 +76,15 @@ export const developmentSchema = z.object({
   location: z.string().min(1),
   description: z.string().min(1),
   image: z.string().min(1),
+  /**
+   * Provider-neutral metadata for the cover image. Populated by the
+   * Sanity mapper when the editor has saved a hotspot + crop on the
+   * source asset; `undefined` for the static / api / generic-CMS
+   * paths and for Sanity records without editorial crop metadata.
+   * The rendering layer treats `undefined` as "no metadata, use the
+   * plain asset URL".
+   */
+  imageMeta: imageSourceMetaSchema.optional(),
   priceFrom: z.number().nonnegative().optional(),
   priceTo: z.number().nonnegative().optional(),
   currency: z.string().min(1).optional(),
@@ -91,8 +101,8 @@ export const developmentListSchema = z.array(developmentSchema)
 
 /**
  * Type inferred from the schema. Kept assignable to the canonical
- * {@link Development} interface via the assertion below, so the
- * schema and the type cannot drift.
+ * {@link Development} interface via the assertion below, so the schema
+ * and the type cannot drift.
  */
 export type DevelopmentInput = z.infer<typeof developmentSchema>
 

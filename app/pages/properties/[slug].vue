@@ -268,6 +268,8 @@ useJsonLd(relatedJsonLd)
           :images="p.images"
           :cover-image="p.coverImage"
           :title="p.title"
+          :cover-image-meta="p.coverImageMeta"
+          :images-meta="p.imagesMeta"
         />
 
         <div>

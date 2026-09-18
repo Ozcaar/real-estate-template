@@ -195,11 +195,25 @@ useJsonLd(breadcrumbJsonLd)
 
       <div class="grid items-start gap-10 lg:grid-cols-2">
         <ResponsiveImage
+          v-if="!a.imageMeta"
           :src="a.image"
           :alt="a.name"
           ratio="1/1"
           rounded="xl"
           sizes="100vw lg:50vw"
+          loading="eager"
+          fetchpriority="high"
+        />
+        <SanityImage
+          v-else
+          :src="a.image"
+          :meta="a.imageMeta"
+          :alt="a.name"
+          ratio="1/1"
+          rounded="xl"
+          sizes="100vw lg:50vw"
+          width="640"
+          :aspect-ratio="1"
           loading="eager"
           fetchpriority="high"
         />

@@ -84,6 +84,12 @@ const SANITY_AGENT_DOC = {
   role: 'Senior Real Estate Advisor',
   bio: 'Twelve years of experience in luxury residential sales across Mexico City.',
   image: 'https://cdn.sanity.io/images/test/agent-1.jpg',
+  imageMeta: {
+    assetRef: 'image-agent-doc-1-600x600-jpg',
+    assetUrl: 'https://cdn.sanity.io/images/test/agent-1.jpg',
+    hotspot: { x: 0.5, y: 0.4, width: 0.3, height: 0.3 },
+    metadata: { width: 600, height: 600, aspectRatio: 1 },
+  },
   phone: '+52 55 1234 5678',
   email: 'marina@example.test',
   whatsapp: '+52 55 1234 5678',
@@ -98,6 +104,13 @@ const SANITY_DEVELOPMENT_DOC = {
   location: 'Polanco, Mexico City',
   description: 'A pre-sale development of 48 units in the heart of Polanco.',
   image: 'https://cdn.sanity.io/images/test/dev-1.jpg',
+  imageMeta: {
+    assetRef: 'image-dev-doc-1-1920x1080-jpg',
+    assetUrl: 'https://cdn.sanity.io/images/test/dev-1.jpg',
+    hotspot: { x: 0.6, y: 0.5, width: 0.4, height: 0.4 },
+    crop: { top: 0.05, bottom: 0.05, left: 0.1, right: 0.1 },
+    metadata: { width: 1920, height: 1080, aspectRatio: 16 / 9 },
+  },
   priceFrom: 8_500_000,
   priceTo: 18_000_000,
   currency: 'USD',
@@ -134,7 +147,33 @@ const SANITY_PROPERTY_DOC = {
     'https://cdn.sanity.io/images/test/property-1-b.jpg',
     'https://cdn.sanity.io/images/test/property-1-c.jpg',
   ],
+  imagesMeta: [
+    {
+      assetRef: 'image-property-1-a-1600x1200-jpg',
+      assetUrl: 'https://cdn.sanity.io/images/test/property-1-a.jpg',
+      hotspot: { x: 0.5, y: 0.5, width: 0.4, height: 0.4 },
+      metadata: { width: 1600, height: 1200, aspectRatio: 4 / 3 },
+    },
+    {
+      assetRef: 'image-property-1-b-1600x1200-jpg',
+      assetUrl: 'https://cdn.sanity.io/images/test/property-1-b.jpg',
+      crop: { top: 0.1, bottom: 0.1, left: 0.05, right: 0.05 },
+      metadata: { width: 1600, height: 1200, aspectRatio: 4 / 3 },
+    },
+    {
+      assetRef: 'image-property-1-c-1600x1200-jpg',
+      assetUrl: 'https://cdn.sanity.io/images/test/property-1-c.jpg',
+      metadata: { width: 1600, height: 1200, aspectRatio: 4 / 3 },
+    },
+  ],
   coverImage: 'https://cdn.sanity.io/images/test/property-1-cover.jpg',
+  coverImageMeta: {
+    assetRef: 'image-property-1-cover-1600x1200-jpg',
+    assetUrl: 'https://cdn.sanity.io/images/test/property-1-cover.jpg',
+    hotspot: { x: 0.6, y: 0.4, width: 0.4, height: 0.4 },
+    crop: { top: 0.05, bottom: 0.05, left: 0.05, right: 0.05 },
+    metadata: { width: 1600, height: 1200, aspectRatio: 4 / 3 },
+  },
   amenities: ['Pool', 'Gym', 'Concierge', 'Parking'],
   agentId: 'agent-doc-1',
   developmentId: 'dev-doc-1',
@@ -232,6 +271,21 @@ describe('Sanity end-to-end integration (Task 118)', () => {
       ])
     })
 
+    it('preserves the agent imageMeta (Task 130 — hotspot + metadata through the boundary)', async () => {
+      enableSanityProvider()
+      mockFetch.mockResolvedValueOnce([SANITY_AGENT_DOC])
+
+      const agents = await loadAgentsServer()
+      const agent = agents[0]
+
+      expect(agent?.imageMeta).toEqual({
+        assetRef: 'image-agent-doc-1-600x600-jpg',
+        assetUrl: 'https://cdn.sanity.io/images/test/agent-1.jpg',
+        hotspot: { x: 0.5, y: 0.4, width: 0.3, height: 0.3 },
+        metadata: { width: 600, height: 600, aspectRatio: 1 },
+      })
+    })
+
     it('passes the agent through the agentsService.getBySlug helper', async () => {
       enableSanityProvider()
       mockFetch.mockResolvedValueOnce([SANITY_AGENT_DOC])
@@ -275,6 +329,22 @@ describe('Sanity end-to-end integration (Task 118)', () => {
       expect(dev?.areaTo).toBe(280)
       expect(dev?.deliveryDate).toBe('Q4 2026')
       expect(dev?.featured).toBe(true)
+    })
+
+    it('preserves the development imageMeta (Task 130 — hotspot + crop + metadata)', async () => {
+      enableSanityProvider()
+      mockFetch.mockResolvedValueOnce([SANITY_DEVELOPMENT_DOC])
+
+      const developments = await loadDevelopmentsServer()
+      const dev = developments[0]
+
+      expect(dev?.imageMeta).toEqual({
+        assetRef: 'image-dev-doc-1-1920x1080-jpg',
+        assetUrl: 'https://cdn.sanity.io/images/test/dev-1.jpg',
+        hotspot: { x: 0.6, y: 0.5, width: 0.4, height: 0.4 },
+        crop: { top: 0.05, bottom: 0.05, left: 0.1, right: 0.1 },
+        metadata: { width: 1920, height: 1080, aspectRatio: 16 / 9 },
+      })
     })
 
     it('passes the development through the developmentsService.getBySlug helper', async () => {
@@ -338,6 +408,26 @@ describe('Sanity end-to-end integration (Task 118)', () => {
       expect(property?.coverImage).toBe(
         'https://cdn.sanity.io/images/test/property-1-cover.jpg',
       )
+    })
+
+    it('preserves the property coverImageMeta + imagesMeta (Task 130)', async () => {
+      enableSanityProvider()
+      mockFetch.mockResolvedValueOnce([SANITY_PROPERTY_DOC])
+
+      const properties = await loadPropertiesServer()
+      const property = properties[0]
+
+      expect(property?.coverImageMeta).toEqual({
+        assetRef: 'image-property-1-cover-1600x1200-jpg',
+        assetUrl: 'https://cdn.sanity.io/images/test/property-1-cover.jpg',
+        hotspot: { x: 0.6, y: 0.4, width: 0.4, height: 0.4 },
+        crop: { top: 0.05, bottom: 0.05, left: 0.05, right: 0.05 },
+        metadata: { width: 1600, height: 1200, aspectRatio: 4 / 3 },
+      })
+      expect(property?.imagesMeta).toHaveLength(3)
+      expect(property?.imagesMeta?.[0]?.hotspot).toEqual({ x: 0.5, y: 0.5, width: 0.4, height: 0.4 })
+      expect(property?.imagesMeta?.[1]?.crop).toEqual({ top: 0.1, bottom: 0.1, left: 0.05, right: 0.05 })
+      expect(property?.imagesMeta?.[2]?.assetRef).toBe('image-property-1-c-1600x1200-jpg')
     })
 
     it('preserves the Property → Agent and Property → Development reference IDs', async () => {

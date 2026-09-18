@@ -6,6 +6,7 @@ import type {
   PropertyStatus,
 } from '../types/property.types'
 import type { MeasurementUnit } from '~/types/agency.types'
+import { imageSourceMetaSchema } from '~/core/image/image-source.schema'
 
 /**
  * Runtime validation for the property domain model.
@@ -79,6 +80,23 @@ export const propertySchema = z.object({
    * existing sample data (every shipped record has a non-empty path).
    */
   coverImage: z.string().min(1),
+  /**
+   * Provider-neutral metadata for the cover image. Populated by the
+   * Sanity mapper when the editor has saved a hotspot + crop on the
+   * source asset; `undefined` (and therefore omitted from the parsed
+   * record) for the static / api / generic-CMS paths and for Sanity
+   * records without editorial crop metadata. The rendering layer
+   * treats `undefined` as "no metadata, use the plain asset URL".
+   */
+  coverImageMeta: imageSourceMetaSchema.optional(),
+  /**
+   * Provider-neutral metadata for each gallery image. Same shape and
+   * same fallback contract as `coverImageMeta`. Indexed in lockstep
+   * with `images` — `imagesMeta[i]` (when present) corresponds to
+   * `images[i]`. Records that pre-date the field ship with
+   * `imagesMeta` absent; the renderer falls back to the plain URLs.
+   */
+  imagesMeta: z.array(imageSourceMetaSchema).optional(),
   amenities: z.array(z.string().min(1)),
   developmentId: z.string().optional(),
   agentId: z.string().optional(),

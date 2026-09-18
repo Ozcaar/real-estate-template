@@ -45,13 +45,19 @@ import { defineField, defineType } from 'sanity'
  * parameter for `/agents/[slug]`.
  *
  * **Image.** The `image` field is a Sanity `image` with
- * `hotspot: true` so the editor can set the focal point
- * (the hotspot is stored on the asset but the pilot
- * ignores it — the GROQ projection flattens to the raw
- * asset URL). The `hotspot: true` option is enabled
- * because hotspot / crop-aware URL building is a future
- * task (`@sanity/image-url` is deferred); the data is
- * already in the asset when the agency needs it.
+ * `options: { hotspot: true }` — Sanity's documented image
+ * schema pattern that exposes both the focal-point picker
+ * (via the bundled `sanity.imageHotspot` widget) and the
+ * crop-region UI (via the bundled `sanity.imageCrop`
+ * widget) to the editor. The mapper projects the full
+ * hotspot + crop + intrinsic dimensions alongside the
+ * asset URL; the URL builder at
+ * `app/core/image/sanity-image-url.ts` consumes that
+ * metadata and produces crop-aware Sanity CDN URLs at SSR
+ * / prerender time. The image source remains the Sanity
+ * asset URL on the boundary; the canonical `string` URL on
+ * `image` is preserved for the static / API / generic-CMS
+ * paths and for the URL-only fallback.
  *
  * **Specialties.** The `specialties` field is an array of
  * strings. The runtime Zod schema validates each entry as
@@ -146,7 +152,7 @@ export const agentType = defineType({
       title: 'Portrait',
       type: 'image',
       group: 'media',
-      description: 'A square portrait (1:1) for best results. The hotspot is enabled so you can pick the focal point.',
+      description: 'A square portrait (1:1) for best results. The hotspot and crop are enabled so you can pick a focal point and a crop region — both are respected by the frontend at render time.',
       options: { hotspot: true },
       validation: (Rule) => Rule.required().error('A portrait image is required.'),
     }),

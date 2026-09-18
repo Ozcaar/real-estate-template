@@ -7,6 +7,7 @@
  * response without touching components.
  */
 import type { MeasurementUnit } from '~/types/agency.types'
+import type { ImageSourceMeta } from '~/core/image/image-source'
 
 export type DevelopmentStatus =
   | 'pre-sale'
@@ -29,6 +30,18 @@ export interface Development {
   description: string
   /** Cover image path (served from `public/`). */
   image: string
+  /**
+   * Provider-neutral metadata for the cover image (asset reference,
+   * editor-picked hotspot + crop, intrinsic dimensions). Populated by
+   * image-CDN-aware mappers (currently the Sanity mapper) so the
+   * rendering layer can build a crop-aware URL at request time.
+   *
+   * `undefined` for the static / api / generic-CMS paths and for any
+   * Sanity record where the editor has not picked a hotspot / crop.
+   * The rendering layer treats `undefined` as "no metadata, use the
+   * plain asset URL on `image`".
+   */
+  imageMeta?: ImageSourceMeta
   /** Starting price in the configured currency. Optional. */
   priceFrom?: number
   /** Ending price in the configured currency. Optional. */

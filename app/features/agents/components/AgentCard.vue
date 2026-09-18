@@ -30,11 +30,23 @@ const whatsappLink = computed(() => buildWhatsAppLink(props.agent.whatsapp))
   <BaseCard padding="none" radius="lg" shadow="sm" class="flex h-full flex-col overflow-hidden">
     <template #media>
       <ResponsiveImage
+        v-if="!agent.imageMeta"
         :src="agent.image"
         :alt="agent.name"
         ratio="1/1"
         rounded="none"
         sizes="100vw sm:50vw lg:33vw"
+      />
+      <SanityImage
+        v-else
+        :src="agent.image"
+        :meta="agent.imageMeta"
+        :alt="agent.name"
+        ratio="1/1"
+        rounded="none"
+        sizes="100vw sm:50vw lg:33vw"
+        width="480"
+        :aspect-ratio="1"
       />
     </template>
 

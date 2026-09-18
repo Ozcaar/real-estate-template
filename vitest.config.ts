@@ -52,6 +52,7 @@ export default defineConfig({
       'app/features/agents/services/**/*.test.ts',
       'app/core/utils/**/*.test.ts',
       'app/core/data-source/**/*.test.ts',
+      'app/core/image/**/*.test.ts',
       'app/config/agencies/**/*.test.ts',
       'app/composables/**/*.test.ts',
       'server/services/leads/**/*.test.ts',

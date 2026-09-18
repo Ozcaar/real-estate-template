@@ -21,11 +21,19 @@ import { defineField, defineType } from 'sanity'
  * **Image strategy.** The Property carries a `coverImage`
  * (the LCP candidate on the detail page and the primary
  * visual on the catalog card) and an `images` array (the
- * gallery). Both are typed as Sanity `image` fields. The
- * GROQ projection flattens the image references to URLs
- * via `asset->url`. The hotspot / crop-aware URL builder
- * (`@sanity/image-url`) is intentionally deferred — the
- * pilot uses direct projected asset URLs.
+ * gallery). Both are typed as Sanity `image` fields with
+ * `options: { hotspot: true }` — Sanity's documented image
+ * schema pattern that exposes both the focal-point picker
+ * and the crop-region UI to the editor via the bundled
+ * `sanity.imageHotspot` and `sanity.imageCrop` widgets.
+ * The mapper projects the full hotspot + crop + intrinsic
+ * dimensions alongside the asset URL; the URL builder at
+ * `app/core/image/sanity-image-url.ts` consumes that
+ * metadata and produces crop-aware Sanity CDN URLs at SSR
+ * / prerender time. The image source remains the Sanity
+ * asset URL on the boundary; the canonical `string` URL on
+ * `coverImage` / `images[]` is preserved for the static
+ * / API / generic-CMS paths and for the URL-only fallback.
  *
  * **Required-field enforcement.** Sanity's `validation`
  * callback surfaces `Rule.required()` errors in the editor
@@ -308,8 +316,8 @@ export const propertyType = defineType({
       title: 'Cover image',
       type: 'image',
       group: 'media',
-      description: 'The primary visual on the catalog card and the detail page. Use a landscape image (16:9 or 4:3) for best results.',
-      options: { hotspot: false },
+      description: 'The primary visual on the catalog card and the detail page. Use a landscape image (16:9 or 4:3) for best results. Click the image to pick a focal point (hotspot) and drag the corners to set a crop region — both are respected by the frontend at render time.',
+      options: { hotspot: true },
       validation: (Rule) => Rule.required().error('A cover image is required.'),
     }),
     defineField({
@@ -317,8 +325,8 @@ export const propertyType = defineType({
       title: 'Gallery',
       type: 'array',
       group: 'media',
-      of: [{ type: 'image', options: { hotspot: false } }],
-      description: 'Additional images shown in the property gallery (the cover image is the first image the visitor sees). Add 2 to 5 high-quality images.',
+      of: [{ type: 'image', options: { hotspot: true } }],
+      description: 'Additional images shown in the property gallery (the cover image is the first image the visitor sees). Each image exposes a hotspot (focal point) and a crop region — both are respected by the frontend at render time. Add 2 to 5 high-quality images.',
       validation: (Rule) => Rule.required().error('At least one gallery image is required.'),
     }),
     defineField({

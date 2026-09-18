@@ -1,12 +1,18 @@
 import type { Property } from '~/features/properties/types/property.types'
 import type { Agent } from '~/features/agents/types/agent.types'
 import type { Development } from '~/features/developments/types/development.types'
+import type {
+  ImageSourceMeta,
+  ImageHotspot,
+  ImageCrop,
+  ImageAssetMetadata,
+} from '~/core/image/image-source'
 
 /**
  * Sanity feature-specific GROQ queries + mapping functions
- * (Task 115 — v1.2 pilot).
+ * (Task 115 — v1.2 pilot; Task 130 — image metadata).
  *
- * The driver in `app/core/data-source/adapters/sanity-driver.ts`
+ * The driver in `server/utils/sanity-driver.ts`
  * is provider-agnostic beyond the GROQ query and the
  * `mapRecord` function. This module owns the per-feature
  * pieces:
@@ -21,12 +27,34 @@ import type { Development } from '~/features/developments/types/development.type
  * / `Development` types — no UI changes are required when the
  * source is swapped.
  *
- * **Image strategy.** The pilot projects image asset URLs
- * directly via `asset->url`. The image-url builder
- * (`@sanity/image-url`) is a separate package and is
- * intentionally deferred (see `docs/CMS_EVALUATION.md` §6.6).
- * The direct projected URLs are the Sanity CDN URLs and work
- * directly with the existing `<ResponsiveImage>` wrapper.
+ * **Image strategy (Task 130).** Each image-bearing GROQ
+ * projection now returns two siblings: the canonical asset
+ * URL (`coverImage`, `image`, `images[]`) and an optional
+ * `*Meta` object carrying the asset reference, editor-picked
+ * hotspot (`{ x, y, width, height }` — all four fields) +
+ * crop (`{ top, bottom, left, right }`) + intrinsic
+ * dimensions. The mapper emits a provider-neutral
+ * `ImageSourceMeta` (`app/core/image/`) alongside the
+ * existing `string` URL. The mapper never reads the URL
+ * builder (`@sanity/image-url`); the URL builder lives in
+ * `app/core/image/sanity-image-url.ts` and is imported
+ * directly by the `<SanityImage>` Vue component, which
+ * computes the crop-aware URL synchronously in a
+ * `computed()` at SSR / prerender time. The generated HTML
+ * embeds the resolved URL with the correct `rect=…` /
+ * `w=…` / `h=…` parameters; no runtime API is required
+ * (so the static deployment works without a `/api/…`
+ * endpoint).
+ *
+ * **Image fallback.** When the editor has not picked a
+ * hotspot / crop (the GROQ projection returns `hotspot: null`
+ * / `crop: null` for an asset whose image schema did not
+ * enable hotspot), the mapper emits the canonical `string`
+ * URL only and omits the `*Meta` field. The rendering
+ * components treat `undefined` `*Meta` as "no metadata, use
+ * the plain asset URL". The static / api / generic-CMS paths
+ * never emit `*Meta` (the static data files do not populate
+ * it; the api and http-json adapters do not fill it in).
  *
  * **Reference resolution.** The pilot resolves
  * `Property.agentId` and `Property.developmentId` by
@@ -59,6 +87,12 @@ import type { Development } from '~/features/developments/types/development.type
  * loader's own agents / developments lists are loaded
  * independently by their own loaders.
  *
+ * Image metadata (Task 130): each image field also projects
+ * a `*Meta` sibling carrying the asset reference, hotspot,
+ * crop, and intrinsic dimensions. The mapper translates the
+ * nested `asset` / `hotspot` / `crop` shape into a flat
+ * provider-neutral `ImageSourceMeta`; see `readImageMeta`.
+ *
  * The `status != "hidden"` filter mirrors the existing
  * property catalog's `status: 'hidden'` exclusion (the
  * sitemap and the property service both drop hidden records).
@@ -85,6 +119,20 @@ export const sanityPropertyQuery = `
   landSize,
   "images": images[].asset->url,
   "coverImage": coverImage.asset->url,
+  "imagesMeta": images[]{
+    "assetRef": asset->_ref,
+    "assetUrl": asset->url,
+    hotspot{x, y, width, height},
+    crop{top, bottom, left, right},
+    "metadata": asset->metadata{width, height, "aspectRatio": width / height}
+  },
+  "coverImageMeta": coverImage{
+    "assetRef": asset->_ref,
+    "assetUrl": asset->url,
+    hotspot{x, y, width, height},
+    crop{top, bottom, left, right},
+    "metadata": asset->metadata{width, height, "aspectRatio": width / height}
+  },
   amenities,
   "agentId": agent._ref,
   "developmentId": development._ref,
@@ -98,7 +146,8 @@ export const sanityPropertyQuery = `
  *
  * The projection returns every field the boundary schema
  * validates. The portrait image is flattened via
- * `image.asset->url`.
+ * `image.asset->url`; the matching `imageMeta` carries the
+ * editor-picked hotspot + crop (when enabled on the schema).
  */
 export const sanityAgentQuery = `
 *[_type == "agent"]{
@@ -108,6 +157,13 @@ export const sanityAgentQuery = `
   role,
   bio,
   "image": image.asset->url,
+  "imageMeta": image{
+    "assetRef": asset->_ref,
+    "assetUrl": asset->url,
+    hotspot{x, y, width, height},
+    crop{top, bottom, left, right},
+    "metadata": asset->metadata{width, height, "aspectRatio": width / height}
+  },
   phone,
   email,
   whatsapp,
@@ -119,7 +175,8 @@ export const sanityAgentQuery = `
  *
  * The projection returns every field the boundary schema
  * validates. The cover image is flattened via
- * `image.asset->url`.
+ * `image.asset->url`; the matching `imageMeta` carries the
+ * editor-picked hotspot + crop (when enabled on the schema).
  */
 export const sanityDevelopmentQuery = `
 *[_type == "development"]{
@@ -130,6 +187,13 @@ export const sanityDevelopmentQuery = `
   location,
   description,
   "image": image.asset->url,
+  "imageMeta": image{
+    "assetRef": asset->_ref,
+    "assetUrl": asset->url,
+    hotspot{x, y, width, height},
+    crop{top, bottom, left, right},
+    "metadata": asset->metadata{width, height, "aspectRatio": width / height}
+  },
   priceFrom,
   priceTo,
   currency,
@@ -170,6 +234,8 @@ interface SanityPropertyDocument {
   landSize?: unknown
   images?: unknown
   coverImage?: unknown
+  imagesMeta?: unknown
+  coverImageMeta?: unknown
   amenities?: unknown
   agentId?: unknown
   developmentId?: unknown
@@ -189,6 +255,7 @@ interface SanityAgentDocument {
   role?: unknown
   bio?: unknown
   image?: unknown
+  imageMeta?: unknown
   phone?: unknown
   email?: unknown
   whatsapp?: unknown
@@ -207,6 +274,7 @@ interface SanityDevelopmentDocument {
   location?: unknown
   description?: unknown
   image?: unknown
+  imageMeta?: unknown
   priceFrom?: unknown
   priceTo?: unknown
   currency?: unknown
@@ -326,6 +394,112 @@ function readCoordinates(
 }
 
 /**
+ * Read a `hotspot{x,y,width,height}` projection from the Sanity
+ * document. Returns `undefined` when the field is absent,
+ * `null`, or any value whose `x` / `y` / `width` / `height` is
+ * not a finite number in `0..1`. The Sanity editor UI uses
+ * normalized coordinates; the mapper mirrors that contract
+ * and lets the rendering layer fall back to the URL-only meta
+ * when the projection is malformed.
+ *
+ * All four fields are required. Sanity always populates
+ * `width` and `height` for editor-picked hotspots; a record
+ * that pre-dates the Sanity version that introduced
+ * `width` / `height` (or an external document that omits
+ * one) is rejected and the meta falls back to the URL-only
+ * path. This is the same defensive contract the mapper
+ * applies to every other malformed sub-field.
+ */
+function readHotspot(value: unknown): ImageHotspot | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const v = value as { x?: unknown, y?: unknown, width?: unknown, height?: unknown }
+  if (typeof v.x !== 'number' || typeof v.y !== 'number' || typeof v.width !== 'number' || typeof v.height !== 'number') return undefined
+  if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.width) || !Number.isFinite(v.height)) return undefined
+  if (v.x < 0 || v.x > 1 || v.y < 0 || v.y > 1 || v.width < 0 || v.width > 1 || v.height < 0 || v.height > 1) return undefined
+  return { x: v.x, y: v.y, width: v.width, height: v.height }
+}
+
+/**
+ * Read a `crop{top,bottom,left,right}` projection from the
+ * Sanity document. Returns `undefined` when the field is
+ * absent, `null`, or any value whose `top` / `bottom` / `left`
+ * / `right` is not a finite number in `0..1`. A crop region
+ * whose `top + bottom >= 1` or `left + right >= 1` is
+ * degenerate (the kept region has zero size) and is treated
+ * as "no crop".
+ */
+function readCrop(value: unknown): ImageCrop | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const v = value as { top?: unknown, bottom?: unknown, left?: unknown, right?: unknown }
+  if (
+    typeof v.top !== 'number' || typeof v.bottom !== 'number'
+    || typeof v.left !== 'number' || typeof v.right !== 'number'
+  ) return undefined
+  if (!Number.isFinite(v.top) || !Number.isFinite(v.bottom) || !Number.isFinite(v.left) || !Number.isFinite(v.right)) return undefined
+  if (v.top < 0 || v.top > 1 || v.bottom < 0 || v.bottom > 1 || v.left < 0 || v.left > 1 || v.right < 0 || v.right > 1) return undefined
+  if (v.top + v.bottom >= 1 || v.left + v.right >= 1) return undefined
+  return { top: v.top, bottom: v.bottom, left: v.left, right: v.right }
+}
+
+/**
+ * Read a `metadata{width,height,aspectRatio}` projection
+ * from the Sanity document. Returns `undefined` when the
+ * field is absent, `null`, or any value whose `width` /
+ * `height` is not a positive finite number. The mapper also
+ * recomputes `aspectRatio` as `width / height` when missing
+ * so the rendering layer never has to divide.
+ */
+function readAssetMetadata(value: unknown): ImageAssetMetadata | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const v = value as { width?: unknown, height?: unknown, aspectRatio?: unknown }
+  if (typeof v.width !== 'number' || typeof v.height !== 'number') return undefined
+  if (!Number.isFinite(v.width) || !Number.isFinite(v.height)) return undefined
+  if (v.width <= 0 || v.height <= 0) return undefined
+  const aspectRatio = typeof v.aspectRatio === 'number' && Number.isFinite(v.aspectRatio) && v.aspectRatio > 0
+    ? v.aspectRatio
+    : v.width / v.height
+  return { width: v.width, height: v.height, aspectRatio }
+}
+
+/**
+ * Convert the GROQ-projected `*Meta` shape (a Sanity
+ * image-input object flattened to `{ assetRef, assetUrl,
+ * hotspot?, crop?, metadata? }`) into the provider-neutral
+ * `ImageSourceMeta`. Returns `undefined` when the projection
+ * is absent or when the asset is missing / malformed — the
+ * mapper treats "no metadata" as "the editor did not pick a
+ * hotspot / crop on this asset", which is the same code path
+ * the static / api / generic-CMS paths take (they never emit
+ * `*Meta`).
+ *
+ * The function is intentionally tolerant: a Sanity record
+ * whose image field is `null` (no image uploaded), whose
+ * `asset._ref` is missing, or whose `hotspot` / `crop` /
+ * `metadata` fields are missing or wrong-typed returns
+ * `undefined`. The mapper never throws on a malformed image
+ * projection — the canonical `string` URL on
+ * `coverImage` / `image` / `images[]` is still emitted as a
+ * fallback so the boundary record remains valid.
+ */
+function readImageMeta(value: unknown): ImageSourceMeta | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const v = value as { assetRef?: unknown, assetUrl?: unknown, hotspot?: unknown, crop?: unknown, metadata?: unknown }
+  if (typeof v.assetRef !== 'string' || v.assetRef === '') return undefined
+  if (typeof v.assetUrl !== 'string' || v.assetUrl === '') return undefined
+  const meta: ImageSourceMeta = {
+    assetRef: v.assetRef,
+    assetUrl: v.assetUrl,
+  }
+  const hotspot = readHotspot(v.hotspot)
+  if (hotspot !== undefined) meta.hotspot = hotspot
+  const crop = readCrop(v.crop)
+  if (crop !== undefined) meta.crop = crop
+  const assetMetadata = readAssetMetadata(v.metadata)
+  if (assetMetadata !== undefined) meta.metadata = assetMetadata
+  return meta
+}
+
+/**
  * Convert a Sanity property document into the boundary
  * `Property` shape.
  *
@@ -372,6 +546,7 @@ export function mapSanityProperty(doc: unknown): Property {
   const state = readStringWithDefault(d, 'state', '')
   const country = readStringWithDefault(d, 'country', '')
   const coverImage = readStringWithDefault(d, 'coverImage', '')
+  const coverImageMeta = readImageMeta(d.coverImageMeta)
   const statusRaw = readString(d, 'status')
   const status
     = statusRaw === 'available'
@@ -381,6 +556,18 @@ export function mapSanityProperty(doc: unknown): Property {
       || statusRaw === 'hidden'
       ? statusRaw
       : 'available'
+
+  const images = readStringArray(d, 'images') ?? []
+  let imagesMeta: ImageSourceMeta[] | undefined
+  const rawImagesMeta = d.imagesMeta
+  if (Array.isArray(rawImagesMeta)) {
+    const list: ImageSourceMeta[] = []
+    for (const entry of rawImagesMeta) {
+      const m = readImageMeta(entry)
+      if (m !== undefined) list.push(m)
+    }
+    if (list.length > 0) imagesMeta = list
+  }
 
   return {
     id,
@@ -401,8 +588,10 @@ export function mapSanityProperty(doc: unknown): Property {
     sizeUnit: readString(d, 'sizeUnit') === 'imperial' ? 'imperial' : 'metric',
     constructionSize: readNumber(d, 'constructionSize'),
     landSize: readNumber(d, 'landSize'),
-    images: readStringArray(d, 'images') ?? [],
+    images,
     coverImage,
+    coverImageMeta,
+    imagesMeta,
     amenities: readStringArray(d, 'amenities') ?? [],
     agentId: readRef(d, 'agentId'),
     developmentId: readRef(d, 'developmentId'),
@@ -425,6 +614,7 @@ export function mapSanityAgent(doc: unknown): Agent {
   const role = readStringWithDefault(d, 'role', '')
   const bio = readStringWithDefault(d, 'bio', '')
   const image = readStringWithDefault(d, 'image', '')
+  const imageMeta = readImageMeta(d.imageMeta)
 
   return {
     id,
@@ -433,6 +623,7 @@ export function mapSanityAgent(doc: unknown): Agent {
     role,
     bio,
     image,
+    imageMeta,
     phone: readString(d, 'phone'),
     email: readString(d, 'email'),
     whatsapp: readString(d, 'whatsapp'),
@@ -461,6 +652,7 @@ export function mapSanityDevelopment(doc: unknown): Development {
   const location = readStringWithDefault(d, 'location', '')
   const description = readStringWithDefault(d, 'description', '')
   const image = readStringWithDefault(d, 'image', '')
+  const imageMeta = readImageMeta(d.imageMeta)
   const sizeUnit = readString(d, 'sizeUnit') === 'imperial' ? 'imperial' : 'metric'
 
   return {
@@ -471,6 +663,7 @@ export function mapSanityDevelopment(doc: unknown): Development {
     location,
     description,
     image,
+    imageMeta,
     priceFrom: readNumber(d, 'priceFrom'),
     priceTo: readNumber(d, 'priceTo'),
     currency: readString(d, 'currency'),

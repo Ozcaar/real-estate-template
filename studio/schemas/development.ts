@@ -38,11 +38,19 @@ import { defineField, defineType } from 'sanity'
  * parameter for `/developments/[slug]`.
  *
  * **Image.** The `image` field is a Sanity `image` with
- * `hotspot: true`. The hotspot is stored on the asset
- * but the pilot ignores it (the GROQ projection flattens
- * to the raw asset URL). The hotspot is enabled so the
- * hotspot / crop-aware URL builder (`@sanity/image-url`,
- * deferred) can pick it up without a schema migration.
+ * `options: { hotspot: true }` — Sanity's documented image
+ * schema pattern that exposes both the focal-point picker
+ * (via the bundled `sanity.imageHotspot` widget) and the
+ * crop-region UI (via the bundled `sanity.imageCrop`
+ * widget) to the editor. The mapper projects the full
+ * hotspot + crop + intrinsic dimensions alongside the
+ * asset URL; the URL builder at
+ * `app/core/image/sanity-image-url.ts` consumes that
+ * metadata and produces crop-aware Sanity CDN URLs at SSR
+ * / prerender time. The image source remains the Sanity
+ * asset URL on the boundary; the canonical `string` URL on
+ * `image` is preserved for the static / API / generic-CMS
+ * paths and for the URL-only fallback.
  *
  * **Numeric fields.** The `priceFrom`, `priceTo`,
  * `areaFrom`, `areaTo` fields are non-negative numbers.
@@ -145,7 +153,7 @@ export const developmentType = defineType({
       title: 'Cover image',
       type: 'image',
       group: 'media',
-      description: 'The primary visual on the development card and the detail page. Use a landscape image (16:9) for best results.',
+      description: 'The primary visual on the development card and the detail page. Use a landscape image (16:9) for best results. The hotspot and crop are enabled so you can pick a focal point and a crop region — both are respected by the frontend at render time.',
       options: { hotspot: true },
       validation: (Rule) => Rule.required().error('A cover image is required.'),
     }),

@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Sanity SDK boundary regression test (Task 116).
+ * Sanity SDK boundary regression test (Task 116; corrected Task 130).
  *
  * The Task 116 build moved the provider-specific Sanity
  * driver out of `app/core/data-source/adapters/` and into
@@ -11,17 +11,49 @@ import { describe, expect, it } from 'vitest'
  * in `app/core/data-source/cms-driver.ts`; the provider-
  * specific implementation is server-only by file location.
  *
- * The boundary guarantee is:
+ * **Task 130 correction.** The Task 131 implementation placed
+ * the `@sanity/image-url` URL builder in `server/utils/` and
+ * reached it via a Nitro endpoint at `/api/sanity-image`.
+ * That endpoint indirection is incompatible with the static
+ * deployment mode (`pnpm generate`): after prerender the
+ * generated artifact is served by a plain HTTP server with no
+ * runtime API surface, so a client-side `$fetch('/api/…')`
+ * call would return 404 in production. The Task 130 fix
+ * moves the URL builder to `app/core/image/sanity-image-url.ts`
+ * and lets the `<SanityImage>` Vue component import it
+ * directly. The URL is computed synchronously in a
+ * `computed()` during SSR / prerender; the generated HTML
+ * embeds the resolved URL with the correct `rect=…` /
+ * `w=…` / `h=…` parameters; no runtime API is required.
+ *
+ * The brief explicitly authorizes this:
+ *
+ *   "It is acceptable for a Sanity-specific rendering
+ *    adapter/component to use `@sanity/image-url`; the
+ *    critical boundary is that generic feature/domain
+ *    components and generic data-source adapters remain
+ *    provider-neutral."
+ *
+ * The boundary guarantee is now:
  *
  *  - No file under `app/` imports `@sanity/client` (the only
- *    new runtime dependency the v1.2 pilot introduces).
+ *    runtime dependency the v1.2 pilot introduces for
+ *    fetching records; not used by URL building).
  *  - No file under `app/` references `NUXT_SANITY_TOKEN`
  *    (the agency-owned read token env var).
  *  - No file under `app/` re-exports the Sanity driver or
  *    the Sanity client config (the loader-only helpers).
  *  - The Sanity driver file does NOT live under `app/`.
+ *  - **`@sanity/image-url` is imported by EXACTLY ONE file
+ *    in the runtime: `app/core/image/sanity-image-url.ts`.**
+ *    No other `app/` file may import it (no generic
+ *    feature / domain component, no service layer, no
+ *    data-source adapter). The Sanity-aware wrapper
+ *    `<SanityImage>` consumes the URL builder by name
+ *    (`buildSanityImageUrl`) but does not import
+ *    `@sanity/image-url` itself.
  *  - The Nuxt Image config keeps `cdn.sanity.io` in
- *    `image.domains` so the Sanity CDN URLs the driver
+ *    `image.domains` so the Sanity CDN URLs the builder
  *    produces are accepted by the IPX provider.
  *
  * The test recursively scans `app/` for `.ts`, `.vue`, and
@@ -51,10 +83,30 @@ const ROOT = resolve(import.meta.dirname, '..', '..')
 const NUXT_CONFIG = resolve(ROOT, 'nuxt.config.ts')
 
 /**
+ * The ONE file in `app/` that may import `@sanity/image-url`
+ * (Task 130 — the URL builder is moved into the app bundle
+ * so the Vue `<SanityImage>` component can compute the URL
+ * synchronously at SSR / prerender time, preserving static
+ * deployment compatibility). No other `app/` file may
+ * import the package; a regression here means a generic
+ * feature / domain component or service is taking on a
+ * Sanity-specific dependency.
+ */
+const SANITY_IMAGE_URL_ALLOWED_IMPORTERS = new Set<string>([
+  resolve(APP_ROOT, 'core', 'image', 'sanity-image-url.ts'),
+])
+
+/**
  * The patterns that must NOT appear in any file under
  * `app/`. The list is intentionally narrow — each entry
  * is a single, concrete leak that the Task 116 build
  * prevents. Adding a new pattern is a code-review decision.
+ *
+ * Note: `@sanity/image-url` is NOT in this list. The
+ * Task 130 fix allows exactly one `app/` file to import
+ * it; the canonical Sanity-aware URL builder. The
+ * whitelist + sibling test below enforces that exactly
+ * one importer exists.
  */
 const FORBIDDEN_APP_PATTERNS = [
   {
@@ -136,6 +188,16 @@ const FORBIDDEN_APP_PATTERNS = [
 ] as const
 
 /**
+ * The whitelist-aware pattern for `@sanity/image-url`. The
+ * pattern matches an import statement; the scan logic
+ * below compares the file path against the whitelist and
+ * flags any match outside the whitelist as a boundary
+ * leak.
+ */
+const SANITY_IMAGE_URL_IMPORT_PATTERN = /from\s+['"]@sanity\/image-url['"]/
+const SANITY_IMAGE_URL_REQUIRE_PATTERN = /require\(['"]@sanity\/image-url['"]\)/
+
+/**
  * Recursively walk a directory and return the absolute paths
  * of every `.ts`, `.vue`, and `.js` file. The `node_modules/`
  * and `.nuxt/` directories are skipped; `dist/` and
@@ -165,7 +227,7 @@ function walk(root: string): string[] {
   return out
 }
 
-describe('Sanity SDK boundary (Task 116)', () => {
+describe('Sanity SDK boundary (Task 116; corrected Task 130)', () => {
   it('locates the app/ root', () => {
     expect(existsSync(APP_ROOT)).toBe(true)
   })
@@ -189,6 +251,18 @@ describe('Sanity SDK boundary (Task 116)', () => {
       )
     }
     expect(offenders).toEqual([])
+  })
+
+  it('@sanity/image-url is imported by exactly one app/ file (the Sanity-aware URL builder)', () => {
+    const files = walk(APP_ROOT)
+    const importers: string[] = []
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8')
+      if (SANITY_IMAGE_URL_IMPORT_PATTERN.test(source) || SANITY_IMAGE_URL_REQUIRE_PATTERN.test(source)) {
+        importers.push(file)
+      }
+    }
+    expect(importers).toEqual([...SANITY_IMAGE_URL_ALLOWED_IMPORTERS])
   })
 
   it('app/core/data-source/adapters/ does not contain a Sanity driver file', () => {

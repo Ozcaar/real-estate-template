@@ -425,6 +425,124 @@ For deployments that prefer not to run any receiver on the agency's behalf, Sani
 
 This architecture is appropriate when the agency already operates the third-party tool and the operator is satisfied with its security posture.
 
+## 6.8 Image strategy (crop + hotspot, Task 130)
+
+The Sanity image strategy previously projected image asset URLs directly via `asset->url` in the GROQ projection, collapsing every byte of editor-picked hotspot + crop metadata to a single string. The v1.3 P1 item 3 ships the full pipeline without leaking Sanity-specific types into the generic UI components. This section is the editor + frontend operator guide.
+
+### 6.8.1 What the editor sees (the Studio contract)
+
+The four image-bearing fields all use Sanity's documented image schema pattern — `options: { hotspot: true }`. Sanity's `hotspot: true` toggle exposes BOTH the focal-point picker AND the crop region UI to the editor via the bundled `sanity.imageHotspot` and `sanity.imageCrop` widgets. No manual `fields: [{ name: 'hotspot', type: 'sanity.imageHotspot' }, { name: 'crop', type: 'sanity.imageCrop' }]` array is needed (Sanity's documented pattern is sufficient).
+
+- **`property.coverImage`** (group: **Media**) — the primary visual on the catalog card and the detail page. Click the image to open the focal-point picker (the small white circle); drag the circle to the subject's face / focal point. Drag the white corner handles to set the crop region. Both fields persist on the asset and survive re-uploads.
+- **`property.images[]`** (group: **Media**) — the gallery. Each entry has the same hotspot + crop controls as the cover image. The first entry is what visitors see first; pick the strongest focal point for that image.
+- **`agent.image`** (group: **Media**) — the portrait. Square 1:1 framing works best; pick the agent's face as the focal point.
+- **`development.image`** (group: **Media**) — the cover. 16:9 framing is the conventional aspect ratio; pick the hero element (the building, the entrance, the model unit) as the focal point.
+
+**Existing records that pre-date the schema change** continue to render correctly. The GROQ projection returns `hotspot: null` / `crop: null` for the unaffected fields; the mapper treats the absent metadata as "no editorial intent" and the rendering layer falls back to the plain `asset->url` URL — same behavior as before the v1.3 wiring. A future re-upload of the affected asset picks up the hotspot / crop widgets automatically (no Studio migration is required).
+
+**The Sanity hotspot shape is `{ x, y, width, height }` — all four fields are required.** `x` and `y` are the center of the focal region; `width` and `height` are the focal region's radii along each axis (NOT a single `height` field). The library uses `hotspot.width` and `hotspot.height` separately to compute the horizontal / vertical radii when fitting the crop around the focal point. Omitting `width` makes `@sanity/image-url` produce a `rect=NaN,…` query parameter on the CDN URL.
+
+**The three concerns the docs must distinguish** (the brief is explicit):
+
+1. **Studio editorial crop / focal intent.** The editor's hotspot selection (the focal point) + crop region (the four edge insets) on the asset. Persisted on the asset object in the dataset. Carried through the GROQ projection to the boundary type's `meta.hotspot` + `meta.crop` fields.
+2. **Frontend requested dimensions / aspect ratio.** The renderer's target box — the `<SanityImage>` `width` prop + `aspectRatio` prop (or `width` + `height`). This is what the frontend needs to render the image at a specific CSS frame. Carried as synchronous arguments to the URL builder inside the `<SanityImage>` component's `computed()` at SSR / prerender time.
+3. **Final Sanity CDN transformation.** The Sanity CDN receives the editor's saved hotspot + crop + the renderer's target dimensions via the URL's `rect=…` parameter (and the asset reference, which the library resolves through the Sanity asset document). The library's `fit()` helper applies the editor's crop region first (the rectangle bounded by `left..(1-right)` horizontally and `top..(1-bottom)` vertically), then uses the editor's focal point to position the visible window inside that region when the requested aspect ratio differs from the crop's aspect ratio, then resizes to the requested `width` / `height`. For a 1600×1200 source with `hotspot = { x: 0.6, y: 0.4, width: 0.3, height: 0.3 }` and `crop = { top: 0.05, bottom: 0.05, left: 0.05, right: 0.05 }` requested at 800×600 (4:3 target matching the 4:3 crop region), the CDN URL is:
+
+   ```
+   https://cdn.sanity.io/images/<projectId>/<dataset>/<assetRef>?rect=80,60,1440,1080&w=800&h=600
+   ```
+
+   `crop / hotspot are document image-field metadata consumed by the URL builder.` The CDN does not read the saved document crop / hotspot from the dataset on its own — the library passes the editor's values through the URL's `rect=…` parameter (and the asset reference resolves through the Sanity asset document).
+
+The three concerns map to three different code paths: the editor controls layer 1, the component controls layer 2, the library computes layer 3. The `<SanityImage>` wrapper at `app/components/shared/SanityImage.vue` is the bridge: it holds layer 1 + layer 2 and passes them to `app/core/image/sanity-image-url.ts`, which returns layer 3.
+
+### 6.8.2 What the editor controls vs what the frontend controls
+
+| Concern | Editor controls? | Frontend controls? | Library / CDN computes? |
+|---|---|---|---|
+| Focal point (`hotspot = { x, y, width, height }`) | yes — drag the picker + the radius handles on the asset | no | reads `hotspot.width` and `hotspot.height` separately to compute the horizontal / vertical focal radii when fitting the crop |
+| Crop region (`crop = { top, bottom, left, right }`) | yes — drag the corner handles | no | applies the rectangle (clipping + positioning) |
+| Target aspect ratio | no | yes — `aspectRatio` prop on `<SanityImage>` | re-frames the crop region to fit the request |
+| Target width (px) | no | yes — `width` prop on `<SanityImage>` | resizes the asset |
+| Quality | no | yes (rare) — `quality` prop on `<SanityImage>` | sets the JPEG / WebP quality |
+| Asset URL fallback | n/a | yes — when `meta` is absent, the plain `src` is used | n/a |
+
+The editor never has to know what the frontend's display frame is; the frontend never has to know where in the image the editor placed the focal point. The two coordinate through the asset's stored metadata + the library's automatic behaviour.
+
+### 6.8.3 What the frontend pipeline does (the rendering layer)
+
+The four rendering layers — GROQ projection, Sanity mapper, boundary type, Vue component — together implement the four-stage pipeline. Each stage has a single responsibility.
+
+1. **GROQ projection** (`server/utils/sanity-mappings.ts`). Each image field projects the full Sanity hotspot + crop + asset reference + intrinsic dimensions alongside the asset URL. The projection shape (per image) is:
+
+   ```groq
+   "imagesMeta": images[]{
+     "assetRef": asset->_ref,
+     "assetUrl": asset->url,
+     hotspot{x, y, width, height},
+     crop{top, bottom, left, right},
+     "metadata": asset->metadata{width, height, "aspectRatio": width / height}
+   }
+   ```
+
+   The original `asset->url` projection is preserved as the canonical `coverImage` / `image` / `images[]` field on the boundary.
+
+2. **Sanity mapper.** The three `mapSanity*` functions emit an optional `*Meta` field of type `ImageSourceMeta` alongside the canonical `string` URL. The mapper is defensive: a malformed projection (string hotspot, missing `width` / `height`, degenerate crop, out-of-range coordinates, missing `assetRef`) drops the invalid sub-field and keeps the meta with the remaining valid sub-fields, or drops the whole meta if `assetRef` is missing. The canonical `string` URL is preserved in every case.
+
+3. **Boundary type.** `ImageSourceMeta` lives at `app/core/image/image-source.ts` (a new `app/core/image/` module — outside `features/` because the type is cross-feature, and outside `data-source/` because the static / api / generic-CMS providers do not emit it). The shape is `{ assetRef, assetUrl, hotspot?, crop?, metadata? }` — the names mirror Sanity's documented field names but the type carries no Sanity-specific imports. The Zod schema at `app/core/image/image-source.schema.ts` is the runtime contract; `property.schema.ts` / `agent.schema.ts` / `development.schema.ts` extend the canonical schemas with optional `coverImageMeta` / `imageMeta` / `imagesMeta[]` fields.
+
+4. **Vue component.** A new `SanityImage` component at `app/components/shared/SanityImage.vue` (sibling to the existing `<ResponsiveImage>`) consumes the `meta` prop and computes the Sanity CDN URL synchronously in a `computed()` that runs at SSR / prerender. The URL is embedded in the rendered HTML on first paint — no `$fetch`, no `useAsyncData`, no runtime API endpoint. The wrapper passes the full `{ asset, hotspot?, crop? }` source to the library's `b.image(...)` and calls `.width()` / `.height()` / `.quality()`. The library reads `hotspot.width` and `hotspot.height` (NOT a single `height` field) and computes the `rect=…` parameter automatically.
+
+### 6.8.4 Architecture / boundary contract
+
+The architecture preserves the project's provider-neutral data-source contract:
+
+- **`@sanity/image-url` is imported in exactly ONE file: `app/core/image/sanity-image-url.ts`.** The boundary regression test at `server/utils/sanity-boundary.test.ts` pins the import to that one file via a positive-whitelist assertion: the test scans every `app/` file for `from '@sanity/image-url'` and `require('@sanity/image-url')` and asserts the **only** match is `app/core/image/sanity-image-url.ts`. Any other `app/` file importing `@sanity/image-url` fails the test. Generic feature / domain components (`app/features/*/components/`, `app/components/ui/`, `app/components/layout/`) continue to receive only the canonical `string` URL on the boundary.
+
+- **`ImageSourceMeta` is provider-neutral.** The type carries no `@sanity/*` imports. A future image-CDN provider that exposes a `crop` + `hotspot` concept can populate the same shape and the existing `<SanityImage>` wrapper (or a sibling) will render the URL.
+
+- **The static / API / generic-CMS paths are unchanged.** The static data files (`app/features/*/data/*.ts`) emit plain `string` URLs only — no `*Meta` field, no `hotspot`, no `crop`. The `createStaticDataSource` adapter does not fill in metadata; the `createApiDataSource` and `createHttpJsonCmsDriver` adapters likewise do not fill it in. The boundary regression tests at `properties.service.boundary.test.ts` / `agents.service.boundary.test.ts` / `developments.service.boundary.test.ts` continue to pin the service-layer string-only contract. The rendering layer falls back to `<ResponsiveImage>` for these sources.
+
+- **Static deployment parity (`pnpm generate`).** The `<SanityImage>` wrapper computes the URL at prerender time; the static artifact (`.output/public/`) contains a finished HTML page per route with the crop-aware URL inline. The artifact has **zero** references to `/api/sanity-image` — verified by walking the prerendered HTML. A static deployment does NOT need any runtime API endpoint to render crop-aware Sanity images.
+
+- **The IPX provider continues to process the URLs.** Nuxt Image's `domains` allowlist (`['cdn.sanity.io']`) is unchanged. The `<SanityImage>` wrapper passes the crop-aware Sanity CDN URL through `<NuxtImg>`, which routes through IPX (which fetches from Sanity and serves a local variant). The image bytes come from the Sanity CDN; the responsive srcset generation is IPX's responsibility.
+
+### 6.8.5 Behaviour matrix
+
+The URL builder at `app/core/image/sanity-image-url.ts` delegates to `@sanity/image-url`'s native semantics. The library reads `hotspot.width` and `hotspot.height` (the focal region's horizontal and vertical dimensions, not radii — the library derives the focal radii internally as `hotspot.width * asset.width / 2` and `hotspot.height * asset.height / 2`), reads `crop.{top, bottom, left, right}` (insets), and computes the `rect=…` parameter from the editor's saved metadata + the target width / height. Manual `.crop('focalpoint')` / `.focalPoint()` / `.rect()` overrides are NEVER called — they would bypass the library's automatic fitting.
+
+| `meta.hotspot` | `meta.crop` | Renderer width / height | Library behaviour | Example URL |
+|---|---|---|---|---|
+| absent | absent | absent | `meta.assetUrl` unchanged (no builder call) | `https://cdn.sanity.io/.../abc.jpg` |
+| absent | absent | set    | Full-image resize; no `rect=` | `?w=400&h=300` |
+| set    | absent | set    | Library uses the hotspot to position the visible window inside the **full-image** crop when the target aspect ratio differs; `rect=` is the hotspot-bounded rectangle | `?rect=200,0,1200,1200&w=800&h=800` |
+| set    | set    | set (aspect matches crop) | Library emits the full crop region; no hotspot reframing (the aspect ratios match) | `?rect=80,60,1440,1080&w=800&h=600` |
+| set    | set    | set (aspect differs from crop) | Library applies the editor's `crop` first, then uses the `hotspot` to position the visible window inside the cropped region; `rect=` is the crop-bounded, hotspot-centered rectangle (e.g. 1600×1200 + 4:3 crop + 1:1 target + hotspot x=0.6 → `rect=420,60,1080,1080`) | `?rect=420,60,1080,1080&w=800&h=800` |
+| absent | set    | set    | Library applies the editor's `crop` only; no focal-point nudge; `rect=` is the crop rectangle sized to the target box | `?rect=80,60,1440,1080&w=800&h=600` |
+
+**The brief is explicit: hotspot / crop behavior must NOT be claimed on an unconstrained URL.** When the renderer does not pass a target box, the builder returns `meta.assetUrl` unchanged — no `rect=`, no `w=`, no `h=`, no `fit=`, no `crop=`, no `fp-x=`, no `fp-y=`.
+
+The **upscaling guard** applies a **proportional reduction** to the requested box so the renderer's aspect ratio is preserved.
+
+**Algorithm** (for a request with both `width` and `height` set):
+  1. `scale = max(width / intrinsic.width, height / intrinsic.height)`
+  2. If `scale > 1`: `width = round(width / scale)`, `height = round(height / scale)`
+  3. If `scale ≤ 1`: no change (request already fits within the intrinsic dimensions)
+
+When only one axis is supplied, the other is derived from the source's intrinsic aspect ratio via the aspect-ratio shortcut, then both axes are capped by the same proportional reduction. The renderer's requested aspect ratio is preserved through every branch.
+
+**Documented limitation.** The guard uses the **full source dimensions** from `meta.metadata`. It does NOT inspect the editor's `crop` rectangle — the effective source area after the editor's crop can be smaller than `meta.metadata`, so a request that fits within the full source dimensions can still require the CDN to upscale within the cropped region. The guard prevents the most common upscale case (oversized full-image requests) and preserves the renderer's aspect ratio for every other case; it does NOT claim to prevent every possible CDN upscale.
+
+### 6.8.6 Operator-side troubleshooting
+
+- **"The image looks stretched / cropped weirdly."** The renderer is supplying a target box whose aspect ratio differs from the editor's crop region's aspect ratio. The library's `fit()` positions the visible window around the focal point inside the crop region; the visible window stretches the crop to fit the requested aspect ratio. If the result looks wrong, the editor should either (a) re-pick the focal point in Studio, or (b) adjust the request's `width` / `aspectRatio` to match the crop's aspect ratio more closely.
+
+- **"The image is missing the hotspot / crop I picked in Studio."** Two causes: (1) the editor did not re-upload the asset after the schema change — hotspot / crop only land in the dataset on a fresh upload. Existing records that pre-date the schema change keep `hotspot: null` / `crop: null` until the editor re-uploads. (2) The `*Meta` field is `undefined` on the boundary — check the GROQ response in the Studio's Vision tool to confirm the projection includes `asset->{_ref, metadata}, hotspot{x, y, width, height}, crop{top, bottom, left, right}`.
+
+- **"The URL builder returns the plain `meta.assetUrl` instead of a crop-aware URL."** Two causes: (1) the renderer did not supply a target box (no `width`, no `height`, no `aspectRatio`) — the brief is explicit that hotspot behavior is not claimed on an unconstrained URL. (2) the editor did not pick a hotspot or a crop on the asset — the mapper drops the absent sub-field and the renderer emits the URL-only fallback (which is the correct, documented behaviour).
+
+- **"The static artifact does not render the crop-aware image."** Run `pnpm generate` (or `pnpm build` for the Node / Nitro output). The wrapper computes the URL at build time; if `NUXT_SANITY_PROJECT_ID` / `NUXT_SANITY_DATASET` are unset or wrong, the builder cannot construct the CDN path and falls back to `meta.assetUrl`. Verify the env vars are set before the build.
+
 ## 7. Incident / recovery actions
 
 The agency / operator runs the recovery actions below when the content pipeline misbehaves. Each action has a clear owner, a clear entry condition, and a clear exit condition. The recovery actions are **non-destructive by default**; the destructive actions (dataset restore, project delete) require written agency-owner approval.

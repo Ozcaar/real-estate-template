@@ -30,6 +30,7 @@
     "@nuxtjs/i18n": "^10",
     "@pinia/nuxt": "^0.11",
     "@sanity/client": "^6.29.1",
+    "@sanity/image-url": "^1.2.0",
     "@vueuse/nuxt": "^13",
     "ipx": "^2.1.1",
     "nodemailer": "^9.0.3",

@@ -78,11 +78,23 @@ const hasPrice = computed(() => typeof props.development.priceFrom === 'number')
   >
     <template #media>
       <ResponsiveImage
+        v-if="!development.imageMeta"
         :src="development.image"
         :alt="development.name"
         ratio="3/2"
         rounded="none"
         sizes="100vw sm:50vw lg:33vw"
+      />
+      <SanityImage
+        v-else
+        :src="development.image"
+        :meta="development.imageMeta"
+        :alt="development.name"
+        ratio="3/2"
+        rounded="none"
+        sizes="100vw sm:50vw lg:33vw"
+        width="640"
+        :aspect-ratio="3 / 2"
       />
     </template>
 

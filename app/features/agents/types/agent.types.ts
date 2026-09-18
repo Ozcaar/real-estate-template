@@ -13,6 +13,8 @@
  * a runtime check — the same pattern `Development.slug` uses.
  */
 
+import type { ImageSourceMeta } from '~/core/image/image-source'
+
 export interface Agent {
   /** Unique agent identifier. */
   id: string
@@ -30,6 +32,18 @@ export interface Agent {
   bio: string
   /** Cover / portrait image path (served from `public/`). */
   image: string
+  /**
+   * Provider-neutral metadata for the portrait image (asset reference,
+   * editor-picked hotspot + crop, intrinsic dimensions). Populated by
+   * image-CDN-aware mappers (currently the Sanity mapper) so the
+   * rendering layer can build a crop-aware URL at request time.
+   *
+   * `undefined` for the static / api / generic-CMS paths and for any
+   * Sanity record where the editor has not picked a hotspot / crop.
+   * The rendering layer treats `undefined` as "no metadata, use the
+   * plain asset URL on `image`".
+   */
+  imageMeta?: ImageSourceMeta
   /** Direct phone line, optional. */
   phone?: string
   /** Direct email, optional. */

@@ -104,6 +104,24 @@ const props = defineProps<{
   images: string[]
   coverImage: string
   title: string
+  /**
+   * Provider-neutral metadata for the cover image (Task 130).
+   * When present, the LCP single-image fallback and the first
+   * Swiper slide use the Sanity-aware `SanityImage` wrapper
+   * so the editor-picked hotspot + crop are respected. When
+   * absent (the static / API / generic-CMS paths, or a Sanity
+   * record where the editor did not pick a hotspot / crop),
+   * the gallery falls back to the plain `ResponsiveImage`
+   * string-only rendering.
+   */
+  coverImageMeta?: import('~/core/image/image-source').ImageSourceMeta
+  /**
+   * Provider-neutral metadata for the gallery images.
+   * Indexed in lockstep with `images` — `imagesMeta[i]`
+   * (when present) corresponds to `images[i]`. Records that
+   * pre-date the field ship with `imagesMeta` absent.
+   */
+  imagesMeta?: import('~/core/image/image-source').ImageSourceMeta[]
 }>()
 
 const { t } = useI18n()
@@ -116,6 +134,23 @@ const displayImages = computed<string[]>(() => {
 })
 
 const hasMultiple = computed(() => displayImages.value.length > 1)
+
+/**
+ * Resolve the provider-neutral metadata for a given image
+ * index (Task 130). Used by the Sanity-aware `<SanityImage>`
+ * wrapper to honour the editor-picked hotspot + crop when
+ * present, and fall back to the plain `<ResponsiveImage>`
+ * string-only rendering when absent.
+ */
+function metaForIndex(index: number): import('~/core/image/image-source').ImageSourceMeta | undefined {
+  // The first image is always the cover image (the gallery
+  // prepends the cover when `images[]` is empty, or the first
+  // entry of `images[]` when it's present). The cover-image
+  // meta takes precedence; fall back to `imagesMeta[index]`
+  // for the rest.
+  if (index === 0) return props.coverImageMeta ?? props.imagesMeta?.[0]
+  return props.imagesMeta?.[index]
+}
 
 // Main Swiper instance, captured on the `@swiper` event.
 const swiperRef = ref<SwiperInstance | null>(null)
@@ -320,11 +355,25 @@ const counterText = computed(() =>
       class="relative w-full min-w-0 max-w-full"
     >
       <ResponsiveImage
+        v-if="!coverImageMeta"
         :src="displayImages[0]"
         :alt="title"
         ratio="4/3"
         rounded="xl"
         sizes="100vw lg:50vw"
+        loading="eager"
+        fetchpriority="high"
+      />
+      <SanityImage
+        v-else
+        :src="displayImages[0]"
+        :meta="coverImageMeta"
+        :alt="title"
+        ratio="4/3"
+        rounded="xl"
+        sizes="100vw lg:50vw"
+        width="1024"
+        :aspect-ratio="4 / 3"
         loading="eager"
         fetchpriority="high"
       />
@@ -387,11 +436,25 @@ const counterText = computed(() =>
             >
               <div class="relative w-full h-full">
                 <ResponsiveImage
+                  v-if="!metaForIndex(index)"
                   :src="src"
                   :alt="title"
                   ratio="4/3"
                   rounded="xl"
                   sizes="100vw lg:50vw"
+                  :loading="index === 0 ? 'eager' : 'lazy'"
+                  :fetchpriority="index === 0 ? 'high' : undefined"
+                />
+                <SanityImage
+                  v-else
+                  :src="src"
+                  :meta="metaForIndex(index)!"
+                  :alt="title"
+                  ratio="4/3"
+                  rounded="xl"
+                  sizes="100vw lg:50vw"
+                  width="1024"
+                  :aspect-ratio="4 / 3"
                   :loading="index === 0 ? 'eager' : 'lazy'"
                   :fetchpriority="index === 0 ? 'high' : undefined"
                 />
@@ -429,11 +492,25 @@ const counterText = computed(() =>
           <template #fallback>
             <div class="relative w-full min-w-0 max-w-full">
               <ResponsiveImage
+                v-if="!coverImageMeta"
                 :src="displayImages[0]"
                 :alt="title"
                 ratio="4/3"
                 rounded="xl"
                 sizes="100vw lg:50vw"
+                loading="eager"
+                fetchpriority="high"
+              />
+              <SanityImage
+                v-else
+                :src="displayImages[0]"
+                :meta="coverImageMeta"
+                :alt="title"
+                ratio="4/3"
+                rounded="xl"
+                sizes="100vw lg:50vw"
+                width="1024"
+                :aspect-ratio="4 / 3"
                 loading="eager"
                 fetchpriority="high"
               />
@@ -512,11 +589,24 @@ const counterText = computed(() =>
             @click="goTo(index)"
           >
             <ResponsiveImage
+              v-if="!metaForIndex(index)"
               :src="src"
               alt=""
               ratio="1/1"
               rounded="none"
               sizes="80px"
+              loading="lazy"
+            />
+            <SanityImage
+              v-else
+              :src="src"
+              :meta="metaForIndex(index)!"
+              alt=""
+              ratio="1/1"
+              rounded="none"
+              sizes="80px"
+              width="160"
+              :aspect-ratio="1"
               loading="lazy"
             />
           </button>
@@ -554,6 +644,8 @@ const counterText = computed(() =>
       :cover-image="coverImage"
       :title="title"
       :initial-index="activeIndex"
+      :cover-image-meta="coverImageMeta"
+      :images-meta="imagesMeta"
       @update:open="onLightboxUpdateOpen"
       @update:active-index="onLightboxUpdateActiveIndex"
     />

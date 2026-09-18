@@ -60,11 +60,23 @@ const showStatus = computed(() => props.property.status !== 'available')
     <template #media>
       <div class="relative">
         <ResponsiveImage
+          v-if="!property.coverImageMeta"
           :src="property.coverImage"
           :alt="property.title"
           ratio="4/3"
           rounded="none"
           sizes="100vw sm:50vw xl:33vw"
+        />
+        <SanityImage
+          v-else
+          :src="property.coverImage"
+          :meta="property.coverImageMeta"
+          :alt="property.title"
+          ratio="4/3"
+          rounded="none"
+          sizes="100vw sm:50vw xl:33vw"
+          width="640"
+          :aspect-ratio="4 / 3"
         />
         <div class="absolute left-3 top-3 flex flex-wrap gap-2">
           <BaseBadge variant="primary" size="sm">

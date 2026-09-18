@@ -206,7 +206,6 @@ The `slug` field is the only place the Studio's runtime shape differs from the b
 ## 13. What this Studio does NOT do
 
 - **No preview integration.** The Nuxt app reads the published dataset only. The `presentationTool` plugin is intentionally not added. A future task can add a preview driver without touching the Studio.
-- **No `@sanity/image-url` integration.** The GROQ projection returns the raw asset URL. The hotspot / crop-aware URL builder is deferred.
 - **No webhooks / revalidation.** The Nuxt app fetches the dataset on every loader call (no permanent cache). The Studio's webhook → Nitro endpoint is a future task.
 - **No custom theming.** The Studio uses the default Sanity light / dark theme.
 - **No Vision plugin in production.** Vision is a developer tool; the deployed Studio at `<projectId>.sanity.studio` does NOT include it. The Studio's `sanity.config.ts` bundles Vision only when `NODE_ENV !== 'production'`, so the local dev Studio (`pnpm dev`) carries Vision and the deployed Studio carries only the editor essentials. The agency editors do not need the GROQ playground.

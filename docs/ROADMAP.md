@@ -180,7 +180,7 @@ The audit surfaced ~52 candidate items across `docs/`. The following consolidati
 
 #### CMS / editor experience
 
-8. **Hotspot / crop-aware URL building (`@sanity/image-url`).** The Sanity image strategy currently uses raw asset URLs. A future task wires `@sanity/image-url` to honor the agency's photographer-defined focal point; the `cdn.sanity.io` URL builder is the only change. Real-estate imagery has strong horizontal-aspect and focal-point conventions; this matters in production.
+8. **Hotspot / crop-aware URL building (`@sanity/image-url`).** **(SHIPPED — see `## 5f` below.)** The `@sanity/image-url` builder replaces the raw asset URL in the GROQ → mapping pipeline. The mapper now projects each image field's asset reference + hotspot + crop + intrinsic dimensions alongside the asset URL; the boundary type carries an optional `*Meta` shape (provider-neutral: `{ assetRef, assetUrl, hotspot?, crop?, metadata? }`); the rendering layer adds a `<SanityImage>` wrapper (sibling to the existing `<ResponsiveImage>`) that computes the crop-aware URL synchronously in a `computed()` at SSR / prerender time via the URL builder at `app/core/image/sanity-image-url.ts`. **Static-deployment compatible:** the URL is embedded in the rendered HTML on first paint — no `$fetch`, no `useAsyncData`, no runtime API endpoint (the Task 131 implementation had a `/api/sanity-image` endpoint which is incompatible with `pnpm generate`; that endpoint was removed in Task 130). One new direct dependency (`@sanity/image-url@^1.2.0`, imported in exactly one `app/` file: `app/core/image/sanity-image-url.ts`). One new server module (`app/core/image/sanity-image-url.ts`). One new app component (`app/components/shared/SanityImage.vue`). One new boundary type (`app/core/image/image-source.ts`). The boundary regression test at `server/utils/sanity-boundary.test.ts` pins `@sanity/image-url` to that one `app/` file via a positive-whitelist assertion (no other `app/` file may import it). The static / API / generic-CMS paths are unchanged (the `*Meta` field is `undefined` for those sources; the rendering layer falls back to the plain `<ResponsiveImage>`). Real-estate imagery has strong horizontal-aspect and focal-point conventions; this matters in production.
 9. **Additional Sanity content types** (SiteSettings, Page, Category, Testimonial). The Studio ships Property / Agent / Development only. A future engagement that wants editable home-page copy, footer legal links, or a category taxonomy adds the new types.
 10. **Map picker for the `coordinates` field.** Replace the Studio's two-numeric-input editing surface with a visual map input (Leaflet or Mapbox).
 11. **Studio schema CI contract test (`pnpm studio:contract`).** A CI step that runs the Studio schema against the runtime boundary Zod schema and asserts the field names, types, and required-flag parity. The `studio/schemas/*.test.ts` Vitest suite already covers the field names; the contract test extends this to a cross-bundle assertion that the Studio's published document shape matches the runtime boundary.
@@ -225,7 +225,7 @@ Scores use a 1–5 scale (1 = lowest, 5 = highest). The numbers are **decision s
 | 5 | **API / CMS adapter retry + cache layer** | Production reliability | 4 | 3 | **5** | 1 | 3 | 2 |
 | 6 | Distributed rate limiter | Production reliability | 3 | 2 | 4 | 1 | **5** (Redis / Upstash dep) | 3 |
 | 7 | Uptime monitoring guide | Production reliability | 3 | 3 | 4 | 1 | 1 (docs only) | 1 |
-| 8 | **Hotspot / crop (`@sanity/image-url`)** | CMS / editor experience | 4 | **5** | 1 | 1 | 2 | 1 |
+| 8 | **Hotspot / crop (`@sanity/image-url`)** | CMS / editor experience | 4 | **5** | 1 | 1 | 2 | 1 | **SHIPPED (Task 130)** |
 | 9 | Additional Sanity content types | CMS / editor experience | 3 | 4 | 1 | 2 | 3 | 2 |
 | 10 | Map picker for coordinates | CMS / editor experience | 2 | 3 | 1 | 1 | 3 | 2 |
 | 11 | **Studio schema CI contract test** | CMS / editor experience | 3 | 2 | **5** | 1 | 2 | 1 |
@@ -259,7 +259,7 @@ Bolded items are the proposed v1.3 "Must" + "Should ship" set.
 #### Should ship if capacity allows (P1)
 
 2. **Sanity Studio webhooks → CI rebuild trigger.** **(SHIPPED — see `## 5e` below.)** A webhook endpoint at `server/api/webhooks/sanity.post.ts` that, on a Sanity `published` / `updated` event, triggers the agency's deployment hook (a hosting-provider deploy hook, a CI workflow-dispatch endpoint, or a CMS-side preview refresh). The Nitro deployment case already re-fetches on every request per the v1.1.0 M17 / M20 no-permanent-cache contract; the webhook's primary value is the **static-export** case (staleness window shrinks from "next `pnpm generate`" to "within seconds of the Sanity event"). The endpoint requires **a new inbound signature verifier** (`verifySanitySignature(headers, body, secret)`) — the lead-capture webhook at `server/services/leads/adapters/webhook.ts:61` is an **outbound** signer and is not reusable as an inbound verifier. The new utility is the only new server module the task adds; the endpoint, integration test, and docs are the rest of the work.
-3. **Hotspot / crop-aware URL building (`@sanity/image-url`).** The `@sanity/image-url` builder replaces the raw asset URL in the GROQ → mapping pipeline. Adds one dependency; the IPX provider continues to process the URLs (Nuxt Image's `domains` allowlist already includes `cdn.sanity.io`).
+3. **Hotspot / crop-aware URL building (`@sanity/image-url`).** **(SHIPPED — see `## 5f` below.)** The `@sanity/image-url` builder replaces the raw asset URL in the GROQ → mapping pipeline. Adds one dependency (`@sanity/image-url@^1.2.0`, server-only); the IPX provider continues to process the URLs (Nuxt Image's `domains` allowlist already includes `cdn.sanity.io`). The Task 130 build moved the URL builder from `server/utils/sanity-image-url.ts` to `app/core/image/sanity-image-url.ts` so the `<SanityImage>` wrapper can import it directly and compute the crop-aware URL at SSR / prerender time without a runtime API endpoint (the Task 131 implementation's `/api/sanity-image` endpoint was incompatible with the static deployment mode).
 4. **API / CMS adapter retry + response-cache layer.** A shared `$fetch` retry policy + in-memory TTL response cache applied to the api and CMS adapters. The retry policy retries idempotent failures (network errors, 5xx, 429) with exponential backoff; the response cache uses a short TTL (default 60 s) and respects the published dataset's staleness window.
 5. **Pre-commit hooks (Husky / lefthook).** A `pnpm lint && pnpm test` runner on every commit, with a documented bypass (`--no-verify`) for the rare exception.
 
@@ -451,6 +451,262 @@ pnpm bootstrap:client --id=<tenant> --name="<agency display name>" --hostname=<h
 - **Modified: `docs/ROADMAP.md` §5b.1 item 4 + §5b.3 item 2** — backlog item marked SHIPPED.
 
 **Validation**: `pnpm test` is green (full test count + delta below), `pnpm lint` is clean (0 errors / 0 warnings), `pnpm build` completes, `pnpm test:e2e` is green (62/62), `git diff --check` is exit 0. No Git state-changing operations were performed; no real Sanity webhook was created; no real secrets were generated or stored.
+
+## 5f. Sanity crop / hotspot URL building (Task 130 — shipped)
+
+The Sanity image strategy previously projected image asset URLs directly via `asset->url` in the GROQ projection, collapsing every byte of editor-picked hotspot + crop metadata to a single string. Real-estate imagery has strong horizontal-aspect and focal-point conventions; the missing metadata was a production-visible gap (a property cover shot of a house with the subject in the right third was being center-cropped by the CDN when the catalog card rendered a 4:3 frame).
+
+### What the v1.3 P1 item 3 ships (Task 130)
+
+The build keeps the project's provider-neutral data-source contract. The static / api / generic-CMS paths do not change: every existing record continues to render through the existing `<ResponsiveImage>` (string-only). Only the Sanity branch adds a new optional `*Meta` field on the boundary (`ImageSourceMeta`), and the canonical Sanity-aware wrapper `<SanityImage>` consumes that meta to compute a crop-aware Sanity CDN URL via `@sanity/image-url` at SSR / prerender time. The result is embedded directly in the rendered HTML — no `$fetch` to a runtime API endpoint, no `useAsyncData` round-trip, no Nuxt endpoint dependency.
+
+### Pipeline (the four stages)
+
+1. **Studio editor.** Sanity's documented image schema pattern — `options: { hotspot: true }` — exposes both the focal-point picker AND the crop region UI to the editor via Sanity's bundled `sanity.imageHotspot` and `sanity.imageCrop` widgets. No manual `fields: [{ name: 'hotspot', type: 'sanity.imageHotspot' }, { name: 'crop', type: 'sanity.imageCrop' }]` array is needed; the documented schema pattern is sufficient. The `property.coverImage`, `property.images[]`, `agent.image`, and `development.image` fields all adopt this pattern. Existing records that pre-date the schema change keep working without migration — the dataset returns `hotspot: null` / `crop: null` for the unaffected fields; the mapper treats the absent metadata as "no editorial intent" and the URL builder returns the unconstrained asset URL.
+
+2. **GROQ projection.** The Sanity mapper at `server/utils/sanity-mappings.ts` projects each image field's asset reference + the full Sanity hotspot / crop / intrinsic-dimensions sub-fields alongside the asset URL. The projection shape (per image) is:
+
+   ```groq
+   "imagesMeta": images[]{
+     "assetRef": asset->_ref,
+     "assetUrl": asset->url,
+     hotspot{x, y, width, height},
+     crop{top, bottom, left, right},
+     "metadata": asset->metadata{width, height, "aspectRatio": width / height}
+   }
+   ```
+
+   The same shape applies to `coverImageMeta`, `agent.imageMeta`, and `development.imageMeta`. The mapper's three `mapSanity*` functions emit an optional `*Meta` field of type `ImageSourceMeta` alongside the canonical `string` URL. The mapper is defensive: a malformed projection (string hotspot, missing `width` / `height`, degenerate crop, out-of-range coordinates, missing `assetRef`) drops the invalid sub-field and keeps the meta with the remaining valid sub-fields, or drops the whole meta if `assetRef` is missing. The canonical `string` URL is preserved on `coverImage` / `image` / `images[]` in every case.
+
+   **Hotspot shape — `width` is REQUIRED.** Sanity's documented `hotspot` field is `{ x, y, width, height }` (all four normalized `0..1`). The width / height are the focal region's **radii** along each axis, NOT a single `height` field. `@sanity/image-url`'s `urlForImage.js` reads `hotspot.width` AND `hotspot.height` separately to compute the horizontal / vertical radii when fitting the crop around the focal point. Omitting `width` makes the library produce a `rect=NaN,…` query parameter on the CDN URL. The mapper rejects hotspots missing `width` (drops the whole hotspot sub-field, keeps the meta with `assetRef` + `assetUrl` for the URL-only fallback).
+
+3. **Provider-neutral boundary type.** The `ImageSourceMeta` type lives at `app/core/image/image-source.ts` (a new `app/core/image/` module — outside `features/` because the type is cross-feature, and outside `data-source/` because the static / api / generic-CMS providers do not emit it). The shape is `{ assetRef, assetUrl, hotspot?, crop?, metadata? }` — the names mirror Sanity's documented field names but the type carries no Sanity-specific imports. The Zod schema at `app/core/image/image-source.schema.ts` is the runtime contract; `property.schema.ts` / `agent.schema.ts` / `development.schema.ts` extend the canonical schemas with optional `coverImageMeta` / `imageMeta` / `imagesMeta[]` fields. The compile-time guards in those schema files pin schema ↔ interface parity.
+
+4. **Rendering.** A new `SanityImage` component at `app/components/shared/SanityImage.vue` (sibling to the existing `ResponsiveImage>`) consumes the `meta` prop and computes the Sanity CDN URL synchronously in a `computed()` that runs at SSR / prerender. The URL is embedded in the rendered HTML on first paint — no `$fetch`, no `useAsyncData`, no `/api/sanity-image` dependency. For the static deployment (`pnpm generate`), the prerenderer resolves the URL at build time and the resulting `.output/public/` artifact contains a finished HTML page per route with the crop-aware URL inline; no runtime API is required. For Node / Nitro (`pnpm build` + `node .output/server/index.mjs`), the same `computed()` runs at render time on the server. The `<NuxtImg>` chain is unchanged.
+
+### Static + Node/Nitro parity
+
+Both deployment modes produce identical rendered HTML for any given meta + target box. The static artifact (`pnpm generate` → `.output/public/`) contains **zero** references to `/api/sanity-image` — the prerenderer resolves every Sanity-aware image URL at build time and embeds the finished URL in the prerendered HTML. Client-side navigation in the static deployment uses the prerendered payload; no client-side URL computation is performed and no runtime fetch is required. The 162 prerendered routes cover every public property / agent / development / home / contact / about page; the artifact is fully self-contained.
+
+### Architecture / boundary contract
+
+- **`@sanity/image-url` is imported in exactly ONE file: `app/core/image/sanity-image-url.ts`.** The boundary regression test at `server/utils/sanity-boundary.test.ts` pins the import to that one file via a positive-whitelist assertion: the test scans every `app/` file for `from '@sanity/image-url'` and `require('@sanity/image-url')` and asserts the **only** match is `app/core/image/sanity-image-url.ts`. Any other `app/` file importing `@sanity/image-url` fails the test. Generic feature / domain components (`app/features/*/components/`, `app/components/ui/`, `app/components/layout/`) continue to receive only the canonical `string` URL on the boundary.
+
+- **`ImageSourceMeta` is provider-neutral.** The type carries no `@sanity/*` imports. A future image-CDN provider that exposes a `crop` + `hotspot` concept can populate the same shape and the existing `<SanityImage>` wrapper (or a sibling) will render the URL — no boundary change required.
+
+- **The static / API / generic-CMS paths are unchanged.** The static data files (`app/features/*/data/*.ts`) emit plain `string` URLs only — no `*Meta` field, no `hotspot`, no `crop`. The `createStaticDataSource` adapter does not fill in metadata; the `createApiDataSource` and `createHttpJsonCmsDriver` adapters likewise do not fill it in. The boundary regression tests at `properties.service.boundary.test.ts` / `agents.service.boundary.test.ts` / `developments.service.boundary.test.ts` continue to pin the service-layer string-only contract.
+
+- **The IPX provider continues to process the URLs.** Nuxt Image's `domains` allowlist (`['cdn.sanity.io']`) is unchanged. The `<SanityImage>` wrapper passes the crop-aware Sanity CDN URL through `<NuxtImg>`, which routes through IPX (which fetches from Sanity and serves a local variant). The image bytes come from the Sanity CDN; the responsive srcset generation is IPX's responsibility.
+
+- **No runtime API endpoint.** The Task 130 build **does not** ship `server/api/sanity-image.get.ts`. The original Task 131 design reached the URL builder through a Nitro endpoint at `/api/sanity-image`; that endpoint indirection is incompatible with the static deployment mode (`pnpm generate` produces a self-contained artifact with no runtime API surface, so a client-side `$fetch('/api/…')` call returns 404 in production). The Task 130 fix moves the URL builder into `app/core/image/sanity-image-url.ts` and lets the `<SanityImage>` component import it directly so the URL is computed at SSR / prerender. The 162-route static artifact has zero references to `/api/sanity-image` (verified by walking the generated HTML).
+
+### `@sanity/image-url` usage — library semantics, not manual overrides
+
+The URL builder at `app/core/image/sanity-image-url.ts` passes the full image source `{ asset, hotspot?, crop? }` to the library's `b.image(...)` method. The library reads `hotspot.width` and `hotspot.height` (the horizontal / vertical focal-region radii), reads `crop.top` / `crop.bottom` / `crop.left` / `crop.right` (the four crop-edge insets), and computes the cropping `rect=…` parameter automatically from the editor's saved metadata + the target width / height. The library also reads the target width / height from the `.width()` / `.height()` chain and emits the documented `?w=…&h=…` parameters.
+
+**Manual `.crop('focalpoint')`, `.focalPoint(x, y)`, `.rect()` overrides are NEVER called** — they bypass the library's automatic fitting. The library's `urlForImage.js` checks `if (!(spec.rect || spec.focalPoint || spec.ignoreImageParams || spec.crop))` and only runs its automatic `fit()` when NONE of those manual overrides are set. Calling `.crop('focalpoint')` here would emit `?fit=crop&crop=focalpoint` and force the CDN to ignore the editor's saved hotspot + crop. Calling `.focalPoint(x, y)` would emit `?fp-x=…&fp-y=…` and override the focal point. The Task 130 builder passes the editor's metadata directly to the library and lets the library compute everything.
+
+### Sample output
+
+For a 1600×1200 source asset with `hotspot = { x: 0.6, y: 0.4, width: 0.3, height: 0.3 }` and `crop = { top: 0.05, bottom: 0.05, left: 0.05, right: 0.05 }` requested at 800×600 (the canonical case — target aspect 4:3 matches the crop region's aspect 4:3):
+
+```
+https://cdn.sanity.io/images/projtest/production/abc-1600x1200.jpg?rect=80,60,1440,1080&w=800&h=600
+```
+
+The `rect=80,60,1440,1080` is the library's automatic crop rectangle: the editor's crop region (`left: 80, right: 1520, top: 60, bottom: 1140` in pixel space) is the bounding box, and the target aspect ratio (4:3) matches the crop region's aspect ratio so the library emits the full crop region without re-framing around the hotspot. The hotspot nudge only kicks in when the target aspect differs from the crop region's aspect (see the 800×800 row below).
+
+For the same source + metadata requested at **800×800** (1:1, target aspect differs from the crop region's 4:3):
+
+```
+https://cdn.sanity.io/images/projtest/production/abc-1600x1200.jpg?rect=420,60,1080,1080&w=800&h=800
+```
+
+The library re-frames the crop region around the hotspot to fit the 1:1 target. The crop region's vertical extent is 1080 (the smaller of `crop_width / desired_ratio = 1440 / 1 = 1440` and `crop_height × desired_ratio = 1080 × 1 = 1080`), and the visible window is centered horizontally on the hotspot (`x = 0.6 × 1600 = 960`, hotspot width = 0.3 × 1600 / 2 = 240 → horizontal range = [720, 1200]; final left edge = `420` after clamping to the crop region).
+
+Changing the hotspot to `{ x: 0.25, y: 0.5, width: 0.3, height: 0.3 }` for the same 800×800 (1:1) target produces `rect=80,60,1080,1080` (visible window shifted left to follow the new focal point at x=0.25). Changing to `{ x: 0.75, y: 0.5, ... }` produces `rect=440,60,1080,1080`. The library's `fit()` uses the hotspot as the centre of the visible window inside the editor's crop region when the target aspect ratio differs from the crop's aspect ratio.
+
+### Behaviour matrix
+
+All paths delegate to the library. The matrix below shows what the library does with each combination of `meta.hotspot`, `meta.crop`, and renderer-supplied target box. The example URLs assume a 1600×1200 source asset.
+
+| `meta.hotspot` | `meta.crop` | Renderer width / height | Library behaviour | Example URL |
+|---|---|---|---|---|
+| absent | absent | absent | `meta.assetUrl` unchanged (no builder call) | `https://cdn.sanity.io/.../abc.jpg` |
+| absent | absent | set    | Full-image resize; no `rect=` (the asset is resized to fit the target box) | `?w=400&h=300` |
+| set    | absent | set (aspect matches source) | Full-image resize; no `rect=` | `?w=800&h=600` |
+| set    | absent | set (aspect differs from source) | Library uses the hotspot to position the visible window inside the **full-image** crop when the target aspect ratio differs; `rect=` is the hotspot-bounded rectangle (e.g. 1600×1200 + 800×800 1:1 + hotspot x=0.5 → `rect=200,0,1200,1200`) | `?rect=200,0,1200,1200&w=800&h=800` |
+| set    | set    | set (aspect matches crop) | Library emits the full crop region; no hotspot reframing (the aspect ratios match) | `?rect=80,60,1440,1080&w=800&h=600` |
+| set    | set    | set (aspect differs from crop) | Library applies the editor's `crop` first, then uses the `hotspot` to position the visible window inside the cropped region; `rect=` is the crop-bounded, hotspot-centered rectangle (e.g. 1600×1200 + 4:3 crop + 1:1 target + hotspot x=0.6 → `rect=420,60,1080,1080`) | `?rect=420,60,1080,1080&w=800&h=800` |
+| absent | set    | set    | Library applies the editor's `crop` only; no focal-point nudge; `rect=` is the crop rectangle sized to the target box | `?rect=80,60,1440,1080&w=800&h=600` |
+
+**The brief is explicit: hotspot / crop behavior must NOT be claimed on an unconstrained URL.** When the renderer does not pass a target box, the builder returns `meta.assetUrl` unchanged — no `rect=`, no `w=`, no `h=`, no `fit=`, no `crop=`, no `fp-x=`, no `fp-y=`.
+
+The **upscaling guard** applies a **proportional reduction** to the requested box so the renderer's aspect ratio is preserved — the previous Task 130 implementation clamped each axis independently, which could change the requested aspect ratio (e.g. a 2000×2000 request on a 1600×1200 source would have become 1600×1200, changing 1:1 to 4:3).
+
+**Algorithm** (for a request with both `width` and `height` set):
+  1. `scale = max(width / intrinsic.width, height / intrinsic.height)`
+  2. If `scale > 1`: `width = round(width / scale)`, `height = round(height / scale)`
+  3. If `scale ≤ 1`: no change (request already fits within the intrinsic dimensions)
+
+When only one axis is supplied, the other is derived from the source's intrinsic aspect ratio via the aspect-ratio shortcut, then both axes are capped by the same proportional reduction. The renderer's requested aspect ratio is preserved through every branch.
+
+**Documented limitation.** The guard uses the **full source dimensions** from `meta.metadata`. It does NOT inspect the editor's `crop` rectangle — the effective source area after the editor's crop can be smaller than `meta.metadata`, so a request that fits within the full source dimensions can still require the CDN to upscale within the cropped region. The guard prevents the most common upscale case (oversized full-image requests) and preserves the renderer's aspect ratio for every other case; it does NOT claim to prevent every possible CDN upscale. A future enhancement could incorporate the cropped rectangle into the guard for a tighter bound.
+
+### Call sites that switched to `<SanityImage>` (only when `*Meta` is present)
+
+| Site | Component | Aspect | Width |
+|---|---|---|---|
+| Property gallery LCP single image | `PropertyGallery.vue` | 4:3 | 1024 |
+| Property gallery Swiper slide | `PropertyGallery.vue` | 4:3 | 1024 |
+| Property gallery SSR fallback | `PropertyGallery.vue` | 4:3 | 1024 |
+| Property gallery thumbnail | `PropertyGallery.vue` | 1:1 | 160 |
+| Property lightbox main image | `PropertyLightbox.vue` | auto | 1920 |
+| Property card cover | `PropertyCard.vue` | 4:3 | 640 |
+| Agent card portrait | `AgentCard.vue` | 1:1 | 480 |
+| Agent detail page portrait | `pages/agents/[slug].vue` | 1:1 | 640 |
+| Development card cover | `DevelopmentCard.vue` | 3:2 | 640 |
+| Development detail page cover | `pages/developments/[slug].vue` | 3:2 | 960 |
+
+Every site falls back to the existing `<ResponsiveImage>` (string-only) when `*Meta` is absent — the static / API / generic-CMS paths render unchanged.
+
+### Test coverage (Task 130 delta)
+
+- **New: `app/core/image/image-source.schema.test.ts`** — 13 cases covering the `ImageHotspot` / `ImageCrop` / `ImageAssetMetadata` / `ImageSourceMeta` Zod schemas (the 0..1 range, the positive-dimension constraint, the URL constraint, the empty / wrong-typed rejection; the new "rejects a hotspot missing the required `width` field" case pins the corrected hotspot shape).
+- **New: `app/core/image/sanity-image-url.test.ts`** — 24 cases covering the documented behaviour matrix:
+  - crop + hotspot with target aspect matching crop region (canonical case — asserts the documented `rect=80,60,1440,1080&w=800&h=600` output for the canonical 1600×1200 fixture with the editor's saved hotspot + crop + 800×600 target).
+  - crop + hotspot with target aspect differing from crop region (asserts `rect=420,60,1080,1080&w=800&h=800` for the same fixture + 800×800 target — proves the hotspot re-frames the crop).
+  - changing the hotspot changes the calculated rect for constrained aspect ratios (leftB > leftA for hotspot x=0.75 vs 0.25 at 1:1 target).
+  - hotspot-only (no crop) with target aspect differing from source (asserts `rect=200,0,1200,1200` for the canonical hotspot-only 1:1 target).
+  - hotspot-only (no crop) with target aspect matching source (no `rect=` — full-image resize).
+  - crop-only (no hotspot) → library applies the crop only, no focal-point nudge.
+  - degenerate crop `{0,0,0,0}` → no `rect=` (full-image resize).
+  - no hotspot, no crop + target box → `?w=…&h=…` only, no `rect=`.
+  - no target box → `meta.assetUrl` unchanged (the brief's unconstrained-path requirement).
+  - aspect-ratio shortcut (width + aspectRatio derives height; height + aspectRatio derives width).
+  - **upscaling guard — proportional reduction** (the regression test for the Task 130 fix):
+    - square oversized request on a landscape source preserves 1:1 (2000×2000 on 1600×1200 → 1200×1200, not 1600×1200).
+    - portrait oversized request preserves the requested ratio (800×2000 on 1600×1200 → 480×1200; original 0.4 ratio preserved).
+    - already-small request (400×300 on 1600×1200) is unchanged (scale ≤ 1).
+    - one-axis-only request still caps proportionally — neither the requested axis nor the derived axis exceeds the intrinsic (2000 width on 1600×1200 → aspect-ratio shortcut derives height=1500, proportional reduction scales both by max(2000/1600, 1500/1200)=1.25 → 1600×1200, both axes equal to the intrinsic).
+    - hotspot crop still respects the editor focal point after proportional reduction (2000×2000 with hotspot + crop → 1200×1200 with a non-empty `rect=` proving the native crop+hotspot fitting is preserved).
+    - no-op when meta.metadata is absent (documented limitation — the guard uses the full source dimensions, not the effective cropped rectangle).
+  - quality (emits `?q=…` when set; omits when not).
+  - defensive empty-string fallback for malformed meta.
+  - project + dataset resolution (env-var reads).
+  - the `sanityImageUrlFor` wrapper.
+  - upscaling guard (cap on each axis independently; no cap when the request is below the asset's intrinsic size; no-op when `meta.metadata` is absent)
+  - quality parameter (`?q=…`)
+  - defensive empty-string fallback (malformed meta)
+  - project + dataset resolution (`NUXT_SANITY_PROJECT_ID` / `NUXT_SANITY_DATASET` env vars)
+  - the `sanityImageUrlFor` wrapper
+- **Modified: `server/utils/sanity-mappings.test.ts`** — 8 new `*Meta` cases across the three feature describe blocks + the provider-neutral contract block. All hotspot fixtures include the full `{ x, y, width, height }` shape. The mapper rejects hotspots missing `width` / `height` / out-of-range coordinates / wrong-typed fields by dropping the sub-field.
+- **Modified: `server/utils/sanity-integration.test.ts`** — 3 new end-to-end cases (agent `imageMeta`, development `imageMeta`, property `coverImageMeta` + `imagesMeta` through the boundary).
+- **Modified: `studio/schemas/schemas.test.ts`** — 4 new schema-options tests (property `coverImage` enables hotspot, property `images[]` enables hotspot, agent image enables hotspot, development cover image enables hotspot). All assert `options: { hotspot: true }` per Sanity's documented image schema pattern; the explicit `fields: [...]` array is no longer needed.
+- **Modified: `server/utils/sanity-boundary.test.ts`** — replaces the strict `@sanity/image-url` import forbidden patterns with a positive-whitelist assertion: the test scans every `app/` file for the import and asserts the **only** match is `app/core/image/sanity-image-url.ts`. The old "forbidden everywhere" pattern was incorrect: the Task 130 fix moves the URL builder into `app/` so the Vue `<SanityImage>` wrapper can import it directly for static-deployment compatibility.
+
+### Files changed
+
+```
+Modified:
+  app/features/agents/components/AgentCard.vue                          (switched to <SanityImage> when imageMeta is present)
+  app/features/agents/schemas/agent.schema.ts                            (added optional imageMeta: imageSourceMetaSchema)
+  app/features/agents/types/agent.types.ts                               (added imageMeta?: ImageSourceMeta)
+  app/features/developments/components/DevelopmentCard.vue              (switched to <SanityImage>)
+  app/features/developments/schemas/development.schema.ts                (added optional imageMeta)
+  app/features/developments/types/development.types.ts                   (added imageMeta?)
+  app/features/properties/components/PropertyCard.vue                   (switched to <SanityImage>)
+  app/features/properties/components/PropertyGallery.vue                 (switched LCP / Swiper / SSR fallback / thumbnails)
+  app/features/properties/components/PropertyLightbox.vue               (switched main image)
+  app/features/properties/schemas/property.schema.ts                    (added optional coverImageMeta + imagesMeta)
+  app/features/properties/types/property.types.ts                       (added coverImageMeta? + imagesMeta?)
+  app/pages/agents/[slug].vue                                           (switched to <SanityImage>)
+  app/pages/developments/[slug].vue                                     (switched to <SanityImage>)
+  app/pages/properties/[slug].vue                                       (pass coverImageMeta + imagesMeta to PropertyGallery)
+  package.json                                                          (added @sanity/image-url@^1.2.0)
+  pnpm-lock.yaml                                                        (lockfile update)
+  server/utils/sanity-boundary.test.ts                                 (positive-whitelist assertion; docblock + error msg updated)
+  server/utils/sanity-integration.test.ts                              (end-to-end *Meta fixtures + assertions, hotspot shape with width)
+  server/utils/sanity-mappings.test.ts                                 (*Meta cases across three feature describe blocks, hotspot shape with width)
+  server/utils/sanity-mappings.ts                                      (GROQ widening hotspot{x,y,width,height} + readHotspot requires width + readCrop + readAssetMetadata + readImageMeta helpers)
+  studio/schemas/agent.ts                                              (options: { hotspot: true } — Sanity's documented pattern)
+  studio/schemas/development.ts                                        (options: { hotspot: true })
+  studio/schemas/property.ts                                           (options: { hotspot: true } on coverImage + images[])
+  studio/schemas/schemas.test.ts                                       (4 new schema-options tests)
+  docs/SANITY_OPERATIONS.md                                            (§6.8 — corrected behavior matrix; static-deployment architecture)
+  docs/ROADMAP.md                                                      (§5f — this section — + §5b.1 item 8 SHIPPED + §5b.3 item 3 SHIPPED)
+
+New:
+  app/core/image/image-source.ts                                        (provider-neutral types: ImageSourceMeta with hotspot.width + hotspot.height required)
+  app/core/image/image-source.schema.ts                                 (Zod runtime contract)
+  app/core/image/image-source.schema.test.ts                            (13 cases)
+  app/core/image/sanity-image-url.ts                                    (buildSanityImageUrl — @sanity/image-url consumer, native semantics)
+  app/core/image/sanity-image-url.test.ts                               (24 cases)
+  app/components/shared/SanityImage.vue                                 (synchronous computed() URL — no runtime API)
+```
+
+### Removed (Task 131 implementation)
+
+```
+  server/utils/sanity-image-url.ts                  (moved to app/core/image/sanity-image-url.ts)
+  server/utils/sanity-image-url.test.ts             (moved to app/core/image/sanity-image-url.test.ts)
+  server/api/sanity-image.get.ts                   (deleted — runtime API was incompatible with static deployment)
+  server/api/sanity-image.get.test.ts              (deleted — covered by app/core/image/sanity-image-url.test.ts)
+```
+
+### Test count arithmetic from the Task 129 baseline (1428 / 52 files, root `pnpm test` only)
+
+The Task 129 baseline (commit `e7d1f50`, "Add Sanity rebuild webhook") shipped **1428 tests / 52 files** as reported by `pnpm vitest run`. The Task 130 cumulative delta was measured directly by counting `it()` blocks in each changed file at the baseline (via `git show e7d1f50:<file>`) and at HEAD (via the working-tree files), and verified by the current `pnpm vitest run` = **1489 tests / 54 files**:
+
+  - `app/core/image/image-source.schema.test.ts` (new file): **+13** tests / **+1** file. The test file covers the `ImageHotspot` / `ImageCrop` / `ImageAssetMetadata` / `ImageSourceMeta` Zod schemas (the 0..1 range, the positive-dimension constraint, the URL constraint, the empty / wrong-typed rejection; the new "rejects a hotspot missing the required `width` field" case pins the corrected hotspot shape).
+  - `app/core/image/sanity-image-url.test.ts` (new file): **+24** tests / **+1** file. The test file covers the documented behaviour matrix (crop + hotspot × target-aspect-match-vs-differ, hotspot-only × target-aspect-match-vs-differ, crop-only, no-metadata + target, unconstrained, aspect-ratio shortcut, upscaling guard — proportional reduction × 6 sub-cases — the new tests for square oversized 1:1 preservation, portrait asymmetric ratio preservation, one-axis-only aspect-ratio-shortcut, hotspot-crop-after-reduction, already-small unchanged, no-op when metadata absent, quality × 2, defensive fallback, project + dataset resolution, plus the `sanityImageUrlFor` wrapper). 22 tests from the previous Task 130 implementation + 2 net-new tests from the current upscaling-ratio-preserving fix (the previous `caps each axis independently` and `caps the requested width at the asset intrinsic width` tests were replaced; net +2 from the new behaviour matrix).
+  - `server/utils/sanity-mappings.test.ts` (modified): **+20** tests. 23 new `it()` calls and 3 removed `it()` calls (the three "converts a valid Sanity {property,agent,development} document into the boundary shape" tests were renamed in place to "(Task 130 — meta omitted)"; each rename adds one new `it()` AND removes the original `it()`, so the three renames net to 0 test-count change and contribute 3 new lines to the diff without changing the count; the remaining 20 new `it()` calls are net-new tests — 13 property-image-meta cases + 3 agent-image-meta cases + 3 development-image-meta cases + 1 provider-neutral-contract case — the provider-neutral-contract case is the new "static / API / generic-CMS sources do NOT emit `*Meta`" case that closes off the previous Task 131 contract that allowed `*Meta` to leak through the static adapter).
+  - `server/utils/sanity-integration.test.ts` (modified): **+3** tests. 3 net-new `it()` calls (no removed `it()` calls). The three new end-to-end `*Meta` cases (agent / development / property) are added inside the existing describe blocks; no test removals, no renames.
+  - `server/utils/sanity-boundary.test.ts` (modified): **+1** test. 1 net-new `it()` call (no removed `it()` calls). The new `@sanity/image-url is imported by exactly one app/ file (the Sanity-aware URL builder)` positive-whitelist assertion joins the 4 pre-existing boundary tests. The 5 forbidden-pattern entries from the Task 131 implementation are removed (the Task 130 correction uses a positive-whitelist pattern instead of forbidding `@sanity/image-url` in all of `app/`, because the URL builder now lives at `app/core/image/sanity-image-url.ts`).
+  - `vitest.config.ts` (modified): added `'app/core/image/**/*.test.ts'` to the test discovery pattern so the new module's tests are picked up. No test count change.
+
+**Test-count arithmetic — root `pnpm test` only (Studio tests are tracked separately below).**
+
+The root `vitest.config.ts` `include` patterns (`app/config/**/*.test.ts`, `app/features/*/schemas/**/*.test.ts`, `app/features/*/services/**/*.test.ts`, `app/core/utils/**/*.test.ts`, `app/core/data-source/**/*.test.ts`, `app/core/image/**/*.test.ts`, `app/config/agencies/**/*.test.ts`, `app/composables/**/*.test.ts`, `server/services/leads/**/*.test.ts`, `server/api/**/*.test.ts`, `server/utils/**/*.test.ts`, `server/routes/**/*.test.ts`, `scripts/**/*.test.{ts,mjs}`) do NOT match `studio/**/*.test.ts`; Studio tests are picked up by a separate vitest config (`studio/vitest.config.ts`) and counted via `pnpm studio:typecheck`. The arithmetic below counts only the root vitest surface — the one the brief's 1428 / 52 → 1489 / 54 baseline / HEAD numbers refer to.
+
+```
+1428 (root vitest baseline at e7d1f50 — 52 files)
++  13 (new app/core/image/image-source.schema.test.ts — +1 file)
++  24 (new app/core/image/sanity-image-url.test.ts — +1 file;
+   22 from prior Task 130 + 2 net-new from the current
+   upscaling-ratio-preserving fix)
++  20 (server/utils/sanity-mappings.test.ts — modified;
+   23 added - 3 renamed-in-place = +20 net-new it() calls;
+   13 property *Meta + 3 agent *Meta + 3 development *Meta
+   + 1 provider-neutral contract)
++   3 (server/utils/sanity-integration.test.ts — modified;
+   3 added - 0 removed = +3 net-new it() calls;
+   1 property + 1 agent + 1 development end-to-end *Meta)
++   1 (server/utils/sanity-boundary.test.ts — modified;
+   1 added - 0 removed = +1 net-new it() call;
+   the positive-whitelist assertion)
+─────────────────────────────────────────
+= 1489 (root vitest at HEAD — 54 files)
+```
+
+The arithmetic sums to exactly **1489**. `1489 - 1428 = 61`; `54 - 52 = 2`. Every per-file number was measured directly: the baseline per-file `it()` counts come from `git show e7d1f50:<file>` (`sanity-mappings.test.ts`: 19, `sanity-integration.test.ts`: 14, `sanity-boundary.test.ts`: 4); the HEAD per-file counts come from the working-tree files (`sanity-mappings.test.ts`: 39, `sanity-integration.test.ts`: 17, `sanity-boundary.test.ts`: 5); the new files have no baseline, so their full `it()` count is their delta. The 3 in-place renames in `server/utils/sanity-mappings.test.ts` are explicit in the arithmetic (`23 added - 3 renamed-in-place = +20 net`) — every `it()` line that appears in the diff is listed in the per-file bullet above with its before/after state, so no test identity is unexplained.
+
+**Studio tests (counted separately via `pnpm studio:typecheck`).**
+
+`studio/vitest.config.ts` runs `studio/schemas/schemas.test.ts` and `studio/sanity.config.test.ts`. Task 130 modified the schemas test file:
+
+  - `studio/schemas/schemas.test.ts` (modified): **+3** tests. 4 new `it()` calls and 1 removed `it()` call (the pre-existing `portrait image enables the hotspot` test was renamed in place to `portrait image enables the Sanity hotspot` for accuracy; the rename added a new `it()` and removed the old one — same line count change as a delete-and-add, but the test identity stays the same, so the rename is a count-neutral rename and contributes 0 to the net). The 3 net-new tests are: `property coverImage enables the Sanity hotspot (Task 130 — options: { hotspot: true })`, `property images gallery enables the Sanity hotspot on every entry (Task 130)`, `development cover image enables the Sanity hotspot (Task 130 — options: { hotspot: true })`. The Studio test delta is reported by `pnpm studio:typecheck` and is **separate from the root `pnpm test` arithmetic** — the `+3` here is the source of the previous `+64 vs +61` discrepancy: the earlier draft of this arithmetic block counted `studio/schemas/schemas.test.ts: +3` alongside the root vitest modified files (`server/utils/sanity-mappings.test.ts: +20` + `server/utils/sanity-integration.test.ts: +3` + `server/utils/sanity-boundary.test.ts: +1` = +24 root vitest modified + `studio/schemas/schemas.test.ts: +3` Studio = +27 modified), then added the new root vitest files (`+13 + +24 = +37`) for a grand total of +64. The root vitest delta is +24 (modified) + +37 (new) = +61; the Studio delta is +3.
+
+Studio test counts:
+- Baseline (e7d1f50): 41 schemas + 6 sanity.config = **47 tests / 2 files**
+- HEAD: 44 schemas + 6 sanity.config = **50 tests / 2 files**
+- Delta: **+3 tests / +0 files**
+
+The Task 131 implementation (an earlier draft of this task) shipped a runtime `/api/sanity-image` Nitro endpoint that bridged the client to the URL builder through a `$fetch` call. That endpoint was incompatible with `pnpm generate`'s static-deployment mode (the generated artifact has no runtime API surface, so a client-side `$fetch('/api/...')` call returns 404 in production). The Task 130 correction moves the URL builder into `app/core/image/sanity-image-url.ts` (importable by the `<SanityImage>` component at SSR / prerender time) and lets the wrapper compute the URL synchronously. The static artifact has zero `/api/sanity-image` references (verified by walking the prerendered HTML).
+
+### Validation
+
+`pnpm test` is green at **1489 / 1489 across 54 files** (verified). `pnpm lint` is clean (0 errors / 0 warnings). `pnpm build` completes (Node / Nitro preset). `pnpm generate` completes and produces 162 prerendered routes under `.output/public/`; the static artifact contains zero references to `/api/sanity-image` (verified by walking the prerendered HTML). `pnpm test:e2e` is green at **62 / 62** (no E2E spec was modified — the new wrapper is reached only when `*Meta` is present, which the existing E2E catalog (static data) never populates). `pnpm studio:typecheck` is green at **50 / 50 across 2 Studio files** (Studio schemas test + sanity.config test). `git diff --check` is exit 0. No Git state-changing operations were performed; no real Sanity webhook was created; no real secrets were generated or stored; no real client content was created.
 
 ## 6. Deferred Work
 
